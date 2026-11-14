@@ -149,10 +149,16 @@ let recognitionRestarts = 0;
 function launchRecognition(): void {
   const port = new URL(RECOGNITION_URL).port || '8765';
   const p = spawn(RECOGNITION_PY, ['-m', 'tacit_vsr.service', '--port', port, '--parent-pid', String(process.pid)], { cwd: RECOGNITION_DIR, stdio: ['ignore', 'pipe', 'pipe'] });
-  p.stdout.on('data', (d: Buffer) => { for (const l of String(d).split('\n')) if (l.startsWith('[vsr]')) console.log(`[recognition] ${l.slice(6)}`); });
+  p.stdout.on('data', (d: Buffer) => {
+    for (const l of String(d).split('\n')) if (l.startsWith('[vsr]')) {
+      console.log(`[recognition] ${l.slice(6)}`);
+      if (l.includes('listening')) void probeRecognition(); // report ready immediately, not at the next 15 s probe
+    }
+  });
   p.stderr.resume();
   p.on('exit', (code) => {
     console.log(`[recognition] service exited (${code})`);
+    void probeRecognition();
     if (++recognitionRestarts <= 5) setTimeout(launchRecognition, 1000);
   });
   process.on('exit', () => p.kill());
@@ -163,6 +169,7 @@ async function probeRecognition(): Promise<void> {
   try {
     const res = await fetch(`${RECOGNITION_URL}/health`, { signal: AbortSignal.timeout(1500) });
     const body = (await res.json()) as { model?: string; device?: string };
+    if (res.ok) recognitionRestarts = 0;
     controller.setServices({ recognition: { reachable: res.ok, model: body.model ?? null, device: body.device ?? null, checkedAt: Date.now(), ...(res.ok ? { live: LIVE_CAPABILITY } : {}) } });
   } catch {
     const prev = controller.snapshot().services.recognition;
@@ -483,8 +490,9 @@ callerWss.on('connection', (ws) => {
   console.log(`[call] browser caller connected (${call.id})`);
 });
 
-server.listen(PORT, () => {
-  console.log(`[tacit] server on http://localhost:${PORT}`);
+// TACIT_HOST=127.0.0.1 keeps the server private to this Mac (the launcher's default); unset = all interfaces (LAN caller tests).
+server.listen(PORT, process.env.TACIT_HOST || undefined, () => {
+  console.log(`[tacit] server on http://${process.env.TACIT_HOST || 'localhost'}:${PORT}${process.env.TACIT_HOST ? '' : ' (all interfaces)'}`);
   console.log(`[tacit] candidates: ${gemini ? `Gemini ${gemini.models.join(' → ')} (labelled local fallback)` : LOCAL_MODEL} | tts: ${tts.label} | stt: ${stt?.label ?? 'none (no whisper model)'}`);
   console.log(`[tacit] auth: ${auth.disabled ? 'DISABLED (TACIT_AUTH=off, local dev only)' : 'required — run `npm run links` for the user/caller URLs'}`);
   console.log(`[tacit] turn logging: ${turnLog.get().mode} (retention ${turnLog.get().retentionDays} d)`);
