@@ -33,7 +33,7 @@ export function phraseMatch(x: unknown): PhraseMatch | null {
 export type Recognizer = (input: { timesMs: number[]; frames: Buffer[] }, signal: AbortSignal) => Promise<RecognizerResult>;
 
 type Utterance = Extract<ClientMessage, { type: 'visual_utterance' }>;
-interface Pending { msg: Utterance; frames: Buffer[]; received: number; bytes: number; generation: number; reject: string | null; answered: boolean }
+interface Pending { msg: Utterance; frames: Buffer[]; received: number; bytes: number; generation: number; reject: string | null; answered: boolean; headerAt: number }
 
 export class LiveSession {
   private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, reason: 'Live is off.' };
@@ -97,7 +97,7 @@ export class LiveSession {
       if (this.seen.size >= MAX_SEEN_IDS) this.seen.delete(this.seen.values().next().value!);
       this.seen.add(msg.utteranceId);
     }
-    const p: Pending = { msg, frames: [], received: 0, bytes: 0, generation: this.status.generation, reject, answered: false };
+    const p: Pending = { msg, frames: [], received: 0, bytes: 0, generation: this.status.generation, reject, answered: false, headerAt: this.now() };
     this.pending.set(conn, p);
     if (reject) { // answer now; keep `pending` so this utterance's frames are swallowed
       p.answered = true;
@@ -129,10 +129,14 @@ export class LiveSession {
     catch (e) { err = ctl.signal.aborted ? 'Dropped: Live was paused, interrupted or ended.' : `Recognition failed: ${e instanceof Error ? e.message : String(e)}`; }
     this.inflight.delete(ctl);
     if (p.generation !== this.status.generation) err = 'Dropped: Live was paused, interrupted or ended.';
-    this.result(p.msg, r, err, this.now() - received);
+    // Observable conversation latency (additive keys in `stages`): the browser's own endpoint wait (last detected lip
+    // motion → endpoint decision, browser clock, from the header) and the upload of the frames to this server.
+    const endpointWait = p.msg.endpointMs - p.msg.endMs;
+    const extra = { ...(Number.isFinite(endpointWait) && endpointWait >= 0 ? { endpoint_wait: Math.round(endpointWait) } : {}), upload: Math.round(received - p.headerAt) };
+    this.result(p.msg, r, err, this.now() - received, extra);
   }
 
-  private result(msg: Utterance, r: RecognizerResult | null, err: string | null, ms: number): void {
+  private result(msg: Utterance, r: RecognizerResult | null, err: string | null, ms: number, extra: Record<string, number> = {}): void {
     const text = (r?.text ?? '').trim();
     const reason = err ?? (r?.error ? r.error : !text ? 'No words decoded.' : null);
     const margin = r?.gate?.nbest_margin_per_token;
@@ -141,7 +145,7 @@ export class LiveSession {
       final: true, stable: false,
       uncertainty: typeof margin === 'number' ? { value: margin, kind: 'nbest-margin-per-token', calibrated: false } : null,
       model: r?.model ?? 'unavailable', source: 'visual-model', decision: reason ? 'abstained' : 'shown', reason,
-      recognitionMs: ms, stages: r?.ms ?? null, gate: r?.gate ?? null, transmitted: false,
+      recognitionMs: ms, stages: r?.ms || Object.keys(extra).length ? { ...(r?.ms ?? {}), ...extra } : null, gate: r?.gate ?? null, transmitted: false,
       phraseMatch: reason ? null : phraseMatch(r?.phrase),
     };
     this.send({ type: 'recognition_hypothesis', hypothesis: h });

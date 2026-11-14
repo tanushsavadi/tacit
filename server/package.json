@@ -26,7 +26,9 @@
     "speech:check": "tsx scripts/speech-check.ts",
     "preflight": "tsx scripts/preflight.ts",
     "live:stress": "tsx scripts/live-stress.ts",
-    "ui:check": "node scripts/ui-check.mjs"
+    "ui:check": "node scripts/ui-check.mjs",
+    "live:replay": "tsx scripts/live-replay.ts",
+    "live:test": "tsx scripts/live-test.ts"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",
