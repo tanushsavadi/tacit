@@ -1,6 +1,6 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~09:00 UTC
+**Last updated:** 2026-11-14 ~09:20 UTC
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: GPT-6 Sol → `docs/WORKSTREAM_SOL.md`.
 **Product:** Mode 2 only — silent speech → the user's voice (AGENTS.md top). Live Silent Speech is enabled once per
 session with pause/mute/stop; no per-utterance confirmation; **automatic transmission stays disabled until the
@@ -28,6 +28,11 @@ then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
 - **Next (needs the user):** `cd recognition && .venv/bin/python record_webcam.py --name s1` (10 prompts × silent/voiced
   + 3 own sentences, video only), then `.venv/bin/python -m tacit_vsr.eval_session <dir>`. Silent vs voiced WER on the
   same prompts separates "silent articulation" from "webcam domain".
+
+## AirPods deliberate articulation w3 → w4: NO-GO (pre-registered; details in docs/research/AIRPODS_SILENT_SPEECH.md)
+- w4 held-out primary 26% (13/50, p=0.19 vs 20%); strongest baseline rhythm-ROCKET 42%; frozen threshold accepted 1/50
+  words, 2/20 control false accepts. Bud changed L (w3) → R (w4). Within-session w3 73% did not generalize.
+- AirPods motion remains useful only as an articulation-activity signal (candidate Live endpointing aid), not words.
 
 ## AirPods: hardware audit + fusion plan (w3/w4 untouched: recorder, probe binary, features and heldout script unchanged)
 - Inventory table: `docs/research/AIRPODS_SILENT_SPEECH.md`. Usable = one fused ~50 Hz motion stream (accel, rotation,
