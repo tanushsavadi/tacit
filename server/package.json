@@ -29,6 +29,7 @@
     "ui:check": "node scripts/ui-check.mjs",
     "live:replay": "tsx scripts/live-replay.ts",
     "live:test": "tsx scripts/live-test.ts",
+    "review": "tsx scripts/review.ts",
     "reviewed:check": "tsx scripts/reviewed-check.ts"
   },
   "dependencies": {
