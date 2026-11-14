@@ -27,7 +27,9 @@ export const MAX_TYPED_CHARS = 500;
 export const MAX_PENDING = 4;
 
 interface Synth { synth(text: string, format?: 'file', signal?: AbortSignal): Promise<TtsResult>; label: string }
-interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean }
+interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean; prepared: boolean }
+/** Local pre-synthesis of displayed candidates (TtsCache: obeys the voice policy). Never sends anything by itself. */
+export interface Presynth { prepare(texts: string[]): void; get(text: string): Promise<TtsResult> }
 const REVIEW_CHOICES: readonly ReviewChoice[] = ['raw', 'alternative', 'phrase', 'edited'];
 
 /**
@@ -48,9 +50,21 @@ export class SpeechOutput extends EventEmitter {
   private active = new Set<Req>();   // synthesizing or in the route
   private working = false;
   private seen = new Set<string>();
+  private presynth: Presynth | null = null;
 
   constructor(private tts: Synth, private route: () => OutputRoute | null, private unconfigured: () => VoiceRouteStatus,
               private gate: ReliabilityGate = UNVALIDATED_GATE, private now = () => Date.now()) { super(); }
+
+  usePresynth(p: Presynth): void { this.presynth = p; }
+
+  /**
+   * A recognition was SHOWN: while voice output is on, synthesize its exact candidates locally so an explicit Speak
+   * starts sooner. Audio stays on this Mac until speakReviewed accepts a request.
+   */
+  prepareReviewed(h: RecognitionHypothesis): void {
+    if (!this.presynth || this.st.state !== 'ready' || h.decision !== 'shown' || !h.reviewCandidates?.length) return;
+    this.presynth.prepare(h.reviewCandidates.map((c) => speakableCase(c.text)));
+  }
 
   routeStatus(): VoiceRouteStatus { return this.route()?.status() ?? this.unconfigured(); }
 
@@ -172,7 +186,7 @@ export class SpeechOutput extends EventEmitter {
       if (msg.textHash !== c.textHash || c.textHash !== sha256Hex(c.text)) return refuse('Text hash mismatch.');
       say = speakableCase(c.text);
     }
-    this.enqueue(d, say);
+    this.enqueue(d, say, choice !== 'edited');
     if (d.state !== 'refused') this.remember(once); // a route/queue refusal leaves the utterance speakable
   }
 
@@ -185,7 +199,7 @@ export class SpeechOutput extends EventEmitter {
     return { requestId, outputAuthorizationId: this.st.authorizationId, generation: this.st.generation, source, text, state: 'queued', reason: null, voice: null, remoteAudibility: 'unknown', timings: { requestedAt: this.now() } };
   }
 
-  private enqueue(d: SpeechDelivery, say = d.text): void {
+  private enqueue(d: SpeechDelivery, say = d.text, prepared = false): void {
     const route = this.route();
     if (!route || route.status().state !== 'ready') {
       d.state = 'refused'; d.reason = `Virtual microphone not ready: ${this.routeStatus().reason ?? this.routeStatus().state}.`; d.timings.endedAt = this.now();
@@ -195,7 +209,7 @@ export class SpeechOutput extends EventEmitter {
       d.state = 'refused'; d.reason = `Too many messages waiting (${MAX_PENDING}); wait or stop.`; d.timings.endedAt = this.now();
       return this.deliver(d);
     }
-    this.waiting.push({ d, say, generation: this.st.generation, abort: new AbortController(), routed: false });
+    this.waiting.push({ d, say, prepared, generation: this.st.generation, abort: new AbortController(), routed: false });
     this.deliver(d);
     this.announce();
     void this.work();
@@ -210,7 +224,7 @@ export class SpeechOutput extends EventEmitter {
         this.active.add(r);
         r.d.state = 'synthesizing'; r.d.timings.synthStartAt = this.now(); this.deliver(r.d);
         let audio: TtsResult;
-        try { audio = await this.tts.synth(r.say, 'file', r.abort.signal); } catch (e) {
+        try { audio = await (r.prepared && this.presynth ? this.presynth.get(r.say) : this.tts.synth(r.say, 'file', r.abort.signal)); } catch (e) {
           if (this.active.has(r)) this.finish(r, 'failed', `Speech synthesis failed: ${e instanceof Error ? e.message : String(e)}. Nothing was sent.`);
           continue;
         }

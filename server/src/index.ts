@@ -17,7 +17,7 @@ import type { ClientMessage, ServerMessage, TurnLogMode } from '../../shared/pro
 import { Controller } from './controller.ts';
 import { DEFAULT_GEMINI_MODELS, geminiGenerator, localGenerator, LOCAL_MODEL, withLabelledFallback } from './candidates.ts';
 import { BrowserCall, SimCall } from './calls.ts';
-import { checkElevenLabsVoice, createTts } from './tts.ts';
+import { TtsCache, checkElevenLabsVoice, createTts } from './tts.ts';
 import { launchWhisperServer, whisperCpp, whisperServer, withSttFallback, type Stt } from './stt.ts';
 import { TwilioCall, twiml, validTwilioSignature } from './twilio.ts';
 import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig } from './auth.ts';
@@ -197,6 +197,7 @@ controller.on('cue', (cue) => broadcast({ type: 'cue', cue }));
 let route: RouteHelper | null = null;
 let routeFallback: VoiceRouteStatus = unconfiguredRoute('Checking for the virtual microphone…');
 const speech = new SpeechOutput(tts, () => route, () => routeFallback);
+speech.usePresynth(new TtsCache(tts, 'file')); // reviewed candidates, local only, under the voice policy
 speech.on('status', (status) => { broadcast({ type: 'output_status', status }); controller.setServices({ voiceRoute: status.route }); });
 speech.on('delivery', (delivery) => {
   broadcast({ type: 'speech_delivery', delivery });
@@ -212,6 +213,7 @@ const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m) => {
   // Unreachable today: Live refuses 'automatic' and the speech gate is UNVALIDATED_GATE. Kept so the only path from
   // recognition to voice is the policy-checked one.
   if (m.type === 'recognition_hypothesis' && live.current.mode === 'automatic') speech.speakRecognized(m.hypothesis, live.current);
+  if (m.type === 'recognition_hypothesis') speech.prepareReviewed(m.hypothesis); // pre-synthesis only; never plays
 });
 
 let liveOwner: WebSocket | null = null;

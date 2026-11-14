@@ -323,6 +323,38 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     expect(terminal('p')).toEqual([expect.objectContaining({ state: 'interrupted', source: 'reviewed-recognition' })]);
   });
 
+  it('pre-synthesis: with output ON, shown candidates are prepared locally (never sent); Speak uses the prepared audio', async () => {
+    const { out, route, synthCalls, req, deliveries } = rig();
+    const prepared: string[][] = [], got: string[] = [];
+    out.usePresynth({ prepare: (t) => { prepared.push(t); }, get: async (t) => { got.push(t); return { audio: Buffer.from('RIFF'), mime: 'audio/wav', requestTs: 0, firstByteTs: 0, voice: 'v' }; } });
+    out.prepareReviewed(target());
+    expect(prepared).toEqual([['I need help with the', 'I need help with this', 'Call the doctor']]);
+    expect(route.plays).toHaveLength(0);
+    expect(deliveries).toHaveLength(0); // preparing emits nothing and plays nothing
+    out.speakReviewed(req({ requestId: 'pre' }), live, target());
+    await tick();
+    expect(got).toEqual(['I need help with this']);
+    expect(synthCalls).toEqual([]);
+    expect(route.plays.map((p) => p.id)).toEqual(['pre']);
+  });
+
+  it('pre-synthesis does nothing while output is off/paused or for abstained results; typed speech never uses it', async () => {
+    const { out, req: _r, synthCalls } = rig();
+    const prepared: string[][] = [], got: string[] = [];
+    out.usePresynth({ prepare: (t) => { prepared.push(t); }, get: async (t) => { got.push(t); return { audio: Buffer.from('RIFF'), mime: 'audio/wav', requestTs: 0, firstByteTs: 0, voice: 'v' }; } });
+    out.prepareReviewed(target({ decision: 'abstained', reviewCandidates: undefined }));
+    out.control('pause');
+    out.prepareReviewed(target());
+    out.control('stop');
+    out.prepareReviewed(target());
+    expect(prepared).toEqual([]);
+    out.control('enable');
+    typed(out, 't1', 'hello');
+    await tick();
+    expect(got).toEqual([]);
+    expect(synthCalls).toEqual(['hello']);
+  });
+
   it('speakableCase only re-cases ALL-CAPS model output; user casing is untouched', () => {
     expect(speakableCase("I'M TIRED AND I WANT TO GO")).toBe("I'm tired and I want to go");
     expect(speakableCase("IT'S ELEVEN O'CLOCK")).toBe("It's eleven o'clock");
