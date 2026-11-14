@@ -173,7 +173,8 @@ final class TacitClient: ObservableObject {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
         guard let auth = output?.authorizationId, output?.state == "ready" else { notice = "Turn voice output on first."; return }
-        send(["type": "speak_typed", "requestId": UUID().uuidString, "outputAuthorizationId": auth, "text": t])
+        // outputGeneration: if output was paused/interrupted after this was written, the server refuses it.
+        send(["type": "speak_typed", "requestId": UUID().uuidString, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1])
     }
 
     /// Stop everything: ends Live and voice output (cuts audio that has not been played yet).
