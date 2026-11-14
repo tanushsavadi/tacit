@@ -1,0 +1,33 @@
+{
+ "trainedOn": "2026-11-14T08-52-38-897Z-words-w3",
+ "trainHash": "4a83a9aac912d1f9",
+ "words": [
+  "yes",
+  "no",
+  "hello",
+  "water",
+  "help"
+ ],
+ "primary": "rocket/cue/att",
+ "secondary": [
+  "dtw/cue/rot",
+  "rocket/cue/att"
+ ],
+ "threshold": 0.6357986944957914,
+ "baselines": [
+  "rhythm-dtw",
+  "rhythm-rocket",
+  "duration",
+  "energy",
+  "timing-bundle"
+ ],
+ "baselineSegment": "cue",
+ "kernels": 1000,
+ "seed": 1,
+ "criteria": {
+  "statistical": "primary forced-choice word accuracy on w4: one-sided binomial p<0.05 vs 20% chance AND ≥15 points above EVERY baseline AND exact McNemar p<0.05 vs the strongest baseline on w4",
+  "practical": "at the frozen threshold on w4: accepted-word precision ≥80%, coverage ≥30% of word trials, control false accepts ≤2/20",
+  "decision": "GO = statistical AND practical; INCONCLUSIVE = statistical without practical, OR (beats chance p<0.05 AND practical) without beating baselines — the latter means usable timing-based command classification, not articulation evidence; NO-GO otherwise"
+ },
+ "created": "2026-11-14T09:01:07.591Z"
+}
