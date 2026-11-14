@@ -1,0 +1,44 @@
+"""Recorder CLI parsing (no camera). Run: cd recognition && .venv/bin/python -m unittest discover -s tests"""
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import record_webcam as rw  # noqa: E402
+
+
+class ModeParsing(unittest.TestCase):
+    def test_default_both_modes(self):
+        self.assertEqual(rw.parse_modes("silent,voiced"), ["silent", "voiced"])
+
+    def test_empty_and_none_disable_prompts(self):
+        for t in ("", "  ", "none", "NONE"):
+            self.assertEqual(rw.parse_modes(t), [], t)
+
+    def test_whitespace_case_and_duplicates(self):
+        self.assertEqual(rw.parse_modes(" Silent , silent "), ["silent"])
+
+    def test_unknown_or_blank_entries_rejected(self):
+        for t in ("whisper", "silent,", "silent,,voiced", "silnet"):
+            with self.assertRaises(ValueError, msg=t):
+                rw.parse_modes(t)
+
+
+class Plan(unittest.TestCase):
+    def test_empty_modes_with_free_records_only_own_sentences(self):
+        self.assertEqual(rw.plan(rw.parse_modes(""), 3), [])
+
+    def test_prompts_times_modes(self):
+        items = rw.plan(["silent"], 0, ["a", "b"])
+        self.assertEqual(items, [("a", "silent"), ("b", "silent")])
+        self.assertTrue(all(m in rw.VALID_MODES for _, m in rw.plan(["silent", "voiced"], 0)))
+
+    def test_nothing_to_record_rejected(self):
+        with self.assertRaises(ValueError):
+            rw.plan([], 0)
+        with self.assertRaises(ValueError):
+            rw.plan(["silent"], -1)
+
+
+if __name__ == "__main__":
+    unittest.main()

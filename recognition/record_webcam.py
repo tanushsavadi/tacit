@@ -1,5 +1,6 @@
 """Record webcam clips for VSR evaluation. VIDEO ONLY — the audio device is never opened ("<cam>:none").
     .venv/bin/python record_webcam.py --name s1 [--modes silent,voiced] [--free 3] [--camera N]
+    .venv/bin/python record_webcam.py --name t1 --modes none --free 5   only your own sentences, silent
     .venv/bin/python record_webcam.py --check      lighting/framing check only (records 2 s, keeps nothing)
 Each prompt is recorded once per mode (silent = articulate with no sound; voiced = speak normally — still no audio is
 captured; it is a control that separates "silent articulation" from "webcam domain"). Clips + manifest.jsonl go to
@@ -24,6 +25,32 @@ PROMPTS = [
 ]
 
 
+VALID_MODES = ("silent", "voiced")
+
+
+def parse_modes(text: str) -> list[str]:
+    """'silent,voiced' → ['silent', 'voiced']; '' / 'none' → [] (no predefined prompts). Unknown modes are an error
+    (an empty or misspelt mode used to record every prompt with a blank label)."""
+    t = text.strip().lower()
+    if t in ("", "none"):
+        return []
+    modes = [m.strip() for m in t.split(",")]
+    bad = [m for m in modes if m not in VALID_MODES]
+    if bad:
+        raise ValueError(f"unknown mode(s) {bad}; use any of {list(VALID_MODES)}, or '' / none for no predefined prompts")
+    return list(dict.fromkeys(modes))
+
+
+def plan(modes: list[str], free: int, prompts: list[str] = PROMPTS) -> list[tuple[str, str]]:
+    """(prompt, mode) pairs for the predefined prompts (shuffled by the caller). Raises if nothing would be recorded."""
+    if free < 0:
+        raise ValueError("--free must be ≥ 0")
+    items = [(p, m) for p in prompts for m in modes]
+    if not items and free == 0:
+        raise ValueError("nothing to record: give --modes and/or --free N")
+    return items
+
+
 def camera_index(name_hint: str | None) -> str:
     out = subprocess.run(["ffmpeg", "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""], capture_output=True, text=True).stderr
     video = out.split("AVFoundation video devices:")[1].split("AVFoundation audio devices:")[0]
@@ -39,7 +66,7 @@ def record(cam: str, path: Path, seconds: float, prompt: str, mode: str) -> None
     how = "ARTICULATE SILENTLY (no voice, no whisper)" if mode == "silent" else "SPEAK NORMALLY"
     print(f"\n  >>> {how}:  \"{prompt}\"")
     input("      press Enter, wait for GO …")
-    p = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-framerate", "30", "-video_size", "1280x720",
+    p = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-pixel_format", "nv12", "-framerate", "30", "-video_size", "1280x720",
                           "-i", f"{cam}:none", "-t", str(seconds), "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", "-y", str(path)])
     time.sleep(1.0)
     print("      GO")
@@ -63,7 +90,7 @@ def capture_check(cam: str) -> bool:
         print("lighting check: look at the camera and say nothing for 2 s …")
         err = ""
         for _ in range(3):  # opening the camera right after another open (device listing) can fail transiently
-            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-framerate", "30", "-video_size", "1280x720",
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-pixel_format", "nv12", "-framerate", "30", "-video_size", "1280x720",
                                 "-i", f"{cam}:none", "-t", "2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-an", "-y", str(f)],
                                capture_output=True, text=True)
             if r.returncode == 0 and f.exists() and f.stat().st_size > 0:
@@ -99,13 +126,20 @@ def capture_check(cam: str) -> bool:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="s1")
-    ap.add_argument("--modes", default="silent,voiced")
+    ap.add_argument("--modes", default="silent,voiced", help="comma list of silent,voiced; '' or none = no predefined prompts")
     ap.add_argument("--free", type=int, default=3, help="extra prompts you choose and type yourself")
     ap.add_argument("--seconds", type=float, default=5.5)
     ap.add_argument("--camera", default=None, help="camera name substring (default: first non-screen device)")
     ap.add_argument("--check", action="store_true", help="lighting/framing check only")
     ap.add_argument("--skip-check", action="store_true", help="record even if the lighting check warns")
     a = ap.parse_args()
+    if not a.check:  # validate before touching the camera or creating a session folder
+        try:
+            modes = parse_modes(a.modes)
+            items = plan(modes, a.free)
+        except ValueError as e:
+            raise SystemExit(f"error: {e}")
+        print(f"plan: {len(items)} predefined clips ({', '.join(modes) or 'none'}) + {a.free} of your own sentences (silent)")
     cam = camera_index(a.camera)
     while not capture_check(cam):
         if a.check or a.skip_check:
@@ -116,8 +150,6 @@ def main() -> None:
         return
     out = Path(__file__).resolve().parent / "data" / "webcam" / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{a.name}"
     out.mkdir(parents=True, exist_ok=True)
-    modes = a.modes.split(",")
-    items = [(p, m) for p in PROMPTS for m in modes]
     random.shuffle(items)
     print("Face the camera, normal lighting, mouth fully visible. Audio is NOT recorded.")
     with open(out / "manifest.jsonl", "a") as man:
