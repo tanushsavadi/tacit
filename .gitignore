@@ -1,0 +1,28 @@
+# --- secrets (never commit) ---
+.env
+.env.*
+!.env.example
+**/data/secrets.json
+# --- personal / recorded data (faces, motion, conversation logs) ---
+server/data/
+recognition/data/
+airpods/data/
+# --- large or re-downloadable artifacts ---
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+server/models/
+third_party/
+recognition/eval/clips/
+airpods/.build/
+voice/.cache/
+dist/
+# --- local tooling state ---
+.DS_Store
+.playwright-mcp/
+.impeccable/
+**/.impeccable/
+.codex/
+.cursor/
+*.log
