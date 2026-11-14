@@ -1,0 +1,311 @@
+/**
+ * TACIT shared protocol — the single source of truth for what the server
+ * controller publishes and what the web client may send. Imported by both
+ * `server/` and `web/` via relative path. Types only (plus tiny constants).
+ */
+
+export type Phase =
+  | 'DISCONNECTED'
+  | 'LISTENING'
+  | 'TRANSCRIBING'
+  | 'GENERATING'
+  | 'OPTIONS_READY'
+  | 'SELECTING'
+  | 'AWAITING_CONFIRMATION'
+  | 'SYNTHESIZING'
+  | 'SPEAKING'
+  | 'ABSTAINED'
+  | 'CANCELLED'
+  | 'ERROR';
+
+/** Phases in which the current candidate set is on screen and a selection may begin. */
+export const SELECTABLE_PHASES: readonly Phase[] = ['OPTIONS_READY', 'ABSTAINED', 'CANCELLED'];
+
+export type Transport = 'twilio-pstn' | 'twilio-client' | 'browser-ws' | 'simulated';
+
+export type SelectionSource = 'mouth' | 'tap' | 'head';
+export type ConfirmSource = 'nod' | 'key' | 'tap' | 'dwell';
+export type CancelSource = 'shake' | 'key' | 'tap' | 'timeout' | 'superseded';
+
+export type CandidateMode = 'baseline' | 'viseme-aware';
+
+export interface CandidateOption {
+  index: number;
+  text: string;
+  /** Short label of the meaning this option carries (e.g. "agree", "decline"). */
+  intent: string;
+  /** Which of the model's phrasings for this intent was picked (0 = the model's first choice). */
+  phrasingIndex: number;
+}
+
+/** Text-side estimate of how visually different the options are when mouthed. Heuristic, not a measurement. */
+export interface DistinguishabilityInfo {
+  /** Smallest pairwise viseme distance among the displayed options (0..1, higher = easier to tell apart). */
+  minPairwise: number;
+  /** Same statistic for the baseline choice (the model's first phrasing of each intent). */
+  baselineMinPairwise: number;
+  matrix: number[][];
+  source: string;
+}
+
+export interface CandidateSet {
+  id: string;
+  turnId: string;
+  forUtteranceId: string;
+  mode: CandidateMode;
+  options: CandidateOption[];
+  distinguishability: DistinguishabilityInfo | null;
+  model: string;
+  generatedAt: number;
+  generationMs: number;
+  /** How many times alternatives were requested within this turn. */
+  alternativesRound: number;
+}
+
+export interface RecognitionScore {
+  text: string;
+  logLik: number;
+  lengthNormLogLik: number;
+  /** Softmax over the displayed candidates only — a relative ranking, NOT a calibrated probability. */
+  relativeProb: number;
+}
+
+export interface RecognitionResult {
+  candidateSetId: string;
+  model: string;
+  method: string;
+  scores: RecognitionScore[];
+  bestIndex: number;
+  margin: number;
+  freeDecode: { text: string; lengthNormLogLik: number } | null;
+  abstain: boolean;
+  abstainReason: string | null;
+  framesUsed: number;
+  fps: number;
+  window?: { startMs: number; endMs: number };
+  timings: { decodeMs: number; preprocessMs: number; inferenceMs: number; totalMs: number };
+}
+
+export interface Proposal {
+  id: string;
+  candidateSetId: string;
+  index: number;
+  text: string;
+  source: SelectionSource;
+  proposedAt: number;
+  /** Confirmations before this instant are ignored (guards against a gesture already in flight). */
+  confirmableAt: number;
+  expiresAt: number;
+  /** How a non-tap selection was made, e.g. 'neutral-calibrated-mouth-gestures-v1' (gesture mapping, not lip-reading). */
+  method?: string;
+}
+
+export type SpeechState = 'requested' | 'first_audio' | 'sent' | 'played' | 'cancelled' | 'failed';
+
+export interface SpeechStatus {
+  replyId: string;
+  text: string;
+  state: SpeechState;
+  confirmedBy: ConfirmSource;
+  requestedAt: number;
+  /** The voice that actually spoke this reply (set once audio was produced; names any fallback). */
+  voice?: string;
+}
+
+export interface TranscriptEntry {
+  role: 'caller' | 'user';
+  text: string;
+  ts: number;
+  /** For user entries: how the reply was selected and confirmed. */
+  via?: { selection: SelectionSource; confirm: ConfirmSource };
+}
+
+/** Real event timestamps (epoch ms) for one conversational turn. Absent = the event did not happen. */
+export interface TurnTimestamps {
+  callerSpeechEnd?: number;
+  transcriptFinal?: number;
+  generationRequested?: number;
+  candidatesReady?: number;
+  candidatesDisplayed?: number;
+  selectionStart?: number;
+  recognitionResult?: number;
+  proposal?: number;
+  confirmation?: number;
+  ttsRequest?: number;
+  ttsFirstByte?: number;
+  firstAudioSent?: number;
+  lastAudioSent?: number;
+  /** Only set when the transport provides a genuine acknowledgment; see `playbackAckKind`. */
+  playbackAck?: number;
+}
+
+export type TurnOutcome = 'spoken' | 'superseded' | 'rejected_all' | 'call_ended' | 'error' | 'open';
+
+export interface TurnRecord {
+  turnId: string;
+  sessionId: string;
+  transport: Transport;
+  utteranceId: string;
+  callerText: string;
+  candidateMode: CandidateMode | null;
+  options: string[];
+  t: TurnTimestamps;
+  selectionAttempts: number;
+  abstentions: number;
+  cancellations: number;
+  alternativesRequested: number;
+  selectionSource: SelectionSource | null;
+  /** Proposal.method of the confirmed proposal, when any. */
+  selectionMethod?: string;
+  confirmSource: ConfirmSource | null;
+  chosenIndex: number | null;
+  spokenText: string | null;
+  /** Summary of the recognition that produced the confirmed proposal (mouth selections only). */
+  recognition: Pick<RecognitionResult, 'method' | 'model' | 'margin' | 'bestIndex' | 'timings'> | null;
+  playbackAckKind: string | null;
+  /** Duration of the synthesized reply audio, when known. Playback-ack latency includes this. */
+  audioMs?: number;
+  /** Evaluation trials only: the option the participant was asked to select. */
+  targetIndex: number | null;
+  outcome: TurnOutcome;
+}
+
+export interface AirpodsStatus {
+  helper: 'not_started' | 'running' | 'exited' | 'unavailable';
+  authorized: string | null;
+  available: boolean;
+  connected: boolean;
+  detail: string | null;
+  lastGesture: { gesture: 'nod' | 'shake'; t: number; accepted: boolean; reason: string } | null;
+  lastMotionAt: number | null;
+}
+
+/**
+ * Persistent turn logging. Default 'off' (nothing written to disk). 'timings' = timestamps/outcomes only, no
+ * conversation text. 'full' = includes caller text, options and the spoken reply. Files older than
+ * `retentionDays` are pruned at startup and hourly; `delete_turn_logs` erases everything immediately.
+ */
+export type TurnLogMode = 'off' | 'timings' | 'full';
+export interface TurnLogStatus {
+  mode: TurnLogMode;
+  retentionDays: number;
+  /** Who enabled it: 'user' = consent given in the UI this session, 'env' = operator config (TACIT_LOG_TURNS). */
+  source: 'default' | 'env' | 'user';
+  changedAt: number | null;
+  storedTurns: number;
+}
+
+/** Which voice speaks, and what the USER has approved this session (`set_voice_policy`). Defaults: both false. */
+export interface VoicePolicyStatus {
+  personalConfigured: boolean;
+  /** Configured and passed the startup check (cloned voice). */
+  personalAvailable: boolean;
+  personalVoice: string | null;
+  personalError: string | null;
+  systemVoice: string;
+  /** If true, the system voice may be substituted when the personal voice fails (audio labelled SUBSTITUTED). */
+  allowSystemFallback: boolean;
+  /** If true, the personal voice may pre-synthesize displayed options before confirmation (never sent before it). */
+  personalPresynth: boolean;
+  /** Whether speculative pre-synthesis currently runs (always for the local system voice unless TTS_PRESYNTH=off). */
+  presynthActive: boolean;
+}
+
+export interface ServiceStatus {
+  gemini: { configured: boolean; model: string | null };
+  logging?: TurnLogStatus;
+  voicePolicy?: VoicePolicyStatus;
+  recognition: { reachable: boolean; model: string | null; device: string | null; checkedAt: number | null };
+  voice: { listening: boolean; publicUrl: string | null; providers: Record<string, boolean> };
+}
+
+export interface Snapshot {
+  seq: number;
+  now: number;
+  phase: Phase;
+  sessionId: string | null;
+  transport: Transport | null;
+  callStartedAt: number | null;
+  callerInterim: string;
+  transcript: TranscriptEntry[];
+  candidateSet: CandidateSet | null;
+  recognition: RecognitionResult | null;
+  proposal: Proposal | null;
+  speech: SpeechStatus | null;
+  /** Why the last proposal was withdrawn / why recognition abstained — for the banner. */
+  notice: { kind: 'abstained' | 'cancelled' | 'error' | 'info'; message: string; ts: number } | null;
+  turn: TurnRecord | null;
+  lastCompletedTurn: TurnRecord | null;
+  pendingCallerUtterance: boolean;
+  candidateModeSetting: CandidateMode;
+  airpods: AirpodsStatus;
+  services: ServiceStatus;
+}
+
+/** Messages the web client sends to the server over the control WebSocket. */
+export type ClientMessage =
+  | { type: 'candidates_displayed'; candidateSetId: string; ts: number }
+  | { type: 'selection_started'; candidateSetId: string; ts: number }
+  | { type: 'selection_aborted'; candidateSetId: string; reason: string }
+  | { type: 'tap_select'; candidateSetId: string; index: number }
+  /** Webcam head-pose selection (dwell on a left/centre/right zone). Not lip-reading. */
+  | { type: 'head_select'; candidateSetId: string; index: number }
+  /**
+   * Webcam mouth-GESTURE mapping (open/smile/pucker → option), NOT lip-reading and not a RecognitionResult.
+   * Creates a `source:'mouth'` proposal with the same confirmableAt/expiry/stale guards; confirmation stays separate.
+   */
+  | { type: 'mouth_gesture_select'; candidateSetId: string; index: number; method: string; window?: { startMs: number; endMs: number }; framesUsed?: number }
+  /** Webcam head gesture: nod confirms the given proposal, shake cancels. */
+  | { type: 'head_gesture'; gesture: 'nod' | 'shake'; proposalId?: string }
+  | { type: 'confirm'; proposalId: string; source: Exclude<ConfirmSource, 'nod'> }
+  | { type: 'cancel'; source: Exclude<CancelSource, 'shake' | 'timeout' | 'superseded'> }
+  | { type: 'request_alternatives' }
+  | { type: 'reject_all' }
+  | { type: 'set_candidate_mode'; mode: CandidateMode }
+  | { type: 'set_trial_target'; index: number | null }
+  | { type: 'sim_call_start' }
+  | { type: 'sim_caller_says'; text: string }
+  | { type: 'sim_call_end' }
+  | { type: 'hangup' }
+  /** Explicit user consent choice for persistent logging (see TurnLogStatus). */
+  | { type: 'set_turn_logging'; mode: TurnLogMode }
+  | { type: 'delete_turn_logs' }
+  /** Explicit user choices for this session; see VoicePolicyStatus. */
+  | { type: 'set_voice_policy'; allowSystemFallback?: boolean; personalPresynth?: boolean };
+
+export type ServerMessage =
+  | { type: 'snapshot'; snapshot: Snapshot }
+  | { type: 'airpods_motion'; t: number; pitch: number; roll: number; yaw: number; rotX: number; rotY: number; rotZ: number }
+  | { type: 'airpods_gesture'; t: number; gesture: 'nod' | 'shake'; accepted: boolean; reason: string }
+  | { type: 'cue'; cue: 'options' | 'proposed' | 'confirmed' | 'cancelled' | 'uncertain' }
+  /** Sent once to each authenticated user connection. `callerInvitePath` = `/?invite=…#caller` (append to the origin). */
+  | { type: 'session_info'; callerInvitePath: string; authRequired: boolean };
+
+/**
+ * Remote-caller channel (`/ws/caller`): a second browser (phone/laptop) acting as the far end of a
+ * `browser-ws` call. The caller's browser transcribes its own microphone and plays TACIT's replies.
+ * Times are sent as "ms ago" so server timestamps stay valid across machines with skewed clocks.
+ */
+export type CallerClientMessage =
+  | { type: 'hello'; name?: string }
+  | { type: 'interim'; text: string }
+  | { type: 'utterance'; utteranceId: string; text: string; speechStartAgoMs?: number; speechEndAgoMs?: number }
+  /** Sent when an `audio` reply started / finished playing on the caller's speaker. */
+  | { type: 'playback'; replyId: string; state: 'started' | 'ended' | 'failed'; detail?: string }
+  | { type: 'hangup' }
+  /**
+   * Alternative to sending `utterance` text: stream the caller's microphone as binary frames of mono
+   * little-endian 16-bit PCM at `sampleRate` (8000–48000) after this message; the server endpoints and
+   * transcribes it (whisper.cpp). Frames received while a reply is playing are ignored (echo guard).
+   */
+  | { type: 'audio_start'; sampleRate: number; encoding: 'pcm_s16le' }
+  | { type: 'audio_stop' };
+
+export type CallerServerMessage =
+  | { type: 'accepted'; sessionId: string }
+  | { type: 'rejected'; reason: string }
+  /** Followed immediately by one binary frame containing the audio file (`mime`). */
+  | { type: 'audio'; replyId: string; text: string; mime: string; voice: string; bytes: number }
+  /** Stop playing a reply (user cancelled during speech). */
+  | { type: 'stop'; replyId: string }
+  | { type: 'ended'; reason: string };
