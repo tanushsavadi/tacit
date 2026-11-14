@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
-import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, type Recognizer } from './live.ts';
+import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, MAX_INFLIGHT, type Recognizer } from './live.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 function setup(recognize?: Recognizer) {
@@ -68,6 +68,49 @@ describe('LiveSession (tacit-live-v1)', () => {
     await tick();
     expect(hyps().map((h) => [h.utteranceId, h.decision, h.reason?.slice(0, 12)])).toEqual([
       ['bad-order', 'abstained', 'Frame times '], ['big', 'abstained', 'Utterance la'], ['noface', 'abstained', 'no face trac']]);
+  });
+
+  it('answers a duplicate utteranceId once as abstained and never recognises it twice', async () => {
+    const { live, calls, hyps, status } = setup();
+    live.control({ type: 'live_control', action: 'activate' });
+    const auth = status().authorizationId!;
+    send(live, auth, 'u1');
+    send(live, auth, 'u1');
+    send(live, auth, 'u2');
+    await tick();
+    expect(calls).toHaveLength(2);
+    expect(hyps().map((h) => [h.utteranceId, h.decision, h.reason?.slice(0, 9) ?? null])).toEqual([
+      ['u1', 'abstained', 'Duplicate'], ['u1', 'shown', null], ['u2', 'shown', null]]);
+    expect(live.droppedBinary).toBe(0);
+  });
+
+  it('a new header before the previous frames completed abstains the incomplete utterance (exactly one answer each)', async () => {
+    const { live, calls, hyps, status } = setup();
+    live.control({ type: 'live_control', action: 'activate' });
+    const auth = status().authorizationId!;
+    live.utterance({ type: 'visual_utterance', utteranceId: 'cut', authorizationId: auth, startMs: 0, endMs: 1, endpointMs: 1, frameTimesMs: [1, 2, 3] });
+    live.frame(Buffer.alloc(1));
+    send(live, auth, 'next');
+    await tick();
+    expect(calls).toHaveLength(1);
+    expect(hyps().map((h) => [h.utteranceId, h.decision, h.reason?.slice(0, 10) ?? null])).toEqual([
+      ['cut', 'abstained', 'Incomplete'], ['next', 'shown', null]]);
+  });
+
+  it('bounds queued recognitions: beyond MAX_INFLIGHT the utterance abstains as busy instead of queueing', async () => {
+    const releases: (() => void)[] = [];
+    const { live, hyps, status } = setup(() => new Promise((r) => { releases.push(() => r({ text: 'HI' })); }));
+    live.control({ type: 'live_control', action: 'activate' });
+    const auth = status().authorizationId!;
+    for (let i = 0; i < MAX_INFLIGHT + 1; i++) send(live, auth, `u${i}`);
+    await tick();
+    expect(releases).toHaveLength(MAX_INFLIGHT);
+    expect(hyps()).toHaveLength(1);
+    expect(hyps()[0]).toMatchObject({ utteranceId: `u${MAX_INFLIGHT}`, decision: 'abstained' });
+    expect(hyps()[0]!.reason).toMatch(/busy/i);
+    for (const r of releases) r();
+    await tick();
+    expect(hyps().filter((h) => h.decision === 'shown')).toHaveLength(MAX_INFLIGHT);
   });
 
   it('ending Live clears authorization; frames without a header are ignored', () => {

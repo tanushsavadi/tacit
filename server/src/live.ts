@@ -8,6 +8,9 @@ export const LIVE_CAPABILITY: LiveRecognitionCapability = {
   protocol: 'tacit-live-v1', supportedInputs: ['camera'], automaticSpeechValidated: false, validationEvidence: null,
   maxFrames: 300, maxBytes: 12 * 1024 * 1024, maxDurationMs: 10_000,
 };
+/** Recognitions running or queued at the recogniser per connection; more are answered 'busy' rather than queued. */
+export const MAX_INFLIGHT = 2;
+const MAX_SEEN_IDS = 512;
 export const AUTOMATIC_GATED = 'Automatic transmission is gated until silent-speech reliability is validated on real silent recordings.';
 
 export interface RecognizerResult {
@@ -23,6 +26,8 @@ export class LiveSession {
   private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, reason: 'Live is off.' };
   private pending: Pending | null = null;
   private inflight = new Set<AbortController>();
+  /** utteranceIds already answered under the current authorization (exactly one recognition per id). */
+  private seen = new Set<string>();
   droppedBinary = 0;
 
   constructor(private recognize: Recognizer, private send: (m: ServerMessage) => void, private now = () => Date.now()) {}
@@ -41,6 +46,7 @@ export class LiveSession {
       case 'activate':
         if ((msg.mode ?? 'display-only') === 'automatic') { this.status = { ...s, reason: AUTOMATIC_GATED }; break; }
         if (msg.inputSource && msg.inputSource !== 'camera') { this.status = { ...s, reason: 'Only camera input is supported by this recogniser.' }; break; }
+        this.seen.clear();
         bump({ authorizationId: randomUUID(), state: 'active', mode: 'display-only', reason: 'Live (display only): recognised words are shown to you, not spoken.' });
         break;
       case 'pause': if (s.state === 'active') bump({ state: 'paused', reason: 'Paused.' }); break;
@@ -48,19 +54,32 @@ export class LiveSession {
       case 'interrupt': bump({ reason: s.state === 'off' ? s.reason : 'Interrupted: pending utterances dropped.' }); break;
       case 'end': bump({ authorizationId: null, state: 'off', reason: 'Live ended.' }); break;
     }
-    this.pending = null;
+    this.abandonPending('Incomplete: Live control changed before all frames arrived.');
     this.announce();
+  }
+
+  private abandonPending(reason: string): void {
+    const p = this.pending;
+    this.pending = null;
+    if (p && !p.answered) this.result(p.msg, null, reason, 0);
   }
 
   /** Header for one utterance; the next frameTimesMs.length binary messages are its JPEG frames. */
   utterance(msg: Utterance): void {
     const t = msg.frameTimesMs, L = LIVE_CAPABILITY;
+    this.abandonPending('Incomplete: a new utterance header arrived before all frames of this one.');
     let reject: string | null = null;
     if (this.status.state !== 'active') reject = `Live is ${this.status.state}.`;
     else if (msg.authorizationId !== this.status.authorizationId) reject = 'Stale authorization.';
+    else if (typeof msg.utteranceId !== 'string' || !msg.utteranceId) reject = 'Missing utteranceId.';
+    else if (this.seen.has(msg.utteranceId)) reject = 'Duplicate utteranceId: already answered under this authorization.';
     else if (!Array.isArray(t) || t.length < 1 || t.length > L.maxFrames) reject = `Need 1–${L.maxFrames} frames.`;
     else if (!t.every((x, i) => Number.isFinite(x) && (i === 0 || x > t[i - 1]!))) reject = 'Frame times must be finite and strictly increasing.';
     else if (t.at(-1)! - t[0]! > L.maxDurationMs) reject = `Utterance longer than ${L.maxDurationMs} ms.`;
+    if (!reject) {
+      if (this.seen.size >= MAX_SEEN_IDS) this.seen.delete(this.seen.values().next().value!);
+      this.seen.add(msg.utteranceId);
+    }
     this.pending = { msg, frames: [], bytes: 0, generation: this.status.generation, reject, answered: false };
     if (reject) { // answer now; keep `pending` so this utterance's frames are swallowed
       this.pending.answered = true;
@@ -76,6 +95,7 @@ export class LiveSession {
     if (!p.reject && p.bytes > LIVE_CAPABILITY.maxBytes) p.reject = `Utterance larger than ${LIVE_CAPABILITY.maxBytes} bytes.`;
     if (p.frames.length < p.msg.frameTimesMs.length) return;
     this.pending = null;
+    if (!p.reject && this.inflight.size >= MAX_INFLIGHT) p.reject = 'Recogniser busy: earlier utterances are still being recognised; this one was dropped, not queued.';
     if (p.reject) { if (!p.answered) this.result(p.msg, null, p.reject, 0); return; }
     void this.run(p);
   }
