@@ -58,7 +58,17 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--device", default="mps" if torch.backends.mps.is_available() else "cpu")
+    ap.add_argument("--parent-pid", type=int, default=None, help="exit when this process (the Node server) is gone")
     a = ap.parse_args()
+    if a.parent_pid:
+        def watch() -> None:
+            while True:
+                time.sleep(1)
+                try:
+                    os.kill(a.parent_pid, 0)
+                except OSError:
+                    os._exit(0)
+        threading.Thread(target=watch, daemon=True).start()
     svc = Service(a.device)
 
     class Handler(BaseHTTPRequestHandler):
