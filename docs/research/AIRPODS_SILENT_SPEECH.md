@@ -117,3 +117,27 @@ Six sessions (w1L, w2L subtle; oR1, oR2 R default; w3L, w4R deliberate; 310 word
 Interpretation: stock-AirPods motion carries some word-specific information beyond rhythm once the bud mirror and
 session pooling are handled (≈48% on 5 words, single user), far below a usable or open-vocabulary level, and with no sign
 yet of transfer to unseen words.
+
+## Technical feasibility decision (2026-11-14, after the exploratory re-analysis)
+- **Channels with demonstrated word-dependent information:** only the fused head-motion stream (rotation rate +
+  user acceleration). Exploratory, pooled, bud-mirrored: 48% on 5 words vs 37% rhythm (single user). Attitude-only
+  models did not survive the bud switch. Outward mic: untested for silent articulation (no m1 session); no inward mic,
+  voice accelerometer or simultaneous L+R stream is exposed on macOS.
+- **Phoneme/viseme-level learning: not feasible with current data.** ~360 labelled word trials over 5 words give no
+  phonetic coverage; unseen-word transfer was at chance (P3). A ~50 Hz processed head-motion stream sees jaw opening and
+  rhythm, not tongue/lip place of articulation, so many visemes are physically indistinguishable in this channel.
+- **MuteIt / Unvoiced (ear-worn jaw-motion work):** papers not retrievable here (rate limit), so not characterised.
+  General sensing assumptions such systems typically rely on and that fail on stock AirPods: raw, higher-rate IMU access;
+  a sensor placed near the jaw/temporomandibular joint; dual-sided simultaneous sensing; access to on-device voice
+  accelerometer or in-ear mics. All four are unavailable via public macOS APIs.
+- **Cross-modal teacher/student (VSR teacher → AirPods student): technically possible, not yet credible as a next step.**
+  The pieces exist (record_sync.py + sync_check.py; Auto-AVSR gives per-frame encoder features and text). But the student
+  input is ~48 Hz fused motion; distilling viseme-level targets needs hours of synchronized speech, and the channel likely
+  lacks the information (P3). Worth it only after a cheap capacity test shows the motion stream predicts teacher features
+  above a rhythm-only control on held-out data.
+- **Reusable published code:** Subvox (MIT, in use), ROCKET (reimplemented), LIMU-BERT (MIT; pretrained HAR encoder did not
+  transfer, ≈ chance), Auto-AVSR/Chaplin (research licence weights; working as teacher/benchmark).
+- **What would need new paired data:** any distillation or viseme study (synchronized webcam + AirPods, many sentences);
+  any confirmation of the mirrored-pooling result (one fresh held-out session).
+- **Most valuable no-recording task:** the Live Silent Speech backend (done: tacit-live-v1 + local Auto-AVSR service), so
+  the frontend, segmentation and reliability-gate work can proceed; AirPods remains a research track.
