@@ -508,7 +508,7 @@ func verify(uid: String, path: String) -> Never {
         @unknown default: return "unknown"
         }
     }()
-    final class Cap { var frames = 0, loud = 0, callbacks = 0, onsetHost: UInt64 = 0, prePeak: Float = 0, peak12: Float = 0, peakRest: Float = 0, channels = 0 }
+    final class Cap { var stopHost: UInt64 = .max, loudAfterStop = 0, frames = 0, loud = 0, callbacks = 0, onsetHost: UInt64 = 0, prePeak: Float = 0, peak12: Float = 0, peakRest: Float = 0, channels = 0 }
     let cap = Cap(), lock = NSLock()
     let threshold: Float = 0.005
     let preRollMs = 300.0
@@ -534,7 +534,10 @@ func verify(uid: String, path: String) -> Never {
                 }
                 if host >= scheduledHost {
                     let v = max(abs(smp[i * ch]), (chBase == 0 && ch > 1) ? abs(smp[i * ch + 1]) : 0)
-                    if chBase == 0 && v > threshold { cap.loud += 1; if cap.onsetHost == 0 { cap.onsetHost = host } }
+                    if chBase == 0 && v > threshold {
+                        cap.loud += 1; if cap.onsetHost == 0 { cap.onsetHost = host }
+                        if host > cap.stopHost { cap.loudAfterStop += 1 }
+                    }
                 }
             }
             if chBase == 0 { cap.frames += frames }
@@ -557,6 +560,14 @@ func verify(uid: String, path: String) -> Never {
     let sched = mach_absolute_time() + hostTicks(ms: preRollMs)
     lock.lock(); scheduledHost = sched; lock.unlock()
     router.play(id: "verify", path: path, at: AVAudioTime(hostTime: sched))
+    let stopAfterMs = arg("--stop-after-ms").flatMap(Double.init)
+    if let stopAfterMs {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (preRollMs + stopAfterMs) / 1000) {
+            let h = mach_absolute_time()
+            router.stop(reason: "verify: stop requested")
+            lock.lock(); cap.stopHost = h; lock.unlock()
+        }
+    }
     let fileMs = fileFrames / router.format!.sampleRate * 1000
     let deadline = Date().addingTimeInterval((preRollMs + fileMs) / 1000 + 3)
     while !finished && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
@@ -568,7 +579,8 @@ func verify(uid: String, path: String) -> Never {
     let loudMs = Double(cap.loud) / dev.sampleRate * 1000
     let baselineQuiet = cap.prePeak < threshold
     let otherChannelsQuiet = cap.peakRest < threshold
-    let ok = baselineQuiet && cap.loud > 0 && loudMs > fileMs * 0.3 && otherChannelsQuiet
+    let expectMs = min(fileMs, stopAfterMs ?? fileMs)
+    let ok = baselineQuiet && cap.loud > 0 && loudMs > expectMs * 0.3 && otherChannelsQuiet
     var out: [String: Any] = ["loopbackVerified": ok, "device": dev.name, "uid": uid, "fileMs": round(fileMs),
                               "capturedMs": round(Double(cap.frames) / dev.sampleRate * 1000), "loudMs": round(loudMs),
                               "preRollPeak": Double(cap.prePeak), "peakCh12": Double(cap.peak12), "peakOtherChannels": Double(cap.peakRest),
@@ -579,6 +591,10 @@ func verify(uid: String, path: String) -> Never {
         let routeDb = 20 * log10(Double(cap.peak12) / Double(sentPeak))
         out["routeGainDb"] = round(routeDb * 10) / 10
         out["gainDbApplied"] = round(20 * log10(Double(gainLinear)) * 10) / 10
+    }
+    if stopAfterMs != nil, cap.stopHost != .max {
+        // Audio captured after stop() returned: the cutoff tail that already left the engine.
+        out["loudAfterStopMs"] = round(Double(cap.loudAfterStop) / dev.sampleRate * 1000 * 10) / 10
     }
     if cap.onsetHost > 0 { out["scheduleToCaptureOnsetMs"] = round(hostMs(cap.onsetHost &- sched) * 10) / 10 }
     if !ok {
