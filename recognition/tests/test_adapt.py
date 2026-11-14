@@ -11,7 +11,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from adapt import overlay  # noqa: E402
-from adapt.finetune import Clip, augment, check_hygiene, heldout_session, set_train_mode  # noqa: E402
+from adapt.finetune import Clip, apply_excludes, augment, check_hygiene, heldout_session, set_train_mode  # noqa: E402
 
 
 def clip(session, sentence, mode="silent"):
@@ -127,6 +127,17 @@ class OverlayAndModes(unittest.TestCase):
                     overlay.load_overlay(Tiny(), Path(td) / "run")
             finally:
                 overlay.config.MODEL_PATH = orig
+
+
+class Excludes(unittest.TestCase):
+    def test_exclude_by_recording_name_and_clip_stem_and_refuse_typos(self):
+        clips = [Clip("20261114T234421Z-adaptB", Path(f"/x/clip{i:02d}-silent.mp4"), "s", f"s{i}", "silent") for i in (1, 21, 22)]
+        keep, dropped = apply_excludes(clips, ["adaptB/clip21", "adaptB/clip22-silent.mp4"])
+        self.assertEqual([c.path.name for c in keep], ["clip01-silent.mp4"])
+        self.assertEqual(dropped, ["20261114T234421Z-adaptB/clip21-silent.mp4", "20261114T234421Z-adaptB/clip22-silent.mp4"])
+        for bad in ("adaptB/clip99", "adaptA/clip01", "adaptB/clip2", "clip01"):
+            with self.assertRaises(SystemExit):
+                apply_excludes(clips, [bad])
 
 
 class SessionResolution(unittest.TestCase):

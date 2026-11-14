@@ -89,6 +89,22 @@ def load_sessions(dirs: list[str], modes: set[str]) -> list[Clip]:
     return out
 
 
+def apply_excludes(clips: list[Clip], excludes: list[str]) -> tuple[list[Clip], list[str]]:
+    """Drop clips named `<recording name>/<clip stem>` (e.g. adaptB/clip21 or adaptB/clip21-silent.mp4); the session is
+    matched by its full directory name or its `-<name>` suffix. An exclude that matches nothing is refused (typo guard)."""
+    keep, dropped = list(clips), []
+    for ex in excludes:
+        name, _, stem = ex.partition("/")
+        stem = stem.removesuffix(".mp4")
+        hit = [c for c in keep if (c.session == name or c.session.endswith("-" + name))
+               and (c.path.stem == stem or c.path.stem.startswith(stem + "-"))]
+        if not name or not stem or not hit:
+            raise SystemExit(f"--exclude {ex!r} matches no clip (format: <recording name>/<clipNN>)")
+        keep = [c for c in keep if c not in hit]
+        dropped += [f"{c.session}/{c.path.name}" for c in hit]
+    return keep, dropped
+
+
 def heldout_session(d: Path) -> bool:
     if "heldout" in d.name.lower():
         return True
@@ -202,6 +218,11 @@ def git_rev() -> str:
         return "?"
 
 
+def _is_val(ex: str, val_dirs: list[str]) -> bool:
+    name = ex.partition("/")[0]
+    return any(Path(d).name == name or Path(d).name.endswith("-" + name) for d in val_dirs)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", required=True)
@@ -214,6 +235,8 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="check data hygiene and print the plan; no training")
     ap.add_argument("--max-steps", type=int, default=0, help="stop after N optimiser steps (pipeline smoke test only)")
     ap.add_argument("--out-root", default=str(ADAPT_DIR))
+    ap.add_argument("--exclude", action="append", default=[], help="drop a clip, <recording name>/<clipNN> (repeatable), "
+                    "e.g. a take replaced by a retake session; listed in meta.json")
     a = ap.parse_args()
 
     modes = set(a.train_modes.split(","))
@@ -222,8 +245,10 @@ def main() -> None:
     a.train = [str(resolve_session(s)) for s in a.train]
     a.val = [str(resolve_session(s)) for s in a.val]
     print("sessions: train " + ", ".join(Path(d).name for d in a.train) + "; validation " + ", ".join(Path(d).name for d in a.val))
-    train = load_sessions(a.train, modes)
-    val = load_sessions(a.val, {"silent"})
+    train, ex_train = apply_excludes(load_sessions(a.train, modes), [e for e in a.exclude if not _is_val(e, a.val)])
+    val, ex_val = apply_excludes(load_sessions(a.val, {"silent"}), [e for e in a.exclude if _is_val(e, a.val)])
+    if ex_train or ex_val:
+        print(f"excluded {len(ex_train) + len(ex_val)} clip(s): " + ", ".join(ex_train + ex_val))
     heldout = {strict(s) for s in read_prompts(HELDOUT_PROMPTS)}
     problems = check_hygiene(a.train, a.val, train, val, heldout)
     print(f"train {len(train)} clips ({sum(c.mode == 'silent' for c in train)} silent, {sum(c.mode == 'voiced' for c in train)} "
@@ -259,6 +284,7 @@ def main() -> None:
             "train_modes": sorted(modes), "hp": HP, "train_sessions": [Path(d).name for d in a.train],
             "val_sessions": [Path(d).name for d in a.val], "n_train": len(train), "n_val": len(val),
             "train_files": [f"{c.session}/{c.path.name}" for c in train], "val_files": [f"{c.session}/{c.path.name}" for c in val],
+            "excluded": ex_train + ex_val,
             "started": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     log = open(out / "log.jsonl", "w")
 

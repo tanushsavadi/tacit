@@ -409,6 +409,11 @@ Optional, for the voiced-supplement arm only: `--name adaptAvoiced --modes voice
 .venv/bin/python -m eval.bench --variant base --overlay data/adapt/silent1      # CREMA-D + dev sets regression
 .venv/bin/python -m eval.bench --summary base base+silent1                      # side by side with the frozen baseline
 ```
+adaptB retakes (audit 23:57 UTC — 8 takes contained a smile; see HANDOFF): record
+`record_webcam.py --name adaptBretake --modes silent --prompts prompts/adapt_v1_b_retake.txt --free 0`, then train with
+`--train adaptA --train adaptB --train adaptBretake` plus `--exclude adaptB/clip21 --exclude adaptB/clip24 --exclude
+adaptB/clip25 --exclude adaptB/clip29 --exclude adaptB/clip30 --exclude adaptB/clip34 --exclude adaptB/clip35 --exclude
+adaptB/clip46` (without the retake session: the same excludes → 93 training clips). Excludes are listed in meta.json.
 Session discovery: `--train/--val/--session` accept a bare recording name and resolve it to the single
 `data/webcam/<UTC>-<name>` whose manifest has clips (aborted empty starts ignored). Zero or several matches → refused;
 pass the directory paths instead. A `--resume`d session stays one directory, so it resolves normally; a session that

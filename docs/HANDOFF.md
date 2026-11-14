@@ -6,6 +6,20 @@
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
 
+## adaptB recording audit (2026-11-14, read-only, finished 23:57 UTC)
+`data/webcam/20261114T234421Z-adaptB` (an empty aborted `234406Z-adaptB` is ignored): 51/51 silent clips = exactly
+`adapt_v1_b.txt`, 0 overlap with adaptA/val/held-out/diagnostic/dev. All decode 1280x720, 6.0 s, 180 frames, no gaps.
+Brightness 149–161 (p50 156 vs adaptA 153), clipping ≤ 0.3 %, light more even (asymmetry p50 35 vs 47); IOD 151–163 px
+(p50 156 vs 142 — sat ~10 % closer; the crop warp normalises scale); FaceMesh 100 %. Black-frame openings (3 frames) in
+12 clips cause roll spikes only in frames < 10 (≤ 2.6° afterwards). Clips 07/19/44 settle the head in the first ~1.5 s,
+then articulate stably. Articulation slower than adaptA (p50 1.5 vs 2.2 words/s), all complete inside the clip.
+**Issue: smiles.** Sustained lip spreading (≥ 12 % wider than rest for ≥ 0.4 s): adaptA max 5 frames; adaptB 12 clips
+up to 28 frames. Frame strips confirm broad grins (teeth, raised cheeks) outside the sentence in clips 21, 24, 25, 29,
+30, 34, 35, 46; 22, 23, 41, 44 ambiguous (could be spread vowels). Smile → text is a known false-trigger mode (D.7), so
+those 8 should not be trained under sentence labels. Added (`adapt.finetune --exclude <name>/<clipNN>`, refuses
+non-matching excludes, recorded in meta.json) + `prompts/adapt_v1_b_retake.txt` (the 8 sentences). Commands: DEMO_READINESS
+E.5. Tests 38/38. Verdict: NEEDS RETAKES (8 clips, ~4 min) — or exclude them (93 training clips).
+
 ## adaptA recording audit (2026-11-14, read-only, finished 23:42 UTC)
 `data/webcam/20261114T232916Z-adaptA`: 50/50 silent clips = exactly `adapt_v1_a.txt` (0 missing/duplicate/unlisted; 0
 overlap with adapt_v1_b, adapt_val_v1, heldout_v2, diagnostic_v1, dev PROMPTS or any other recorded clip). All decode:
