@@ -31,3 +31,7 @@ web/evidence/
 web/artifacts/
 # --- frontend build output ---
 web/dist/
+
+# --- native macOS build output ---
+macos/**/.build/
+macos/**/.swiftpm/

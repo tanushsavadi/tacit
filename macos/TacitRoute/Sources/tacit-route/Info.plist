@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>edu.hackumass.tacit-route</string>
+  <key>CFBundleName</key><string>tacit-route</string>
+  <key>NSMicrophoneUsageDescription</key><string>tacit-route verify listens to the selected virtual audio input (e.g. BlackHole) to confirm TACIT's speech actually reaches it. Nothing is recorded or stored.</string>
+</dict>
+</plist>
