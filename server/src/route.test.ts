@@ -113,6 +113,16 @@ describe('RouteHelper (tacit-route supervisor)', () => {
     helper.close();
   });
 
+  it('a buffer the helper rendered as silence is reported failed, not rendered', async () => {
+    const { helper, cur } = setup();
+    cur().emit({ event: 'ready', sampleRate: 48000 }); await tick();
+    const p = helper.play('quiet', Buffer.from('RIFF'), 'audio/wav');
+    await tick(20);
+    cur().emit({ event: 'finished', id: 'quiet', renderedFrames: 48000, renderedPeak: 0 });
+    expect(await p).toMatchObject({ state: 'failed', reason: 'audio rendered as silence' });
+    helper.close();
+  });
+
   it('stop forwards to the helper; picks BlackHole 2ch over 16ch and never a non-BlackHole device by default', async () => {
     const { helper, cur } = setup();
     cur().emit({ event: 'ready', sampleRate: 48000 }); await tick();

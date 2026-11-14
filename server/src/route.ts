@@ -132,7 +132,11 @@ export class RouteHelper extends EventEmitter implements OutputRoute {
         if (o) { o.startedAt = now; o.onStarted?.(now); }
         break;
       }
-      case 'finished': this.settle(id, { state: 'rendered', startedAt: this.open.get(id)?.startedAt ?? now, renderedAt: now }); break;
+      case 'finished':
+        // The helper measures what the mixer actually rendered (reported when its queue drains): silence is not speech.
+        if (typeof e.renderedPeak === 'number' && e.renderedPeak < 1e-4) this.settle(id, { state: 'failed', reason: 'audio rendered as silence', startedAt: this.open.get(id)?.startedAt });
+        else this.settle(id, { state: 'rendered', startedAt: this.open.get(id)?.startedAt ?? now, renderedAt: now });
+        break;
       case 'interrupted': this.settle(id, { state: 'interrupted', reason: String(e.reason ?? 'interrupted'), startedAt: this.open.get(id)?.startedAt }); break;
       case 'rejected': this.settle(id, { state: 'failed', reason: String(e.reason ?? 'rejected by route') }); break;
       case 'error': if (id) this.settle(id, { state: 'failed', reason: String(e.message ?? 'route error') }); break;
