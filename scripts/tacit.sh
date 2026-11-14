@@ -11,6 +11,7 @@
 #   ./scripts/tacit.sh logs         follow the server log
 # Paths with spaces/apostrophes are fine; secrets are never printed.
 set -euo pipefail
+export PATH="$PATH:/usr/sbin:/sbin"   # lsof lives in /usr/sbin; GUI launches may not include it
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER="$ROOT/server"
 RUN="$SERVER/data/run"

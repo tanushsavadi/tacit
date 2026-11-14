@@ -11,6 +11,7 @@ BIN="$(swift build -c release --show-bin-path)/TacitCompanion"
 APP=".build/TACIT.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/TacitCompanion"
+NODE_DIR="$(dirname "$(command -v node)")"
 ROOT_XML="$(printf '%s' "$ROOT" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -26,6 +27,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>TACITRepoRoot</key><string>$ROOT_XML</string>
+  <key>TACITNodeBinDir</key><string>$NODE_DIR</string>
 </dict></plist>
 PLIST
 codesign --force --sign - --identifier edu.hackumass.tacit-companion "$APP"

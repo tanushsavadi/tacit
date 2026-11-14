@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 
 /// Connection to the local TACIT server's user WebSocket. All state lives on the main actor; when disconnected every
@@ -31,9 +32,18 @@ final class TacitClient: ObservableObject {
     private var connectGeneration = 0
     private var reconnectWork: DispatchWorkItem?
 
+    private var hotKey: HotKey?
+    @Published private(set) var hotKeyRegistered = false
+
     init() {
         repoRoot = Bundle.main.object(forInfoDictionaryKey: "TACITRepoRoot") as? String
             ?? ProcessInfo.processInfo.environment["TACIT_REPO_ROOT"]
+        // Ctrl-Shift-Cmd-. = Stop everything, from any app, registered at launch (not when the menu first opens).
+        // (Ctrl-Opt-Cmd-. is taken by macOS "Increase contrast".)
+        hotKey = HotKey(keyCode: UInt32(kVK_ANSI_Period), modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
+            Task { @MainActor in self?.stopEverything() }
+        }
+        hotKeyRegistered = hotKey?.registered ?? false
         connect()
     }
 
@@ -72,7 +82,11 @@ final class TacitClient: ObservableObject {
                 guard let self, gen == self.connectGeneration else { return }
                 switch result {
                 case .failure(let e):
-                    self.lost(e.localizedDescription)
+                    // Never surface localizedDescription/userInfo: the failing URL carries the access token.
+                    let code = (e as? URLError)?.code
+                    let down: Set<URLError.Code> = [.cannotConnectToHost, .networkConnectionLost, .timedOut, .notConnectedToInternet]
+                    self.lost(code.map { down.contains($0) } == true ? "TACIT server not running"
+                              : code == .badServerResponse ? "connection refused (token?)" : "disconnected (code \((e as NSError).code))")
                 case .success(let msg):
                     if self.conn != .connected { self.conn = .connected; self.backoff = 0.5 }
                     if case .string(let s) = msg { self.handle(s) }
@@ -84,7 +98,8 @@ final class TacitClient: ObservableObject {
 
     private func lost(_ why: String) {
         resetServerState()
-        conn = .disconnected(why.contains("Could not connect") || why.contains("refused") ? "TACIT server not running" : why)
+        lastHypothesis = nil; lastDelivery = nil
+        conn = .disconnected(why)
         let w = DispatchWorkItem { [weak self] in Task { @MainActor in self?.connect() } }
         reconnectWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + backoff, execute: w)
@@ -97,6 +112,7 @@ final class TacitClient: ObservableObject {
         switch type {
         case "live_status":
             if let st = m["status"] as? [String: Any] {
+                if (st["authorizationId"] as? String) != live?.authorizationId { lastHypothesis = nil }
                 live = Live(state: st["state"] as? String ?? "?", authorizationId: st["authorizationId"] as? String,
                             generation: st["generation"] as? Int ?? 0, reason: st["reason"] as? String ?? "")
             }
@@ -115,7 +131,7 @@ final class TacitClient: ObservableObject {
                 if let r = sv["voiceRoute"] as? [String: Any] { route = parseRoute(r) }
             }
         case "recognition_hypothesis":
-            if let h = m["hypothesis"] as? [String: Any] {
+            if let h = m["hypothesis"] as? [String: Any], (h["authorizationId"] as? String) == live?.authorizationId {
                 lastHypothesis = Hypothesis(text: h["rawText"] as? String ?? "", decision: h["decision"] as? String ?? "?",
                                             reason: h["reason"] as? String, ms: h["recognitionMs"] as? Int ?? 0, at: Date())
             }
@@ -144,10 +160,11 @@ final class TacitClient: ObservableObject {
 
     // MARK: - user actions (each is one explicit user action)
 
+    /// Pause / resume / end only. Activation belongs to the workspace that owns the camera (activating here would
+    /// mint a new authorization and cut off the browser's capture).
     func live(_ action: String) {
-        var m: [String: Any] = ["type": "live_control", "action": action]
-        if action == "activate" { m["mode"] = "display-only"; m["inputSource"] = "camera" }
-        send(m)
+        guard ["pause", "resume", "end"].contains(action) else { return }
+        send(["type": "live_control", "action": action])
     }
     func output(_ action: String) { send(["type": "output_control", "action": action]) }
 
@@ -160,6 +177,12 @@ final class TacitClient: ObservableObject {
     }
 
     /// Stop everything: ends Live and voice output (cuts audio that has not been played yet).
+    func stopEverythingAndQuit() {
+        guard conn == .connected else { NSApp.terminate(nil); return }
+        stopEverything()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NSApp.terminate(nil) }
+    }
+
     func stopEverything() {
         if conn != .connected { notice = "Not connected — nothing TACIT can be speaking through this server."; return }
         send(["type": "live_control", "action": "end"])
@@ -175,7 +198,9 @@ final class TacitClient: ObservableObject {
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
         p.arguments = [root + "/scripts/tacit.sh", "start"]
         var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
+        // GUI apps get a minimal PATH; add the node found at build time (tsx uses #!/usr/bin/env node) and Homebrew.
+        let nodeDir = Bundle.main.object(forInfoDictionaryKey: "TACITNodeBinDir") as? String ?? ""
+        env["PATH"] = [nodeDir, "/opt/homebrew/bin", "/usr/local/bin", env["PATH"] ?? "/usr/bin:/bin"].filter { !$0.isEmpty }.joined(separator: ":")
         p.environment = env
         p.currentDirectoryURL = URL(fileURLWithPath: root)
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice

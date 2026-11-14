@@ -5,19 +5,16 @@ import SwiftUI
 @main
 struct TacitCompanionApp: App {
     @StateObject private var client = TacitClient()
-    @State private var hotKey: HotKey?
+
+    init() {
+        // One instance only (two would register the same shortcut and double every control).
+        let me = Bundle.main.bundleIdentifier ?? ""
+        if !me.isEmpty, NSRunningApplication.runningApplications(withBundleIdentifier: me).count > 1 { exit(0) }
+    }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuView(client: client, hotKeyRegistered: hotKey?.registered ?? false)
-                .onAppear {
-                    // ⌃⌥⌘. stops Live and voice output from anywhere (also while FaceTime/Zoom is in front).
-                    if hotKey == nil {
-                        hotKey = HotKey(keyCode: UInt32(kVK_ANSI_Period), modifiers: UInt32(controlKey | optionKey | cmdKey)) { [client] in
-                            Task { @MainActor in client.stopEverything() }
-                        }
-                    }
-                }
+            MenuView(client: client, hotKeyRegistered: client.hotKeyRegistered)
         } label: {
             Image(systemName: icon).accessibilityLabel("TACIT: \(summary)")
         }
@@ -51,17 +48,22 @@ struct MenuView: View {
                 outputSection
                 Divider()
                 Button(role: .destructive) { client.stopEverything() } label: {
-                    Label("Stop everything" + (hotKeyRegistered ? "  ⌃⌥⌘." : ""), systemImage: "stop.circle.fill").frame(maxWidth: .infinity)
+                    Label("Stop everything" + (hotKeyRegistered ? "  ⌃⇧⌘." : ""), systemImage: "stop.circle.fill").frame(maxWidth: .infinity)
                 }
                 .controlSize(.large)
                 .accessibilityHint("Ends Live recognition and voice output, cutting any speech not yet played")
             }
+            if !hotKeyRegistered { Text("Global Stop shortcut unavailable (taken by another app) — use the button.").font(.caption2).foregroundStyle(.orange) }
             if let n = client.notice { Text(n).font(.caption).foregroundStyle(.secondary) }
             Divider()
             HStack {
                 Button("Open workspace") { client.openWorkspace() }.disabled(client.conn != .connected)
                 Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
+                Menu("Quit") {
+                    Button("Stop everything and quit") { client.stopEverythingAndQuit() }
+                    Button("Quit (TACIT server keeps running)") { NSApp.terminate(nil) }
+                }
+                .fixedSize()
             }
         }
         .padding(14)
@@ -94,7 +96,7 @@ struct MenuView: View {
         Text(liveLine(state)).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         HStack {
             switch state {
-            case "off": Button("Start Live") { client.live("activate") }.help("Camera capture runs in the TACIT workspace")
+            case "off": Button("Start Live in the workspace…") { client.openWorkspace() }.help("Live starts where the camera is: the TACIT workspace")
             case "active": Button("Pause") { client.live("pause") }; Button("Stop") { client.live("end") }
             case "paused": Button("Resume") { client.live("resume") }; Button("Stop") { client.live("end") }
             default: EmptyView()
@@ -114,7 +116,7 @@ struct MenuView: View {
         switch s {
         case "active": return "Listening — recognised words appear here and in the workspace. They are never spoken automatically."
         case "paused": return "Paused."
-        case "off": return "Off. Start Live, then use the camera in the TACIT workspace."
+        case "off": return "Off. Live is started from the TACIT workspace, which uses the camera. You can pause or stop it from here."
         default: return client.live?.reason ?? "Unknown."
         }
     }
