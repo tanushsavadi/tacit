@@ -45,3 +45,18 @@ into TACIT; no frontend/protocol change. Reproduce: `npm run airpods:gate2 -- se
 Pre-registered in `server/scripts/airpods-heldout.ts` (criteria stored in `airpods/data/heldout-w3-config.json` at
 freeze time): GO = primary forced-choice p<0.05 vs 20%, ≥15 points above every baseline, McNemar p<0.05 vs strongest
 baseline, AND accepted precision ≥80% at ≥30% coverage with ≤2/20 control false accepts. Results will be appended here.
+
+## Hardware / API inventory (2026-11-14, macOS 27.0 SDK headers on this Mac + recorded data)
+| Signal | In AirPods Pro 2 | Public macOS API | In our recorder | Useful for silent articulation |
+|---|---|---|---|---|
+| Fused head motion: user accel, rotation rate, attitude (quaternion/Euler), gravity | yes (IMU) | `CMHeadphoneMotionManager` (macOS 14+) | yes, all fields, ~50 Hz, 3–5% BT gaps | jaw opening: yes (SNR 11–16×); word identity: not beyond rhythm (w1→w2) |
+| Which bud supplies motion | yes | `CMDeviceMotion.sensorLocation` (Default/Left/Right) | yes (`loc`; always R so far) | one stream at a time; no API for simultaneous L+R |
+| Magnetometer / heading on headphones | unknown | `magneticField` exists on CMDeviceMotion, accuracy uncalibrated for headphones | recorded? no | not tested |
+| Headphone activity (walking/running…) | yes | `CMHeadphoneActivityManager` (macOS 15+) | no | no (coarse activity classes) |
+| Speech-detecting (voice) accelerometer | yes (Apple marketing) | **none** — no symbol in CoreMotion/AVFAudio/AVFoundation/CoreAudio/AudioToolbox headers | no | not accessible |
+| Inward-facing (ANC/feedback) mic | yes | **none** | no | not accessible → ReHEarSSE/EarCommand/EarSSR-style in-ear acoustic sensing impossible |
+| Outward beamformed mic | yes | CoreAudio input device (Bluetooth HFP, processed) | `--protocol mic` (Gate 3) | not yet measured (needs session m1) |
+| "AirPods high-quality recording" | yes | `AVAudioSessionCategoryOptionBluetoothHighQualityRecording` / `AVCaptureSession.configures…HighQualityRecording`: **iOS 26 only, API_UNAVAILABLE(macos)** | n/a | n/a on Mac |
+Code availability (GitHub search by name, 2026-11-14): no public repos for EarCommand, EarSSR or ReHEarSSE;
+OpenEarable firmware is MIT but targets different hardware. Subvox (MIT) and ROCKET (paper; reimplemented, sktime BSD
+reference) are the reusable pieces already in use.
