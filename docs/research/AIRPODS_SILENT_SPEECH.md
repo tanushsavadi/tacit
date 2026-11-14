@@ -94,3 +94,26 @@ w4 recording started 09:08:09Z (after the freeze). Full output: `docs/research/p
 3. Remove and re-seat the left AirPod; w6 (held-out, 10 reps): same flags with `--name w6`.
 4. `evaluate <w5> <w6> --config …w5-config.json` once. Same candidates, threshold rule and GO criteria as w3→w4.
 Even a GO is a five-word, single-user, closed-set result; larger vocabulary and continuous articulation are separate tests.
+
+## Exploratory re-analysis of existing sessions (2026-11-14) — NOT pre-registered; w3→w4 NO-GO unchanged
+Script: `airpods/analysis/explore_existing.py` (fixed design declared in its docstring; every cell reported; raw output
+`airpods/data/explore_existing_results.json`). LIMU-BERT (MIT) fetched to `third_party/limu_bert` (git-ignored):
+`gh api repos/dapowan/LIMU-BERT-Public/tarball | tar xz --strip-components=1 -C third_party/limu_bert`.
+Six sessions (w1L, w2L subtle; oR1, oR2 R default; w3L, w4R deliberate; 310 word trials), 5 normalisations × 4 models
++ 3 baselines, protocols P1 (all 30 single-session train→test pairs), P2 (leave-one-session-out), P3 (unseen word).
+- **Mirror normalisation (R→L sagittal reflection) fixes the cross-bud collapse:** ROCKET P1 cross-bud 23% → 38% while
+  same-bud stays 41–42%. Posture alignment and session z-scoring alone do not.
+- **Pooling sessions helps; mirrored ROCKET beats rhythm:** P2 LOSO over 310 trials: ROCKET+mirror 48.4% vs strongest
+  rhythm baseline 37.1% (exact McNemar 78 vs 43 discordant, p=0.0019) and vs raw ROCKET 39.0% (p=0.0055). Per session
+  30–60%; subtle sessions w1L/w2L 30%/40%, default/deliberate 48–60%. Caveats: ~20 model×norm cells were examined
+  (Bonferroni 0.0025 is only just met); the mirror form came from a diagnostic that included w4 data (no tuned
+  parameters, but not independent of it).
+- **Pretrained LIMU-BERT (phone/watch HAR) does not transfer:** 18–29% everywhere (≈ chance).
+- **Low-capacity binned means + ridge:** 28–40% LOSO, below ROCKET.
+- **No evidence of a reusable sub-word articulation representation:** P3 1-shot enrolment of a word never seen in
+  training: ROCKET 27–31%, binned 23–29%, LIMU 20–21%, rhythm 20–26% (chance 20%); the learned 4-word projection did not
+  beat no projection. Recognition so far rests on whole-word signatures.
+- MuteIt / Unvoiced: abstracts could not be retrieved (Semantic Scholar rate limit; not on arXiv) — not characterised here.
+Interpretation: stock-AirPods motion carries some word-specific information beyond rhythm once the bud mirror and
+session pooling are handled (≈48% on 5 words, single user), far below a usable or open-vocabulary level, and with no sign
+yet of transfer to unseen words.
