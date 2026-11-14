@@ -60,15 +60,23 @@ then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
 - Probe `watch/` builds (device + simulator SDKs, unsigned). Deploy blocked on user: Xcode Apple ID/team, iPhone
   connected + Developer Mode on iPhone and Watch. No ultrasonic emission without a separate reviewed plan.
 
-## Interface contract proposal — Live Silent Speech (NOT yet in shared/protocol.ts; Sol: comment in WORKSTREAM_SOL.md)
-- Client → server (authenticated user WS): `live_set {enabled}` / `live_pause` / `live_stop`; per utterance after the
-  client's mouth-motion endpoint: `vsr_clip_start {utteranceId, mime:'video/webm', startedAt}` + binary webm chunk(s) +
-  `vsr_clip_end {utteranceId}` (full-frame video; the server does landmarks/ROI so recognition provenance is server-side).
-- Server → client: `recognition {utteranceId, text, gate:{...features}, decision:'shown'|'transmitted'|'abstained',
-  reason, model, ms:{decode,landmarks,encode,beam,total}}`. `decision:'transmitted'` is impossible until a calibrated gate
-  exists; client-supplied text is never treated as recognition. Pause/stop invalidates queued utterances and cancels playback.
-- Server side: Python VSR sidecar (persistent model, MPS) called by `server/`; voice/call path reuses `VoiceRouter`
-  and the existing transports.
+## Interface contract — Live Silent Speech `tacit-live-v1` (PUBLISHED in shared/protocol.ts, commit 96d0e32)
+For Sol's `web/src/silent/port.ts` adapter (user WS `/ws?token=`, same auth as today). Restart the server to get it.
+- Capability: `snapshot.services.recognition.live` (present when the VSR service is reachable): protocol, supportedInputs
+  ['camera'], `automaticSpeechValidated:false`, `validationEvidence:null`, limits maxFrames 300 / maxBytes 12 MB / 10 s.
+- Client → server: `live_control {action:'activate'|'pause'|'resume'|'interrupt'|'end', mode?, inputSource?:'camera'}`.
+  `activate` with `mode:'automatic'` is refused (reason in `live_status`); `display-only` returns a fresh
+  `authorizationId`. Every control bumps `generation`; in-flight results from older generations come back abstained.
+- Per utterance: `visual_utterance {utteranceId, authorizationId, startMs, endMs, endpointMs, frameTimesMs[]}` then exactly
+  `frameTimesMs.length` binary WS messages, each one JPEG frame in order (times = performance.now ms, strictly increasing).
+- Server → client: `live_status {status: LiveStatus}` on connect and after each control;
+  `recognition_hypothesis {hypothesis}` exactly once per `visual_utterance` (also for rejects): `rawText` (raw model
+  output, never LLM-edited), `decision 'shown'|'abstained'`, `reason`, `uncertainty` (n-best margin/token,
+  `calibrated:false`), `recognitionMs`, `stages`, `gate`, **`transmitted:false` always**. No path to TTS/call exists.
+- Backend: `server/src/live.ts` (+5 tests) → `recognition/tacit_vsr/service.py` on 127.0.0.1:8765, auto-started and
+  supervised by the server (`RECOGNITION_AUTOSTART=off` to disable). `npm run live:check` = end-to-end check.
+- Verified (2nd instance :8791): automatic refused; display-only; 61 real CREMA-D JPEG frames → "IT'S ELEVEN O'CLOCK",
+  transmitted=false; warm round trip 683 ms for a 2.5 s utterance (cold 1.29 s). Voiced studio clips, not silent speech.
 
 ## AirPods silent speech — CONCLUDED: NO-GO for word recognition (details: docs/research/AIRPODS_SILENT_SPEECH.md)
 - Gate 1 (deliberate jaw opening) detectable; Gate 2 five words, strict w1-tuned → w2 held-out: with the w1-chosen
