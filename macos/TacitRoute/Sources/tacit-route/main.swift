@@ -608,6 +608,43 @@ func verify(uid: String, path: String) -> Never {
     exit(ok ? 0 : 2)
 }
 
+/// Capture the device's input side for N seconds (no playback) and report when sound first appeared, as epoch ms.
+/// Used by the server's end-to-end check to time request → audio at the virtual microphone.
+func listen(uid: String, seconds: Double) -> Never {
+    guard let dev = findDevice(uid: uid) else { fail("device \(uid) not present") }
+    final class L { var loud = 0, frames = 0, firstLoudHost: UInt64 = 0, lastLoudHost: UInt64 = 0, peak: Float = 0 }
+    let l = L(), lock = NSLock(), threshold: Float = 0.005
+    var procID: AudioDeviceIOProcID?
+    let st = AudioDeviceCreateIOProcIDWithBlock(&procID, dev.id, DispatchQueue(label: "listen")) { _, inData, inTime, _, _ in
+        let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inData))
+        guard let b = list.first, let raw = b.mData else { return }
+        let ch = max(1, Int(b.mNumberChannels)), frames = Int(b.mDataByteSize) / (4 * ch)
+        let smp = raw.assumingMemoryBound(to: Float.self)
+        lock.lock(); defer { lock.unlock() }
+        for i in 0..<frames {
+            let v = max(abs(smp[i * ch]), ch > 1 ? abs(smp[i * ch + 1]) : 0)
+            l.peak = max(l.peak, v)
+            if v > threshold {
+                let h = inTime.pointee.mHostTime + hostTicks(ms: Double(i) / dev.sampleRate * 1000)
+                l.loud += 1; if l.firstLoudHost == 0 { l.firstLoudHost = h }; l.lastLoudHost = h
+            }
+        }
+        l.frames += frames
+    }
+    guard st == noErr, let procID, AudioDeviceStart(dev.id, procID) == noErr else { fail("cannot capture \(dev.name)") }
+    let hostNow = mach_absolute_time(), epochNow = Date().timeIntervalSince1970 * 1000
+    emit("listening", ["device": dev.name, "seconds": seconds])
+    RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    AudioDeviceStop(dev.id, procID); AudioDeviceDestroyIOProcID(dev.id, procID)
+    lock.lock(); defer { lock.unlock() }
+    func epoch(_ h: UInt64) -> Double { epochNow + (h >= hostNow ? hostMs(h - hostNow) : -hostMs(hostNow - h)) }
+    var o: [String: Any] = ["device": dev.name, "loudMs": round(Double(l.loud) / dev.sampleRate * 1000), "peak": Double(l.peak),
+                            "capturedMs": round(Double(l.frames) / dev.sampleRate * 1000)]
+    if l.firstLoudHost > 0 { o["firstLoudAt"] = epoch(l.firstLoudHost); o["lastLoudAt"] = epoch(l.lastLoudHost) }
+    emit("listened", o)
+    exit(0)
+}
+
 signal(SIGPIPE, SIG_IGN)
 let cmd = CommandLine.arguments.dropFirst().first ?? "help"
 switch cmd {
@@ -625,10 +662,13 @@ case "diagnose":
 case "serve":
     guard let uid = arg("--device-uid") else { fail("serve needs --device-uid") }
     serve(uid: uid)
+case "listen":
+    guard let uid = arg("--device-uid") else { fail("listen needs --device-uid") }
+    listen(uid: uid, seconds: Double(arg("--seconds") ?? "5") ?? 5)
 case "verify":
     guard let uid = arg("--device-uid"), let path = CommandLine.arguments.last, path != uid else { fail("verify needs --device-uid UID FILE") }
     verify(uid: uid, path: path)
 default:
-    FileHandle.standardError.write("usage: tacit-route list | diagnose --device-uid UID | serve --device-uid UID | verify --device-uid UID FILE\n".data(using: .utf8)!)
+    FileHandle.standardError.write("usage: tacit-route list | diagnose --device-uid UID | listen --device-uid UID [--seconds N] | serve --device-uid UID | verify --device-uid UID FILE\n".data(using: .utf8)!)
     exit(64)
 }
