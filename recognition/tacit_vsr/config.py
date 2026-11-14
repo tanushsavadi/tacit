@@ -60,3 +60,9 @@ MIN_MARGIN = _f("TACIT_MIN_MARGIN", 0.15)
 # Abstain when the open-vocabulary hypothesis beats the best candidate by more than this
 # (length-normalised joint log-likelihood, nats/token).
 MAX_GARBAGE_GAP = _f("TACIT_MAX_GARBAGE_GAP", 1.5)
+# Phrase rule v2 (2026-11-14 ~20:40 UTC) adds an absolute-evidence floor: the free open-vocabulary hypothesis must have
+# attention log-prob per token (incl. <eos>) >= this. Chosen on DEVELOPMENT data only (docs/DEMO_READINESS.md D.9:
+# keeps 37/37 correct in-list accepts, rest-face accepts 4 -> 0, tails 10 -> 3); not validated on held-out data.
+MIN_FREE_ATT_PER_TOKEN = _f("TACIT_MIN_FREE_ATT", -1.5)
+# "phrase-rule-v2" (default) or "phrase-rule-v1" (frozen original, kept for comparison/reproduction).
+PHRASE_RULE = os.environ.get("TACIT_PHRASE_RULE", "phrase-rule-v2")

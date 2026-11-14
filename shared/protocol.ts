@@ -296,6 +296,8 @@ export interface PhraseMatch {
   /** Free open-vocabulary score minus phrase score, per token (uncalibrated). */
   garbageGap: number;
   listSize: number;
+  /** phrase-rule-v2 (additive): free hypothesis attention log-prob per token; v2 rejects below −1.5 (uncalibrated). */
+  freeAttPerToken?: number | null;
 }
 
 /**

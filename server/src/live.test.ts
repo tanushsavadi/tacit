@@ -89,6 +89,11 @@ describe('LiveSession (tacit-live-v1)', () => {
     expect(hyps().map((h) => h.phraseMatch ?? null)).toEqual([good, null, null, null]);
     expect(hyps().every((h) => h.transmitted === false)).toBe(true);
     expect(phraseMatch({ ...good, phrase: 'x'.repeat(201) })).toBeNull();
+    // phrase-rule-v2 adds the free hypothesis' evidence (att/token); passed through when finite or null, else dropped
+    const v2 = { ...good, rule: 'phrase-rule-v2', accepted: false, reason: 'too little evidence of a sentence', freeAttPerToken: -2.894 };
+    expect(phraseMatch(v2)).toEqual(v2);
+    expect(phraseMatch({ ...v2, freeAttPerToken: null })).toEqual({ ...v2, freeAttPerToken: null });
+    expect(phraseMatch({ ...v2, freeAttPerToken: 'low' })).toBeNull();
   });
 
   it('reports segmentation diagnostics (win_*) from the header; nothing for malformed headers', async () => {

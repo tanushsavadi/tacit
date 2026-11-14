@@ -1,6 +1,7 @@
 """Feature dump for designing a stricter phrase-acceptance rule on DEVELOPMENT data only.
 
-For every item it runs the live service's exact path (`recognize_clip`: pre-decode gate → fast beam → phrase rule v1)
+For every item it runs the live service's exact path (`recognize_clip`: pre-decode gate → fast beam → the configured
+phrase rule, TACIT_PHRASE_RULE; each row records `rule` and `accept`)
 and records the evidence a stricter rule could use:
   - free open-vocabulary hypothesis and its attention/CTC log-prob per token (absolute evidence),
   - word agreement between the free hypothesis and the best phrase,
@@ -72,7 +73,7 @@ def row(eng, crop, clip, kind: str, ref: str | None, meta: dict) -> dict:
             "n_tokens": r.get("n_tokens"), "att": g.get("att_per_token"), "ctc": g.get("ctc_per_token"),
             "nbest_margin": g.get("nbest_margin_per_token"), "aperture_range": r.get("aperture_range"),
             "width_range": r.get("width_range"), "peaks": aperture_peaks(tr.aperture) if tr.aperture else 0,
-            "phrase": ph.get("phrase"), "v1_accept": bool(ph.get("accepted")), "margin": ph.get("margin"),
+            "phrase": ph.get("phrase"), "rule": ph.get("rule"), "accept": bool(ph.get("accepted")), "phrase_reason": ph.get("reason"), "margin": ph.get("margin"),
             "gap": ph.get("garbageGap"), "overlap": len(fw & pw) / max(len(pw), 1) if pw else 0.0,
             "correct": bool(ref and ph.get("phrase") == ref)}
 
@@ -105,7 +106,7 @@ def main() -> None:
             for r in rows:
                 out.write(json.dumps(r) + "\n"); out.flush()
                 print(f"{set_name[:14]} {path.name:18s} {r['kind']:7s} {r['frames']:3d}f free {r['free']!r:42.42s} att {r['att']} "
-                      f"phrase {r['phrase']!r} v1 {'ACCEPT' if r['v1_accept'] else '-'} ovl {r['overlap']:.2f} peaks {r['peaks']}", flush=True)
+                      f"phrase {r['phrase']!r} {r['rule']} {'ACCEPT' if r['accept'] else '-'} ovl {r['overlap']:.2f} peaks {r['peaks']}", flush=True)
 
 
 if __name__ == "__main__":

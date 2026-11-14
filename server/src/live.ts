@@ -49,8 +49,11 @@ export function phraseMatch(x: unknown): PhraseMatch | null {
   const str = (v: unknown, max = 200) => typeof v === 'string' && v.length <= max;
   if (!str(p.rule, 40) || !str(p.phrase) || !str(p.runnerUp) || typeof p.accepted !== 'boolean' || !(p.reason === null || str(p.reason))
     || ![p.margin, p.garbageGap, p.listSize].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const att = p.freeAttPerToken;
+  if (att !== undefined && att !== null && !(typeof att === 'number' && Number.isFinite(att))) return null;
   return { rule: p.rule as string, phrase: p.phrase as string, runnerUp: p.runnerUp as string, accepted: p.accepted as boolean,
-    reason: p.reason as string | null, margin: p.margin as number, garbageGap: p.garbageGap as number, listSize: p.listSize as number };
+    reason: p.reason as string | null, margin: p.margin as number, garbageGap: p.garbageGap as number, listSize: p.listSize as number,
+    ...(att !== undefined ? { freeAttPerToken: att as number | null } : {}) };
 }
 export type Recognizer = (input: { timesMs: number[]; frames: Buffer[] }, signal: AbortSignal) => Promise<RecognizerResult>;
 
