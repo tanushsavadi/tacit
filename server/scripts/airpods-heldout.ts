@@ -91,7 +91,12 @@ const CRITERIA = {
 };
 
 const [mode, d1, d2] = process.argv.slice(2);
-const CFG = join(d1 ?? '.', '..', 'heldout-w3-config.json');
+// --config <path> keeps exploratory runs from touching a pre-registered config; --exploratory skips the
+// recorded-after-freeze guard and labels every output as NOT pre-registered.
+const EXPLORATORY = process.argv.includes('--exploratory');
+const cfgArg = process.argv.indexOf('--config');
+const CFG = cfgArg > 0 ? process.argv[cfgArg + 1]! : join(d1 ?? '.', '..', 'heldout-w3-config.json');
+if (EXPLORATORY) console.log('*** EXPLORATORY RUN — NOT PRE-REGISTERED; diagnostic only, not evidence of performance ***');
 
 if (mode === 'prereg') {
   const A = loadSession(d1!), W = A.words, AW = A.trials.filter((t) => W.includes(t.label));
@@ -120,13 +125,17 @@ if (mode === 'prereg') {
     console.log(`articulation strength (median rotation RMS, words / neutral): w1 ${rot(PW).toFixed(4)} / ${rot(P.trials.filter((t) => t.label === 'neutral')).toFixed(4)}, w3 ${rot(AW).toFixed(4)} / ${rot(A.trials.filter((t) => t.label === 'neutral')).toFixed(4)}`);
     console.log(`fixed dtw/cue/rot within-session LOO: w1 ${pct(looAcc(fixed, PW, P.words))}, w3 ${pct(looAcc(fixed, AW, W))}`);
   }
-  writeFileSync(CFG, JSON.stringify({ trainedOn: basename(A.dir), trainHash: A.hash, words: W, primary: primary.id, secondary: [bestOf('dtw').id, bestOf('rocket').id], threshold: best.th, baselines: BASELINES, baselineSegment: seg, kernels: N_KERNELS, seed: SEED, criteria: CRITERIA, created: new Date().toISOString() }, null, 1));
+  const budOf = (S: Session) => [...new Set(readFileSync(`${S.dir}/motion.csv`, 'utf8').trim().split('\n').slice(1).map((l) => l.slice(l.lastIndexOf(',') + 1).trim()))].join('');
+  writeFileSync(CFG, JSON.stringify({ trainedOn: basename(A.dir), trainHash: A.hash, bud: budOf(A), words: W, primary: primary.id, secondary: [bestOf('dtw').id, bestOf('rocket').id], threshold: best.th, baselines: BASELINES, baselineSegment: seg, kernels: N_KERNELS, seed: SEED, criteria: CRITERIA, created: new Date().toISOString() }, null, 1));
   console.log(`frozen → ${CFG}`);
 } else if (mode === 'evaluate') {
   const cfg = JSON.parse(readFileSync(CFG, 'utf8'));
   const A = loadSession(d1!), B = loadSession(d2!), W: string[] = cfg.words;
   if (cfg.trainHash !== A.hash) throw new Error('frozen config was not built from this w3 data');
-  if (!(new Date(B.meta.created) > new Date(cfg.created))) throw new Error(`w4 (${B.meta.created}) was recorded before the config was frozen (${cfg.created})`);
+  const testBud = [...new Set(readFileSync(`${B.dir}/motion.csv`, 'utf8').trim().split('\n').slice(1).map((l) => l.slice(l.lastIndexOf(',') + 1).trim()))].join('');
+  console.log(`earbud source: train ${cfg.bud ?? '(not recorded in this config)'} → test ${testBud}`);
+  if (cfg.bud && cfg.bud !== testBud) throw new Error(`earbud mismatch: config trained on ${cfg.bud}, test session streamed ${testBud}`);
+  if (!EXPLORATORY && !(new Date(B.meta.created) > new Date(cfg.created))) throw new Error(`w4 (${B.meta.created}) was recorded before the config was frozen (${cfg.created})`);
   console.log(`# Held-out: ${basename(A.dir)} → ${basename(B.dir)}; config frozen ${cfg.created}, w4 recorded ${B.meta.created}`);
   console.log(`w4 trials ${B.trials.length}: ${[...W, ...CONTROLS].map((l) => `${l} ${B.trials.filter((t) => t.label === l).length}`).join(', ')}`);
   const AW = A.trials.filter((t) => W.includes(t.label)), BW = B.trials.filter((t) => W.includes(t.label));
@@ -155,5 +164,5 @@ if (mode === 'prereg') {
   console.log(`dropouts: ${B.trials.filter((t) => t.gaps).length}/${B.trials.length} trials with >100 ms gap; primary accuracy with gap ${P.hit.filter((h, i) => h && g[i]).length}/${g.filter(Boolean).length}, without ${P.hit.filter((h, i) => h && !g[i]).length}/${g.filter((x) => !x).length}`);
   const verdict = statistical && practical ? 'GO' : statistical ? 'INCONCLUSIVE (signal beyond timing, not usable at the frozen threshold)'
     : pBin < 0.05 && practical ? 'INCONCLUSIVE (usable closed-set classification, but not beyond timing/amplitude baselines)' : 'NO-GO';
-  console.log(`\nPRE-REGISTERED DECISION: statistical ${statistical ? 'PASS' : 'FAIL'} (chance p ${pBin < 0.05 ? '<' : '≥'} 0.05, +15 pts over all baselines ${margin15}, McNemar ${mc.p < 0.05 ? '<' : '≥'} 0.05), practical ${practical ? 'PASS' : 'FAIL'} → ${verdict}`);
+  console.log(`\n${EXPLORATORY ? 'EXPLORATORY (not pre-registered) decision rule applied' : 'PRE-REGISTERED DECISION'}: statistical ${statistical ? 'PASS' : 'FAIL'} (chance p ${pBin < 0.05 ? '<' : '≥'} 0.05, +15 pts over all baselines ${margin15}, McNemar ${mc.p < 0.05 ? '<' : '≥'} 0.05), practical ${practical ? 'PASS' : 'FAIL'} → ${verdict}`);
 }
