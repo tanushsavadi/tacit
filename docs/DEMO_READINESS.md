@@ -269,7 +269,11 @@ decoder. Rule written before the run: adopt only if CREMA-D improves and own sil
 5.2% → 5.4% (80 → 79 exact), own silent 44.4% → 51.5% (6 → 5 of 20), own voiced 37.7% → 43.8%. Not adopted.
 
 Pre-synthesis (`e583589`): while voice output is on, shown candidates are synthesized locally in advance (voice policy
-applies; nothing sent before Speak). Unit-tested; latency effect NOT yet measured on :8790 (Live was active, no restart).
+applies; nothing sent before Speak). Measured ~21:10 UTC on an isolated
+instance (:8799, real `say` voice, real BlackHole 16ch route with no reader, fixed fake recogniser text, Speak 3 s
+after the candidates appeared): press → first audio **5 ms with pre-synthesis vs 798 ms without** (`TTS_PRESYNTH=off`),
+one trial each. Takes effect on :8790 after the next restart (not done: another client's Live/output session was paused,
+not ended). Personal (ElevenLabs) voice pre-synthesis still needs the user's `personalPresynth` opt-in.
 
 ### D.13 Reviewed speech — local verification (2026-11-14 ~20:30–20:45 UTC, server :8790 restarted on the new code)
 `npm run reviewed:check -- ../recognition/data/webcam/20261114T191005Z-bright-test` (recorded SILENT clips of the
