@@ -272,8 +272,9 @@ Pre-synthesis (`e583589`): while voice output is on, shown candidates are synthe
 applies; nothing sent before Speak). Measured ~21:10 UTC on an isolated
 instance (:8799, real `say` voice, real BlackHole 16ch route with no reader, fixed fake recogniser text, Speak 3 s
 after the candidates appeared): press → first audio **5 ms with pre-synthesis vs 798 ms without** (`TTS_PRESYNTH=off`),
-one trial each. Takes effect on :8790 after the next restart (not done: another client's Live/output session was paused,
-not ended). Personal (ElevenLabs) voice pre-synthesis still needs the user's `personalPresynth` opt-in.
+one trial each. **Live on :8790 since the ~21:12 UTC restart:** a pick pressed ~5 s after the candidates appeared →
+`tts=0ms request→audio=5ms`; a press within milliseconds of display (reviewed:check) still waits for the in-flight
+pre-synthesis of all 5 candidates (1391 ms). Personal (ElevenLabs) voice pre-synthesis still needs the user's `personalPresynth` opt-in.
 
 ### D.13 Reviewed speech — local verification (2026-11-14 ~20:30–20:45 UTC, server :8790 restarted on the new code)
 `npm run reviewed:check -- ../recognition/data/webcam/20261114T191005Z-bright-test` (recorded SILENT clips of the

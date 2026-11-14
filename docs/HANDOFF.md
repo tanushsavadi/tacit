@@ -18,7 +18,7 @@ audibility of reviewed speech; (3) DEMO_READINESS E (live:test v2 + `--phrases`:
 smile/swallow/listening controls); (4) only with ≥ 100 new labelled own silent clips: speaker adaptation experiment.
 **Release targets (≤ 5% WER, ≥ 90% exact on ≥ 50 new silent utterances, 0 accepted non-speech): NOT VALIDATED.**
 **Later (20:55–21:05 UTC):** `e583589` pre-synthesizes shown review candidates locally while output is on (tests 114/114;
-measured on isolated :8790-equivalent instance: press→first audio 5 ms vs 798 ms without; needs a `./scripts/tacit.sh restart` to take effect — NOT restarted because Live was ACTIVE on :8790 at ~20:57 UTC,
+measured on isolated :8790-equivalent instance: press→first audio 5 ms vs 798 ms without; ACTIVE on :8790 since the ~21:12 UTC restart (idle-checked; reviewed:check all PASS again; pick pressed ~5 s after display → request→audio 5 ms) — earlier note: it needed a restart to take effect — NOT restarted because Live was ACTIVE on :8790 at ~20:57 UTC,
 someone was using it; at ~21:05 Live + output were PAUSED by that client, still not restarted). server.log at ~21:00
 shows another client's `reviewed-recognition rendered` (request→audio 1810 ms) and `user-corrected rendered` (892 ms)
 — most likely Sol's notch integration; Claude did not send those. Alternatives/personalisation desk review + `eval/enroll_knn.py` → `docs/research/VSR_ALTERNATIVES.md`.
