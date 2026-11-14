@@ -257,11 +257,64 @@ export interface RecognitionHypothesis {
   transmitted: false;
 }
 
+/**
+ * Virtual-microphone output (macOS): `macos/TacitRoute` (tacit-route) plays TACIT speech into ONE selected device —
+ * normally BlackHole — which the user picks as the microphone in FaceTime/Zoom/Meet. Local observations only:
+ * nothing here can tell whether a remote person heard anything.
+ */
+export interface VoiceRouteStatus {
+  state: 'unconfigured' | 'starting' | 'ready' | 'unavailable' | 'error';
+  deviceName: string | null;
+  deviceUid: string | null;
+  sampleRate: number | null;
+  /** Gain applied before the device (compensates the measured route loss; see `npm run route:check`). */
+  gainDb: number;
+  calibrated: boolean;
+  /** Bundle ids of processes currently reading the virtual mic as an input (e.g. 'us.zoom.xos'). null = unknown. */
+  readers: string[] | null;
+  /** e.g. system output routed into the virtual mic (echo risk), device muted. */
+  warnings: string[];
+  reason: string | null;
+}
+/** Session-level authorization for TACIT to speak into the output route. One `enable` per session; pause/stop cut audio. */
+export interface SpeechOutputStatus {
+  authorizationId: string | null;
+  /** Bumped on enable/pause/resume/stop and on any interrupt; work from an older generation is never played. */
+  generation: number;
+  state: 'off' | 'ready' | 'paused';
+  route: VoiceRouteStatus;
+  /** The TTS voice that will speak (VoiceRouter label; never a substituted personal voice without set_voice_policy). */
+  voice: string;
+  queued: number;
+  /** Whether recognised (visual) speech may be spoken automatically. Literal false until validated. */
+  recognizedSpeechAllowed: false;
+  reason: string;
+}
+/** 'typed' = user-authored AAC text (explicit send). 'recognized' = visual model output (gated; never sent today). */
+export type SpeechSource = 'typed' | 'recognized';
+export interface SpeechDelivery {
+  requestId: string;
+  source: SpeechSource;
+  text: string;
+  /**
+   * queued → synthesizing → routing → rendered; or refused / interrupted / failed.
+   * 'rendered' = this Mac finished writing the audio into the virtual mic. It is NOT remote delivery.
+   */
+  state: 'queued' | 'synthesizing' | 'routing' | 'rendered' | 'refused' | 'interrupted' | 'failed';
+  reason: string | null;
+  voice: string | null;
+  remoteAudibility: 'unknown';
+  /** Server clock (ms since epoch). */
+  timings: { requestedAt: number; synthStartAt?: number; synthEndAt?: number; firstAudioAt?: number; renderedAt?: number; endedAt?: number };
+}
+
 export interface ServiceStatus {
   gemini: { configured: boolean; model: string | null };
   logging?: TurnLogStatus;
   voicePolicy?: VoicePolicyStatus;
   recognition: { reachable: boolean; model: string | null; device: string | null; checkedAt: number | null; live?: LiveRecognitionCapability };
+  /** Present when the virtual-microphone route is configured on this server (macOS). */
+  voiceRoute?: VoiceRouteStatus;
   voice: { listening: boolean; publicUrl: string | null; providers: Record<string, boolean> };
 }
 
@@ -324,7 +377,14 @@ export type ClientMessage =
    * One endpointed utterance from the camera: followed by exactly `frameTimesMs.length` binary WebSocket messages,
    * each one JPEG frame, in order. Times are the browser's monotonic capture timestamps (performance.now, ms).
    */
-  | { type: 'visual_utterance'; utteranceId: string; authorizationId: string; startMs: number; endMs: number; endpointMs: number; frameTimesMs: number[] };
+  | { type: 'visual_utterance'; utteranceId: string; authorizationId: string; startMs: number; endMs: number; endpointMs: number; frameTimesMs: number[] }
+  /** Session authorization for speaking into the virtual mic. `enable` returns a fresh authorizationId in output_status. */
+  | { type: 'output_control'; action: 'enable' | 'pause' | 'resume' | 'stop' }
+  /**
+   * User-authored typed speech (AAC fallback), sent by an explicit user action. Spoken only when output is enabled,
+   * not paused, the authorization matches and the route is ready. Never presented as recognised speech.
+   */
+  | { type: 'speak_typed'; requestId: string; outputAuthorizationId: string; text: string };
 
 export type ServerMessage =
   | { type: 'snapshot'; snapshot: Snapshot }
@@ -334,7 +394,11 @@ export type ServerMessage =
   /** Sent once to each authenticated user connection. `callerInvitePath` = `/?invite=…#caller` (append to the origin). */
   | { type: 'session_info'; callerInvitePath: string; authRequired: boolean }
   | { type: 'live_status'; status: LiveStatus }
-  | { type: 'recognition_hypothesis'; hypothesis: RecognitionHypothesis };
+  | { type: 'recognition_hypothesis'; hypothesis: RecognitionHypothesis }
+  /** On connect and after every change (control, route state, queue). */
+  | { type: 'output_status'; status: SpeechOutputStatus }
+  /** Every state change of one speech request (exactly one terminal state: rendered/refused/interrupted/failed). */
+  | { type: 'speech_delivery'; delivery: SpeechDelivery };
 
 /**
  * Remote-caller channel (`/ws/caller`): a second browser (phone/laptop) acting as the far end of a
