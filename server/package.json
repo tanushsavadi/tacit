@@ -25,7 +25,8 @@
     "route:check": "tsx scripts/route-check.ts",
     "speech:check": "tsx scripts/speech-check.ts",
     "preflight": "tsx scripts/preflight.ts",
-    "live:stress": "tsx scripts/live-stress.ts"
+    "live:stress": "tsx scripts/live-stress.ts",
+    "ui:check": "node scripts/ui-check.mjs"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",
