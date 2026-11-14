@@ -7,7 +7,8 @@ recognised words stays DISABLED until a silent-speech reliability gate is measur
 **Start here:** `docs/DEMO_READINESS.md` (status, verified commands, latency, human checklist).
 
 ## Restartable checkpoint (state at hand-off)
-- Working tree clean; `main` pushed; CI green on `0587d6e` (server + web jobs).
+- Working tree clean; `main` pushed; CI green on every commit through `fc81189` (see DEMO_READINESS G for the last).
+- Companion `--selftest` 7/7 PASS; camera shared by two capture processes at 30 fps (FaceTime video untested).
 - Running locally: `./scripts/tacit.sh start` server on 127.0.0.1:8790 (+ VSR sidecar :8765, whisper :8766, tacit-route
   helper); `TACIT.app` companion open. Sol's Vite on :5173 and recogniser on :8767 are Sol's processes.
 - **Disk is nearly full (0.2–0.4 GB free)** — first thing to fix; preflight FAILs until ≥ 2 GB (Swift builds hit ENOSPC).

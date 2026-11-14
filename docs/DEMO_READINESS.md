@@ -1,4 +1,4 @@
-# TACIT — Demo readiness (2026-11-14, ~13:10 UTC)
+# TACIT — Demo readiness (2026-11-14, ~13:25 UTC)
 
 TACIT is a new kind of microphone: the user articulates silently, TACIT recognises the words from the camera and,
 once validated, speaks them into the call the user is already in. Typed speech is the labelled fallback.
@@ -12,7 +12,7 @@ once validated, speaks them into the call the user is already in. Typed speech i
 | Automatic speaking of recognised words | **Disabled** (Live refuses `automatic`; speech gate `UNVALIDATED_GATE`; `recognizedSpeechAllowed: false`) | `speech.test.ts` |
 | Voice into calls (virtual mic) | **Works locally**: typed text → macOS system voice → BlackHole → sound captured at BlackHole's input | `route:check`, `speech:check`, `ui:check` |
 | Remote audibility (FaceTime/Zoom) | **Not verified**: needs a second person (E.2) | — |
-| Menu-bar companion (`TACIT.app`) | Builds, launches, connects; status + Pause/Resume/Stop Live, voice output, typed Speak, Stop everything (⌃⇧⌘.) | launched against :8790; menu not click-tested by automation |
+| Menu-bar companion (`TACIT.app`) | Builds, launches, connects; status + Pause/Resume/Stop Live, voice output, typed Speak, Stop everything (⌃⇧⌘.) | `--selftest`: every button action PASS against :8790 (the SwiftUI menu itself was not clicked by automation) |
 | Web workspace (Sol) | Setup, camera, Live, typed fallback, readiness list, presenter view | Sol: 79/79 unit, browser/axe, recovery, vision, live suites |
 | One-command launch + preflight | `./scripts/tacit.sh` | verified (B) |
 | AirPods assistance | Not started this session (FaceTime path first, as directed). AirPods-only word recognition remains NO-GO | `docs/research/AIRPODS_SILENT_SPEECH.md` |
@@ -55,7 +55,9 @@ Logs: `server/data/run/server.log` (no tokens). Recovery: a crashed recogniser r
 | `npm run speech:check` | 3/3 rendered + sound captured; pause → interrupted; refused while paused |
 | `npm run ui:check` (production build on :8790) | Live text on page 2/2 (442–700 ms); typed speech via UI → sound at BlackHole input 1364–1458 ms after the click |
 | `cd web && npm run test:live` (Sol's, via Vite → :8790) | passed |
-| CI (GitHub Actions) | green on `0587d6e` (server + web jobs); see `gh run list` |
+| `macos/TacitCompanion/.build/TACIT.app/Contents/MacOS/TacitCompanion --selftest` | 7/7 PASS: voice on, Speak → rendered, Speak blocked while paused, pause/resume voice, Live pause/resume (companion activation refused), Stop everything → Live off + voice off |
+| Camera coexistence (2 AVFoundation clients on the FaceTime HD Camera, frames discarded) | staggered: both 30 fps at once (180 / 90 frames); opened at the same instant: one failed with I/O error (open race). Proxy only — FaceTime video + TACIT untested |
+| CI (GitHub Actions) | green on every pushed commit through `fc81189` (server + web jobs); final status in G |
 | Fable (Claude specialist) reviews | 3 done: Core Audio design, companion lifecycle, integration races — every P0/P1 finding fixed with tests (see G) |
 
 **Measured latency (M3 Pro, this Mac)**
@@ -71,7 +73,8 @@ Logs: `server/data/run/server.log` (no tokens). Recovery: a crashed recogniser r
   real WebSocket/auth; real Chrome + MediaPipe in `ui:check`/`test:live`.
 - Not silent speech: all recognition evidence uses VOICED CREMA-D actor clips with audio discarded.
 - Labelled test fixtures only: the "validated gate" in `speech.test.ts`; fake route/TTS in unit tests.
-- Never verified: a remote listener hearing TACIT; silent-speech WER; FaceTime camera coexistence.
+- Never verified: a remote listener hearing TACIT; silent-speech WER; FaceTime *video* sharing the camera with TACIT
+  (two generic capture processes do share it); the companion's SwiftUI menu clicked by a person.
 
 ## E. Human-only checklist (smallest set)
 1. **Free disk space (≥ 2 GB)** — only ~0.2–0.4 GB free; preflight FAILs; `say` slows, Swift builds fail (one hit ENOSPC this session).
@@ -91,7 +94,8 @@ Logs: `server/data/run/server.log` (no tokens). Recovery: a crashed recogniser r
 - The user does not hear their own TACIT voice (no sidetone).
 - BlackHole 16ch on this Mac loses 16 dB; compensated from the `route:check` measurement.
 - FaceTime may resample BlackHole; the helper rebuilds on real format changes (not yet seen in a call).
-- One server per Mac, one user. Companion menu not click-tested by automation. No login item, no installer.
+- One server per Mac, one user. No login item, no installer.
+- Disk: ~0.4 GB free — preflight FAILs this item until you free ≥ 2 GB (not something TACIT can fix; nothing of yours was deleted).
 - Sol's web UI does not yet send the optional `outputGeneration` with typed speech (the companion does).
 - AirPods-assisted endpointing (requested) not started: it is scheduled after a physically verified FaceTime call.
 
