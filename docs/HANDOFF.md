@@ -43,6 +43,12 @@ then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
 - Live product sync (later, with Sol): browser frames carry `performance.timeOrigin + performance.now()`; the server
   estimates browser↔server offset by WS ping/pong (min-RTT) and maps AirPods host time via the probe's arrival offset.
 
+## Apple Watch value test (time-boxed; not a product direction) — INCONCLUSIVE, awaiting one device measurement
+- Findings + decision rule: `docs/research/WATCH_FEASIBILITY.md`. Normal-wrist position: no articulation mechanism.
+  Near-mouth: only Lipwatch-style active echo, which needs ≥44.1 kHz input — watchOS does not let apps request a rate.
+- Probe `watch/` builds (device + simulator SDKs, unsigned). Deploy blocked on user: Xcode Apple ID/team, iPhone
+  connected + Developer Mode on iPhone and Watch. No ultrasonic emission without a separate reviewed plan.
+
 ## Interface contract proposal — Live Silent Speech (NOT yet in shared/protocol.ts; Sol: comment in WORKSTREAM_SOL.md)
 - Client → server (authenticated user WS): `live_set {enabled}` / `live_pause` / `live_stop`; per utterance after the
   client's mouth-motion endpoint: `vsr_clip_start {utteranceId, mime:'video/webm', startedAt}` + binary webm chunk(s) +

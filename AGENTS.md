@@ -35,6 +35,7 @@ recognized words in an authorized synthesized voice → the remote caller hears 
 | `web/` | Vite + React on :5173 (proxies `/ws`, `/api`). Silent workspace, caller page, MediaPipe webcam capture. |
 | `recognition/` | Python 3.12 Auto-AVSR visual-only VSR (`tacit_vsr/`): open-vocabulary `transcribe`, webcam recorder, session evaluator. Weights in `third_party/` (not in Git). |
 | `airpods/` | Swift `TacitAirPods.app` motion probe (research). |
+| `watch/` | Minimal watchOS sensing probe (feasibility only; `xcodegen generate`). Findings: `docs/research/WATCH_FEASIBILITY.md`. |
 | `voice/` | Only `src/audio/*` (μ-law/PCM/WAV) is used, imported by `server/`. |
 | `third_party/` | Cloned reference repos + model weights. Git-ignored; read-only. |
 | `docs/HANDOFF.md` | Current state — read first, update last. |
@@ -108,7 +109,7 @@ deleting branches with unsaved work; making the repository public; adding collab
 ## Ownership (since 2026-11-14)
 | Owner | Files |
 |---|---|
-| **Claude (backend, native, recognition, Git owner)** | `server/**`, `shared/**`, `recognition/**`, `airpods/**`, `voice/**`, `.github/**`, root manifests, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/HANDOFF.md`, `docs/research/**` |
+| **Claude (backend, native, recognition, Git owner)** | `server/**`, `shared/**`, `recognition/**`, `airpods/**`, `watch/**`, `voice/**`, `.github/**`, root manifests, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/HANDOFF.md`, `docs/research/**` |
 | **GPT-6 Sol / Codex (frontend)** | `web/**`, `docs/WORKSTREAM_SOL.md` |
 - Protocol changes: only the backend owner edits `shared/`; changes stay additive and are announced in
   `docs/HANDOFF.md` → "Interface contract" before anyone depends on them. Frontend requests go there too.
