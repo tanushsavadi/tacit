@@ -55,7 +55,7 @@ Logs: `server/data/run/server.log` (no tokens). Recovery: a crashed recogniser r
 | `npm run speech:check` | 3/3 rendered + sound captured; pause → interrupted; refused while paused |
 | `npm run ui:check` (production build on :8790) | Live text on page 2/2 (442–700 ms); typed speech via UI → sound at BlackHole input 1364–1458 ms after the click |
 | `cd web && npm run test:live` (Sol's, via Vite → :8790) | passed |
-| CI (GitHub Actions) | green through `9511ee1` (server + web jobs); see `gh run list` |
+| CI (GitHub Actions) | green on `0587d6e` (server + web jobs); see `gh run list` |
 | Fable (Claude specialist) reviews | 3 done: Core Audio design, companion lifecycle, integration races — every P0/P1 finding fixed with tests (see G) |
 
 **Measured latency (M3 Pro, this Mac)**
