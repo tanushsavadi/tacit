@@ -1,0 +1,3 @@
+# Unmodified vendored files: keep byte-identical to upstream (CRLF licence text, generated JS).
+web/public/mediapipe/** -whitespace
+web/public/fonts/*.txt -whitespace
