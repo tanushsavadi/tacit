@@ -31,12 +31,20 @@ const big = (s: string) => console.log(`\n   >>>  ${s.toUpperCase()}  <<<`);
 // Clock alignment: probe timestamps are seconds since boot; offset = min(arrival - t).
 let offset = Infinity, n = 0;
 const csv = createWriteStream(join(outDir, 'motion.csv'));
+// Optional earbud-source control (default off; earlier protocols unchanged). macOS streams one bud at a time and
+// articulation motion is mirror-symmetric between buds, so sessions that will be compared must use the same bud.
+const REQUIRE_BUD = (arg('require-bud', '') ?? '').toUpperCase(); // 'L' | 'R' | ''
+const budCounts: Record<string, number> = {};
+let wrongBud = 0;
 const onLine = (l: string) => {
   csv.write(l + '\n');
   if (l.startsWith('t,')) return;
   const t = Number(l.slice(0, l.indexOf(',')));
   offset = Math.min(offset, Date.now() / 1000 - t);
   n++;
+  const bud = l.slice(l.lastIndexOf(',') + 1).trim();
+  budCounts[bud] = (budCounts[bud] ?? 0) + 1;
+  if (REQUIRE_BUD && bud !== REQUIRE_BUD) wrongBud++;
 };
 let lastStatus = '';
 const onStatus = (l: string) => { lastStatus = l; console.log(`[probe] ${l}`); };
@@ -81,7 +89,15 @@ const OTHER = ['swallow', 'small nod', 'look left and back', 'smile'];
 async function waitForStream() {
   for (let i = 0; i < 300 && n < 25; i++) await sleep(100);
   if (n < 25) { console.error(`No AirPods motion samples after 30 s. Last probe status: ${lastStatus || 'none'}`); finish(); process.exit(2); }
-  console.log(`streaming (${n} samples so far)`);
+  console.log(`streaming (${n} samples so far); bud ${JSON.stringify(budCounts)}`);
+  if (REQUIRE_BUD) {
+    await sleep(2000);
+    if (wrongBud > 0 || !budCounts[REQUIRE_BUD]) {
+      console.error(`ABORT: required ${REQUIRE_BUD} earbud but macOS is streaming ${JSON.stringify(budCounts)}. Wear only the ${REQUIRE_BUD === 'L' ? 'LEFT' : 'RIGHT'} AirPod (other one in the case) and retry.`);
+      finish(); process.exit(3);
+    }
+    console.log(`preflight OK: streaming from ${REQUIRE_BUD} only`);
+  }
 }
 
 async function block(kind: string, label: string, seconds: number, cue: string) {
@@ -170,17 +186,28 @@ async function words() {
       const t0 = now();
       await sleep(2500);
       events.push({ kind: 'trial', label: c, cue, t0, t1: now() });
+      if (REQUIRE_BUD && wrongBud > 0) {
+        big('wrong earbud — session stopped'); say('wrong earbud, session stopped');
+        console.error(`ABORT: ${wrongBud} samples came from the wrong bud ${JSON.stringify(budCounts)}; session marked invalid.`);
+        finish(); process.exit(3);
+      }
       await sleep(700);
     }
     if (r === Math.floor(reps / 2) - 1) { big('short break, keep the AirPods in'); say('short break'); await sleep(5000); }
   }
 }
 
+// 15 s source check: which bud streams, and does it switch? (e.g. wear only the left AirPod, or remove one mid-run)
+async function budcheck() {
+  const t0 = Date.now(); let last = '';
+  while (Date.now() - t0 < 15000) { await sleep(1000); const cur = JSON.stringify(budCounts); if (cur !== last) { console.log(`  t+${((Date.now() - t0) / 1000).toFixed(0)}s bud counts ${cur}`); last = cur; } }
+}
+
 process.on('SIGINT', () => { finish(); process.exit(130); });
 function finish() {
   p.kill();
   if (probeTmp) setTimeout(() => rmSync(probeTmp, { recursive: true, force: true }), 200).unref();
-  const meta = { protocol, name, reps, words: protocol === 'words' ? WORDS : undefined, style: protocol === 'words' ? STYLE : undefined, samples: n, offsetS: offset, events, created: new Date().toISOString(),
+  const meta = { protocol, name, reps, words: protocol === 'words' ? WORDS : undefined, style: protocol === 'words' ? STYLE : undefined, requireBud: REQUIRE_BUD || undefined, budCounts, wrongBudSamples: wrongBud, samples: n, offsetS: offset, events, created: new Date().toISOString(),
     os: execFileSync('sw_vers', ['-productVersion']).toString().trim() };
   writeFileSync(join(outDir, 'events.json'), JSON.stringify(meta, null, 1));
   console.log(`\nsaved ${n} samples, ${events.length} events → ${outDir}`);
@@ -188,7 +215,7 @@ function finish() {
 
 await waitForStream();
 say('starting in three seconds'); await sleep(3000);
-if (protocol === 'jaw') await jaw(); else if (protocol === 'mic') await mic(); else if (protocol === 'words') await words(); else await cmd();
+if (protocol === 'jaw') await jaw(); else if (protocol === 'mic') await mic(); else if (protocol === 'words') await words(); else if (protocol === 'budcheck') await budcheck(); else await cmd();
 await sleep(500);
 finish();
 setTimeout(() => process.exit(0), 300);
