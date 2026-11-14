@@ -7,6 +7,7 @@ struct TacitCompanionApp: App {
     @StateObject private var client = TacitClient()
 
     init() {
+        if CommandLine.arguments.contains("--selftest") { SelfTest.run(); return }
         // One instance only (two would register the same shortcut and double every control).
         let me = Bundle.main.bundleIdentifier ?? ""
         if !me.isEmpty, NSRunningApplication.runningApplications(withBundleIdentifier: me).count > 1 { exit(0) }

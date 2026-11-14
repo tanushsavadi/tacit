@@ -35,13 +35,15 @@ final class TacitClient: ObservableObject {
     private var hotKey: HotKey?
     @Published private(set) var hotKeyRegistered = false
 
-    init() {
+    init(registerHotKey: Bool = true) {
         repoRoot = Bundle.main.object(forInfoDictionaryKey: "TACITRepoRoot") as? String
             ?? ProcessInfo.processInfo.environment["TACIT_REPO_ROOT"]
         // Ctrl-Shift-Cmd-. = Stop everything, from any app, registered at launch (not when the menu first opens).
         // (Ctrl-Opt-Cmd-. is taken by macOS "Increase contrast".)
-        hotKey = HotKey(keyCode: UInt32(kVK_ANSI_Period), modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
-            Task { @MainActor in self?.stopEverything() }
+        if registerHotKey {
+            hotKey = HotKey(keyCode: UInt32(kVK_ANSI_Period), modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
+                Task { @MainActor in self?.stopEverything() }
+            }
         }
         hotKeyRegistered = hotKey?.registered ?? false
         connect()
