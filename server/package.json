@@ -24,7 +24,8 @@
     "live:check": "tsx scripts/live-check.ts",
     "route:check": "tsx scripts/route-check.ts",
     "speech:check": "tsx scripts/speech-check.ts",
-    "preflight": "tsx scripts/preflight.ts"
+    "preflight": "tsx scripts/preflight.ts",
+    "live:stress": "tsx scripts/live-stress.ts"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",
