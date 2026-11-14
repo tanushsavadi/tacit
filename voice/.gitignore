@@ -1,0 +1,5 @@
+node_modules/
+test/fixtures/*.wav
+test/fixtures/*.aiff
+.tunnel-url
+*.log
