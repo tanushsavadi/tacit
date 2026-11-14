@@ -17,9 +17,10 @@ from tacit_vsr import config
 _SHA_CACHE: dict[str, str] = {}
 
 
-def sha256_file(path: Path) -> str:
+def sha256_file(path: Path, fresh: bool = False) -> str:
+    """SHA-256 of a file; cached by path+mtime+size unless `fresh` (re-reads every byte — used for the end-of-run check)."""
     key = f"{path.resolve()}|{path.stat().st_mtime_ns}|{path.stat().st_size}"
-    if key not in _SHA_CACHE:
+    if fresh or key not in _SHA_CACHE:
         h = hashlib.sha256()
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(1 << 22), b""):
@@ -58,8 +59,19 @@ def save_overlay(model: torch.nn.Module, names: list[str], out_dir: Path, meta: 
 
 
 def load_overlay(model: torch.nn.Module, out_dir: Path) -> dict:
+    """Apply a FINISHED run's overlay. overlay.pt is written at every validation improvement, so an interrupted run (or one
+    whose end-of-run base-checkpoint check failed) leaves an overlay without a matching run.json — refused here."""
+    run = Path(out_dir) / "run.json"
+    if not run.exists():
+        raise ValueError(f"{out_dir}: no run.json — the training run did not finish; its overlay is not usable")
+    summary = json.loads(run.read_text())
+    if not summary.get("overlay_written"):
+        raise ValueError(f"{out_dir}: no epoch beat the base model on validation — there is no overlay to apply")
     blob = torch.load(Path(out_dir) / "overlay.pt", map_location="cpu", weights_only=True)
     meta, state = blob["meta"], blob["state"]
+    if summary.get("selected_epoch") != meta.get("selected_epoch"):
+        raise ValueError(f"{out_dir}: run.json (epoch {summary.get('selected_epoch')}) does not match overlay.pt "
+                         f"(epoch {meta.get('selected_epoch')})")
     base = sha256_file(config.MODEL_PATH)
     if meta.get("base_sha256") != base:
         raise ValueError(f"overlay was trained on base {meta.get('base_sha256')}, current base is {base}")

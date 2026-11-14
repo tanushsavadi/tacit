@@ -1,7 +1,9 @@
 """Personalised fine-tuning of the pretrained Auto-AVSR visual model on the user's own labelled clips.
 
-    .venv/bin/python -m adapt.finetune --name silentA --train data/webcam/<adaptA> --train data/webcam/<adaptB> \
-        --val data/webcam/<adaptVal> [--train-modes silent|silent,voiced] [--scope frontend+embed+block0|top3] [--dry-run]
+    .venv/bin/python -m adapt.finetune --name silent1 --train adaptA --train adaptB --val adaptVal \
+        [--train-modes silent|silent,voiced] [--scope frontend+embed+block0|top3] [--dry-run]
+--train/--val take a session directory or a bare recording name (resolved to the single data/webcam/<UTC>-<name> with
+clips; ambiguous or missing names are refused).
 
 Recipe = Lipflow's speaker adaptation (github.com/amywork777/lipflow lipflow/train_vsr.py @ e37453b, the trainer behind
 Silent Voice's lipread/adapt.py), re-implemented for TACIT's engine; fixed before any adaptation data exists:
@@ -45,7 +47,7 @@ from tacit_vsr import config, engine, video
 from tacit_vsr.transcribe import wer
 
 from eval.bench import decode, decode_frames, interp_lms, landmarks, to_tensor, warp_rois
-from eval.dataset import read_prompts
+from eval.dataset import read_prompts, resolve_session
 from eval.sweep_decode import group_of, strict
 
 from .overlay import DEFAULT_SCOPE, SCOPES, save_overlay, sha256_file, trainable_names
@@ -69,13 +71,21 @@ class Clip:
 def load_sessions(dirs: list[str], modes: set[str]) -> list[Clip]:
     out = []
     for d in map(Path, dirs):
+        missing = 0
         for l in open(d / "manifest.jsonl"):
+            if not l.strip():
+                continue
             it = json.loads(l)
             g = group_of(it)
             mode = "silent" if g.startswith("silent") else "voiced" if g == "voiced" else None
-            if mode not in modes or not it.get("ref") or not (d / it["file"]).exists():
+            if mode not in modes or not it.get("ref"):
+                continue
+            if not (d / it["file"]).exists():
+                missing += 1
                 continue
             out.append(Clip(d.name, d / it["file"], engine.normalize_text(it["ref"]), strict(it["ref"]), mode))
+        if missing:
+            print(f"warning: {d.name}: {missing} manifest clip(s) missing on disk — skipped")
     return out
 
 
@@ -116,7 +126,8 @@ def check_hygiene(train_dirs: list[str], val_dirs: list[str], train: list[Clip],
 def roi_for(clip: Clip, crop: video.MouthCropper) -> np.ndarray:
     cache = ADAPT_DIR / "cache"
     cache.mkdir(parents=True, exist_ok=True)
-    f = cache / (hashlib.sha1(str(clip.path.resolve()).encode()).hexdigest()[:16] + ".npy")
+    st = clip.path.stat()  # size + mtime in the key: a re-recorded clip at the same path is never served a stale ROI
+    f = cache / (hashlib.sha1(f"{clip.path.resolve()}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()[:16] + ".npy")
     if f.exists():
         return np.load(f)
     P, _ = interp_lms(landmarks(clip.path, crop)["pts4"])
@@ -208,6 +219,9 @@ def main() -> None:
     modes = set(a.train_modes.split(","))
     if not modes <= {"silent", "voiced"}:
         raise SystemExit("--train-modes must be silent and/or voiced")
+    a.train = [str(resolve_session(s)) for s in a.train]
+    a.val = [str(resolve_session(s)) for s in a.val]
+    print("sessions: train " + ", ".join(Path(d).name for d in a.train) + "; validation " + ", ".join(Path(d).name for d in a.val))
     train = load_sessions(a.train, modes)
     val = load_sessions(a.val, {"silent"})
     heldout = {strict(s) for s in read_prompts(HELDOUT_PROMPTS)}
@@ -224,15 +238,16 @@ def main() -> None:
     out = Path(a.out_root) / a.name
     if out.exists():
         raise SystemExit(f"{out} exists — choose a new --name (runs are never overwritten)")
-    out.mkdir(parents=True)
 
     random.seed(HP["seed"]); np.random.seed(HP["seed"]); torch.manual_seed(HP["seed"])
     rng = random.Random(HP["seed"])
-    base_sha = sha256_file(config.MODEL_PATH)
+    base_sha = sha256_file(config.MODEL_PATH, fresh=True)
     eng = engine.VSREngine(a.device)
     crop = video.MouthCropper()
+    # Crop everything BEFORE creating the run directory: a clip without a tracked face stops here and the name stays free.
     tr = [(c, roi_for(c, crop), eng.tokenize(c.ref)) for c in train]
     va = [(c, roi_for(c, crop)) for c in val]
+    out.mkdir(parents=True)
     names = set(trainable_names(eng.model, a.scope))
     for k, p in eng.model.named_parameters():
         p.requires_grad_(k in names)
@@ -284,7 +299,7 @@ def main() -> None:
             stale += 1
         if (a.max_steps and step >= a.max_steps) or stale >= HP["patience"]:
             break
-    if sha256_file(config.MODEL_PATH) != base_sha:
+    if sha256_file(config.MODEL_PATH, fresh=True) != base_sha:  # no run.json → load_overlay refuses this run's overlay
         raise SystemExit("BASE CHECKPOINT CHANGED ON DISK — investigate before using anything from this run")
     summary = {**meta, "selected_epoch": best_epoch, "finished": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                "base_sha256": base_sha, "overlay_written": best_epoch > 0}

@@ -498,7 +498,8 @@ def main() -> None:
     ap.add_argument("--variant", action="append", default=[])
     ap.add_argument("--sets", default="silent,voiced,cremad,rest,nonspeech")
     ap.add_argument("--session", action="append", default=[],
-                    help="evaluate these session dirs INSTEAD of the development sessions + CREMA-D (held-out runs)")
+                    help="evaluate these session dirs (or bare recording names, e.g. adaptVal) INSTEAD of the development sessions + "
+                    "CREMA-D (held-out runs)")
     ap.add_argument("--overlay", default=None, help="apply a personal-adaptation overlay (data/adapt/<name>) to the model "
                     "before running; result files get '+<name>' in the variant name. Production never loads overlays.")
     ap.add_argument("--tag", default="", help="suffix for result files (keeps held-out results apart from dev runs)")
@@ -517,7 +518,9 @@ def main() -> None:
         return
     global _SESSION_DIRS
     if a.session:
-        _SESSION_DIRS = {Path(d).name: Path(d) for d in a.session}
+        from .dataset import resolve_session
+        _SESSION_DIRS = {d.name: d for d in map(resolve_session, a.session)}
+        print("sessions: " + ", ".join(_SESSION_DIRS))
         if not a.tag:
             raise SystemExit("--session needs --tag (e.g. heldout1) so results never overwrite the development runs")
     OUT.mkdir(parents=True, exist_ok=True)

@@ -399,14 +399,54 @@ cd recognition
 # interrupted? rerun the same command with --resume data/webcam/<that session>
 ```
 Optional, for the voiced-supplement arm only: `--name adaptAvoiced --modes voiced --prompts prompts/adapt_v1_a.txt --free 0`.
-**Phase B — train + validate (≈ 15 min per arm):**
+**Phase B — train + validate (≈ 15 min per arm; not while a live demo uses the :8790 sidecar — both share MPS):**
 ```
-.venv/bin/python -m adapt.finetune --name silent1 --train data/webcam/<…-adaptA> --train data/webcam/<…-adaptB> --val data/webcam/<…-adaptVal> --dry-run
-.venv/bin/python -m adapt.finetune --name silent1 --train data/webcam/<…-adaptA> --train data/webcam/<…-adaptB> --val data/webcam/<…-adaptVal>
-.venv/bin/python -m eval.bench --session data/webcam/<…-adaptVal> --tag val --variant base
-.venv/bin/python -m eval.bench --session data/webcam/<…-adaptVal> --tag val --variant base --overlay data/adapt/silent1
+.venv/bin/python -m adapt.finetune --name silent1 --train adaptA --train adaptB --val adaptVal --dry-run   # expect 50 + 51 silent train, 20 val
+.venv/bin/python -m adapt.finetune --name silent1 --train adaptA --train adaptB --val adaptVal
+.venv/bin/python -m eval.bench --session adaptVal --tag val --variant base
+.venv/bin/python -m eval.bench --session adaptVal --tag val --variant base --overlay data/adapt/silent1
+.venv/bin/python -m eval.bench --compare base@val base+silent1@val            # per-clip better/worse
 .venv/bin/python -m eval.bench --variant base --overlay data/adapt/silent1      # CREMA-D + dev sets regression
+.venv/bin/python -m eval.bench --summary base base+silent1                      # side by side with the frozen baseline
 ```
+Session discovery: `--train/--val/--session` accept a bare recording name and resolve it to the single
+`data/webcam/<UTC>-<name>` whose manifest has clips (aborted empty starts ignored). Zero or several matches → refused;
+pass the directory paths instead. A `--resume`d session stays one directory, so it resolves normally; a session that
+was restarted from scratch makes the name ambiguous → pass both directories explicitly (`--train d1 --train d2`).
+Run safeguards: the run directory is created only after every clip is cropped (a tracking failure does not burn the
+name); overlay.pt is written at each validation improvement, but `eval.bench --overlay` loads it only if the run
+finished (`run.json` present, `overlay_written`, same epoch) — the base checkpoint is re-hashed byte-for-byte at the end,
+and a mismatch leaves no run.json. Note: the trainer's per-epoch validation WER (log.jsonl) is raw top-1 without the
+production abstention gate and is SELECTION data; the reported numbers are `eval.bench`'s (gate included).
+
+**Report format (one per arm; fill only from the result files — `data/eval/bench/summary.jsonl`, `data/adapt/<name>/`):**
+```
+Arm <name> — scope <scope>, train <sessions> (<n> clips), val <session> (<n> clips), selected epoch <k>/<last>, git <rev>
+                         base            adapted          Δ (abs)
+val silent WER           e/w = x.xxx     e/w = x.xxx      ±x.x pt     (clips better / worse: b / w)
+val silent exact         a/20            a/20
+val abstained (+floor)   a (+f)          a (+f)
+val non-speech shown     s/n             s/n
+CREMA-D WER (96)         e/w = 0.062     e/w = x.xxx      ±x.x pt
+dev silent / voiced WER  0.444 / 0.377   x.xxx / x.xxx
+rest shown (floor)       s/36 (f)        s/36 (f)
+model ms p50 / p95       …               …
+training: loss epoch1→k, val errors per epoch (log.jsonl), wall time; overfitting sign = loss ↓ while val errors ↑
+Status: VALIDATION (val set chose the epoch → optimistic); not held-out, not a release claim.
+```
+
+**Decision checklist (written 2026-11-14 23:35 UTC, before any adaptation result exists):**
+1. Data: dry-run counts match what was recorded (50 / 51 / 20 silent; no "missing on disk" warnings); hygiene passed.
+2. Run integrity: `run.json` present, `base_sha256` = e740cef3…, selected epoch > 0, log shows no NaN/zero losses.
+3. Proceed to Phase C (record heldout_v2 once) only if ALL hold on the bench numbers (proposal — the user may veto before
+   training starts): val silent WER ≥ 5 pt lower than base; more clips better than worse in `--compare`; val non-speech
+   shown not higher; CREMA-D WER up ≤ 1 pt; rest shown not higher. Otherwise report the result and stop (no tuning
+   on adaptVal; arm 2 only as pre-registered above).
+4. Adopt (Phase C, unchanged): final silent WER ≥ 10 pt lower, non-speech shown not higher, CREMA-D ≤ +1 pt.
+5. Deploy only after 4: add a default-off overlay selector to the sidecar (env-chosen, base hash checked, logged at
+   startup), restart :8790 only when idle (Live off, output off, no reader of BlackHole), verify `live:check` and
+   `reviewed:check`. Rollback = unset the selector + restart (base weights never modified). Automatic speech stays
+   DISABLED either way; adapted text still reaches the call only via reviewed speech.
 Pre-registered (22:35 UTC): arm 1 = silent-only, default recipe. Arm 2 (silent + voiced A) only if recorded; it replaces
 arm 1 only if its validation silent WER is ≥ 5 points lower. At most these two arms; no hyperparameter search on the
 validation set. Overfitting signs to report: training loss falling while validation word errors rise (log.jsonl), and

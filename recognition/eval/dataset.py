@@ -34,6 +34,23 @@ def read_prompts(path: Path) -> list[str]:
     return [l.strip() for l in open(path) if l.strip() and not l.lstrip().startswith("#")]
 
 
+def resolve_session(arg: str, webcam: Path = WEBCAM) -> Path:
+    """A session directory from a path or a bare recording name (`adaptA` → the one data/webcam/<UTC>-adaptA with clips).
+    Sessions with an empty manifest (aborted starts) are ignored; zero or several matches are refused, never guessed."""
+    p = Path(arg)
+    if (p / "manifest.jsonl").exists():
+        return p
+    def has_clips(d: Path) -> bool:
+        m = d / "manifest.jsonl"
+        return m.exists() and any(l.strip() for l in open(m))
+    hits = sorted(d for d in webcam.glob(f"*-{arg}") if d.is_dir() and has_clips(d))
+    if len(hits) != 1:
+        found = ", ".join(d.name for d in hits) or "none"
+        raise SystemExit(f"session {arg!r}: expected exactly one recorded session data/webcam/*-{arg}, found {found} — "
+                         "pass the directory path(s) explicitly")
+    return hits[0]
+
+
 def own_items(webcam: Path = WEBCAM) -> list[dict]:
     out = []
     for man in sorted(webcam.glob("*/manifest.jsonl")):

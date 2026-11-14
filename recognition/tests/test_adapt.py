@@ -109,7 +109,14 @@ class OverlayAndModes(unittest.TestCase):
             try:
                 src, dst = Tiny(), Tiny()
                 names = overlay.trainable_names(src)
-                overlay.save_overlay(src, names, Path(td) / "run", {"name": "t"})
+                overlay.save_overlay(src, names, Path(td) / "run", {"name": "t", "selected_epoch": 2})
+                with self.assertRaises(ValueError):  # interrupted run: overlay.pt but no run.json
+                    overlay.load_overlay(dst, Path(td) / "run")
+                run = Path(td) / "run" / "run.json"
+                run.write_text(json.dumps({"overlay_written": True, "selected_epoch": 3}))
+                with self.assertRaises(ValueError):  # run.json from a different epoch than overlay.pt
+                    overlay.load_overlay(dst, Path(td) / "run")
+                run.write_text(json.dumps({"overlay_written": True, "selected_epoch": 2}))
                 meta = overlay.load_overlay(dst, Path(td) / "run")
                 p_src, p_dst = dict(src.named_parameters()), dict(dst.named_parameters())
                 self.assertTrue(all(torch.equal(p_src[k], p_dst[k]) for k in names))
@@ -120,6 +127,23 @@ class OverlayAndModes(unittest.TestCase):
                     overlay.load_overlay(Tiny(), Path(td) / "run")
             finally:
                 overlay.config.MODEL_PATH = orig
+
+
+class SessionResolution(unittest.TestCase):
+    def test_bare_name_resolves_to_the_single_recorded_session(self):
+        from eval.dataset import resolve_session
+        with tempfile.TemporaryDirectory() as td:
+            web = Path(td)
+            for name, lines in (("20261114T230000Z-adaptA", 1), ("20261114T225900Z-adaptA", 0), ("20261114T230500Z-adaptVal", 1),
+                                ("20261114T231000Z-adaptVal", 1)):
+                (web / name).mkdir()
+                (web / name / "manifest.jsonl").write_text('{"file": "c.mp4", "ref": "x", "mode": "silent"}\n' * lines)
+            self.assertEqual(resolve_session("adaptA", web).name, "20261114T230000Z-adaptA")  # empty aborted start ignored
+            self.assertEqual(resolve_session(str(web / "20261114T230500Z-adaptVal"), web).name, "20261114T230500Z-adaptVal")
+            with self.assertRaises(SystemExit):
+                resolve_session("adaptVal", web)  # two recorded sessions: ambiguous, never guessed
+            with self.assertRaises(SystemExit):
+                resolve_session("adaptB", web)  # not recorded
 
 
 if __name__ == "__main__":
