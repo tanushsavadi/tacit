@@ -127,6 +127,16 @@ describe('LiveSession (tacit-live-v1)', () => {
     expect(hyps().map((h) => [h.utteranceId, h.decision])).toEqual([['b', 'abstained'], ['a', 'shown']]);
   });
 
+  it('retains no frames of a rejected utterance while swallowing them', () => {
+    const { live, status } = setup();
+    live.control({ type: 'live_control', action: 'activate' });
+    live.utterance({ type: 'visual_utterance', utteranceId: 'huge', authorizationId: status().authorizationId!, startMs: 0, endMs: 1, endpointMs: 1, frameTimesMs: Array.from({ length: 5000 }, (_, i) => i) });
+    for (let i = 0; i < 4999; i++) live.frame(Buffer.alloc(1000));
+    const pending = (live as unknown as { pending: Map<unknown, { frames: Buffer[]; received: number }> }).pending.get(null)!;
+    expect(pending.received).toBe(4999);
+    expect(pending.frames).toHaveLength(0);
+  });
+
   it('ending Live clears authorization; frames without a header are ignored', () => {
     const { live, status } = setup();
     live.control({ type: 'live_control', action: 'activate' });

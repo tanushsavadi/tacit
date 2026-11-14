@@ -22,7 +22,7 @@ export interface RecognizerResult {
 export type Recognizer = (input: { timesMs: number[]; frames: Buffer[] }, signal: AbortSignal) => Promise<RecognizerResult>;
 
 type Utterance = Extract<ClientMessage, { type: 'visual_utterance' }>;
-interface Pending { msg: Utterance; frames: Buffer[]; bytes: number; generation: number; reject: string | null; answered: boolean }
+interface Pending { msg: Utterance; frames: Buffer[]; received: number; bytes: number; generation: number; reject: string | null; answered: boolean }
 
 export class LiveSession {
   private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, reason: 'Live is off.' };
@@ -86,7 +86,7 @@ export class LiveSession {
       if (this.seen.size >= MAX_SEEN_IDS) this.seen.delete(this.seen.values().next().value!);
       this.seen.add(msg.utteranceId);
     }
-    const p: Pending = { msg, frames: [], bytes: 0, generation: this.status.generation, reject, answered: false };
+    const p: Pending = { msg, frames: [], received: 0, bytes: 0, generation: this.status.generation, reject, answered: false };
     this.pending.set(conn, p);
     if (reject) { // answer now; keep `pending` so this utterance's frames are swallowed
       p.answered = true;
@@ -98,9 +98,10 @@ export class LiveSession {
   frame(buf: Buffer, conn: unknown = null): void {
     const p = this.pending.get(conn);
     if (!p) { this.droppedBinary++; return; }
-    p.frames.push(buf); p.bytes += buf.length;
-    if (!p.reject && p.bytes > LIVE_CAPABILITY.maxBytes) p.reject = `Utterance larger than ${LIVE_CAPABILITY.maxBytes} bytes.`;
-    if (p.frames.length < p.msg.frameTimesMs.length) return;
+    p.received++; p.bytes += buf.length;
+    if (!p.reject && p.bytes > LIVE_CAPABILITY.maxBytes) { p.reject = `Utterance larger than ${LIVE_CAPABILITY.maxBytes} bytes.`; p.frames = []; }
+    if (!p.reject) p.frames.push(buf); // frames of a rejected utterance are counted and discarded, never retained
+    if (p.received < (Array.isArray(p.msg.frameTimesMs) ? p.msg.frameTimesMs.length : 0)) return;
     this.pending.delete(conn);
     if (!p.reject && this.inflight.size >= MAX_INFLIGHT) p.reject = 'Recogniser busy: earlier utterances are still being recognised; this one was dropped, not queued.';
     if (p.reject) { if (!p.answered) this.result(p.msg, null, p.reject, 0); return; }
