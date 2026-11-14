@@ -35,7 +35,10 @@ then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
 - Earbud diagnosis: both buds share a head-aligned frame (no axis mirroring), but articulation motion is
   mirror-symmetric between buds (all L→R template correlations negative on ry/rz). Exploratory same-bud pairs: R→R 70%
   (vs rhythm 42%), L→L 52% — hypothesis only. Recorder now has `--require-bud` + `budcheck`; held-out refuses cross-bud.
-- Next AirPods step: user runs budcheck with only the LEFT AirPod; if L-only is reliable → w5/w6 (protocol in research doc).
+- Exploratory re-analysis (`airpods/analysis/explore_existing.py`): mirror-normalised ROCKET pooled across sessions 48%
+  vs rhythm 37% (McNemar p=0.002, ~20 cells examined); LIMU-BERT ≈ chance; unseen-word transfer ≈ chance.
+- User asked NOT to record w5/w6 yet. If recording resumes, the specific test is a pre-registered mirror+pooling model
+  (frozen on existing sessions) evaluated once on a new held-out session — see research doc.
 
 ## AirPods: hardware audit + fusion plan (w3/w4 untouched: recorder, probe binary, features and heldout script unchanged)
 - Inventory table: `docs/research/AIRPODS_SILENT_SPEECH.md`. Usable = one fused ~50 Hz motion stream (accel, rotation,
