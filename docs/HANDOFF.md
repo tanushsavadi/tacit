@@ -59,20 +59,25 @@ recordings exist.
   not inspected this session. No LLM correction anywhere.
 - Unchanged and frozen: decoder (fast beam 10, CTC 0.1, no LM), gate thresholds, phrase list and `phrase-rule-v1`.
 
-## Sol coordination / ownership (exact status at hand-off)
-- Ownership table in AGENTS.md is unchanged: Sol owns `web/**` + `docs/WORKSTREAM_SOL.md`; Claude owns everything else
-  incl. `macos/**` and Git.
-- `docs/WORKSTREAM_SOL.md` has **uncommitted Sol edits** (+44 lines, "Native notch sprint", 20:15–20:18 UTC): Sol
-  requests transfer of `macos/TacitCompanion/**` for a native notch UI; Sol has NOT edited native sources. Claude did not
-  stage or modify that file. **Transfer is NOT yet authorized**: the user said Sol owns the notch work "once the
-  hand-off is authorized" but has not authorized it. Claude has no uncommitted work in `macos/TacitCompanion/**`
-  (working tree clean there), so it is free to transfer the moment the user (or Claude on the user's word) records it
-  here and in the AGENTS.md ownership table. TacitRoute, server, shared, recognition and Git stay with Claude.
-- Sol's notes list companion client defects to fix after transfer (paused results accepted, nil-authorization equality,
-  stale delivery generations, URL in error text) and request an additive per-utterance generation / session boundary on
-  hypotheses — consider it when adding `speak_reviewed`.
-- Frontend requests still open: show `phraseMatch` (label it display-only; v1 can be wrong on non-speech) and the
-  brightness hint (`gate.mouth_brightness` < 90); later the reviewed-speech review UI once the contract is published.
+## Sol coordination / ownership (updated 2026-11-14 ~20:25 UTC)
+- **Companion ownership TRANSFERRED to Sol by the user's explicit authorization (2026-11-14 ~20:25 UTC).** Steps per
+  AGENTS.md → Git: Claude's Git operations were finished (`541611d` pushed); working tree inspected: clean except Sol's
+  uncommitted `docs/WORKSTREAM_SOL.md` notes (+44 lines, preserved, not staged); `git status macos/` empty — no native
+  companion edits in progress by anyone; Sol had edited no native sources.
+- **Sol owns:** `macos/TacitCompanion/**`, `web/**`, `docs/WORKSTREAM_SOL.md`. **Sol may begin editing
+  `macos/TacitCompanion/**` now.**
+- **Claude owns:** `macos/TacitRoute/**`, `server/**`, `recognition/**`, `shared/**`, `scripts/**`, the rest of the
+  AGENTS.md table, and ALL Git-write authority. Claude does not edit companion files while Sol implements the notch.
+- **Sol does not commit or push.** Claude commits Sol's files only at a checkpoint Sol records as stable.
+- Backend/shared interface changes are Claude's; Claude announces them in "Interface contract" below before Sol
+  depends on them. Next announcement: the `speak_reviewed` contract (in progress, see Hand-off priority 1).
+- Root `THIRD_PARTY_NOTICES.md` stays Claude-owned: Sol keeps companion-local notices for any MIT adaptation and asks
+  Claude to add root entries.
+- Sol's open companion notes (to fix after transfer): paused results accepted, nil-authorization equality, stale
+  delivery generations, URL in error text; request for an additive per-utterance generation / session boundary on
+  hypotheses — considered in the `speak_reviewed` contract.
+- Frontend requests still open: show `phraseMatch` (display-only; v1 can be wrong on non-speech) and the brightness hint
+  (`gate.mouth_brightness` < 90); the reviewed-speech review UI once the contract is published.
 
 ## Requests for Sol (frontend)
 1. Send `outputGeneration: output_status.generation` with every `speak_typed` (additive, `d974748`): the server then

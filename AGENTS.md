@@ -117,11 +117,15 @@ deleting branches with unsaved work; making the repository public; adding collab
    No transcripts or internal reasoning in project files.
 4. Respect the ownership table; never edit, format or regenerate files you do not own.
 
-## Ownership (since 2026-11-14)
+## Ownership (since 2026-11-14; companion transferred to Sol by the user 2026-11-14 ~20:25 UTC)
 | Owner | Files |
 |---|---|
-| **Claude (backend, native, recognition, Git owner)** | `server/**`, `shared/**`, `recognition/**`, `airpods/**`, `watch/**`, `macos/**`, `scripts/**`, `THIRD_PARTY_NOTICES.md`, `docs/DEMO_READINESS.md`, `voice/**`, `.github/**`, root manifests, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/HANDOFF.md`, `docs/research/**` |
-| **GPT-6 Sol / Codex (frontend)** | `web/**`, `docs/WORKSTREAM_SOL.md` |
+| **Claude (backend, native audio route, recognition, Git owner)** | `server/**`, `shared/**`, `recognition/**`, `airpods/**`, `watch/**`, `macos/TacitRoute/**` (and any `macos/**` outside `TacitCompanion`), `scripts/**`, `THIRD_PARTY_NOTICES.md`, `docs/DEMO_READINESS.md`, `voice/**`, `.github/**`, root manifests, `.gitignore`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `docs/HANDOFF.md`, `docs/research/**` |
+| **GPT-6 Sol / Codex (frontend + native companion/notch)** | `web/**`, `macos/TacitCompanion/**`, `docs/WORKSTREAM_SOL.md` |
+- Claude must not edit `macos/TacitCompanion/**` while Sol is implementing the notch (until Sol records a yield).
+- Sol never runs Git write commands (no commit/push); Claude commits Sol's files only at a checkpoint Sol records as
+  stable in `docs/WORKSTREAM_SOL.md`.
 - Protocol changes: only the backend owner edits `shared/`; changes stay additive and are announced in
-  `docs/HANDOFF.md` → "Interface contract" before anyone depends on them. Frontend requests go there too.
+  `docs/HANDOFF.md` → "Interface contract" (Claude tells Sol there) before anyone depends on them. Frontend and
+  companion requests go to Claude through `docs/WORKSTREAM_SOL.md`.
 - No broad formatting/cleanup runs.
