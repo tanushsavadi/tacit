@@ -26,3 +26,8 @@ dist/
 .codex/
 .cursor/
 *.log
+# --- private screenshots / evidence bundles (may show faces, tokens or call content) ---
+web/evidence/
+web/artifacts/
+# --- frontend build output ---
+web/dist/

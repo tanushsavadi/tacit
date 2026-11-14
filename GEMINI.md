@@ -2,4 +2,4 @@
 
 ## Gemini CLI specifics
 - Read `docs/HANDOFF.md` at session start; update it before ending.
-- Never run git write commands (see AGENTS.md).
+- Gemini is not the Git owner: no stage/commit/push/branch/reset/stash (AGENTS.md → Git).
