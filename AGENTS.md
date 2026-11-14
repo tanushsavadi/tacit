@@ -19,6 +19,13 @@ recognized words in an authorized synthesized voice → the remote caller hears 
 - Nothing reaches the remote caller unless the user has authorized speech for this session (Live enabled, not
   paused/stopped) and, for recognized speech, the measured reliability gate passes. Pause/stop must cancel queued and
   playing audio. The legacy candidate flow keeps its explicit per-proposal confirmation (`server/src/controller.ts`).
+- **User-reviewed recognized speech** (approved by the user 2026-11-14 ~20:30 UTC; **implementation not started** —
+  until it exists, recognized text stays display-only): the user explicitly picks one displayed candidate of the
+  CURRENT utterance (raw text, a decoder alternative, or an accepted phrase) and presses Speak; that exact text is spoken
+  once via a dedicated `speak_reviewed` request carrying output authorization + generation + Live authorization +
+  utteranceId + candidate index + text hash, labelled source `reviewed-recognition`. No pre-selection, no timeout
+  auto-confirm, never LLM-edited; refused if paused/stale/a newer utterance exists; stop cancels it. Never routed
+  through `speak_typed`. The reliability gate above still governs AUTOMATIC speech only.
 - Stale results (old utterance / ended call / paused session) are dropped, never spoken.
 - Recognized words are the user's words: never let an LLM rewrite, complete or "correct" them before speaking.
 - Personal-voice cloning only with the user's own, consented voice sample (`ELEVENLABS_VOICE_CONSENT=self`).

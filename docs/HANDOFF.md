@@ -1,50 +1,78 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~19:50 UTC
-**Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: Sol (Cursor/Codex) → `docs/WORKSTREAM_SOL.md`, frozen at its ~11:55 UTC checkpoint (committed `80a36ac`).
+**Last updated:** 2026-11-14 ~20:45 UTC
+**Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Session ended at the
+user's request for a clean hand-off to a fresh Opus session.
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
-recognised words stays DISABLED until a silent-speech reliability gate is measured.
-**Start here:** `docs/DEMO_READINESS.md` (status, verified commands, latency, human checklist).
+recognised words stays DISABLED.
+**Start here:** this section, then `docs/DEMO_READINESS.md` (D.7–D.11 = this session's results, E = next human test).
 
-## Verified status (2026-11-14)
+## Hand-off for the next Opus session (2026-11-14 ~20:45 UTC)
+**Priority 1 — reviewed mouth-to-call (`speak_reviewed`). The user EXPLICITLY APPROVED both the policy and the
+server implementation (answered "Approve as written", ~20:30 UTC). Policy text is now in AGENTS.md → product rules.
+Implementation has NOT started — no code, no protocol change yet.** Intended design (from the approved text):
+- New additive `ClientMessage speak_reviewed {requestId, outputAuthorizationId, outputGeneration, liveAuthorizationId,
+  utteranceId, candidate: 'raw'|'alternative'|'phrase', index, text, textHash}`; `SpeechSource` gains
+  `'reviewed-recognition'` (announce both in "Interface contract" before Sol depends on them).
+- Server keeps, per shown hypothesis, the exact candidates it displayed (rawText; N-best alternatives — needs an additive
+  optional `alternatives` list on `RecognitionHypothesis`, the sidecar already decodes 3; accepted phrase). It speaks
+  only an exact stored candidate of the LATEST shown utterance of the current Live authorization/generation, once per
+  utterance (exactly-once key), only while output is 'ready' with matching authorization + generation. Refuse: paused,
+  stale, newer utterance exists, text/hash mismatch, duplicate, Live not active. Pause/stop/interrupt cancel it like any
+  delivery. Never via `speak_typed`; `recognizedSpeechAllowed` stays false (it describes automatic speech).
+- Tests in `server/src/speech.test.ts` / `live.test.ts`; UI button = request to Sol (web/ and, if transferred, the
+  companion are Sol's). The companion/notch must not infer the contract (Sol's own note agrees).
+**Priority 2 — evidence-based phrase false-trigger fix:** implement `phrase-rule-v2` = v1 + free-hypothesis att/token
+≥ −1.5 (DEMO_READINESS D.9: keeps 37/37 genuine dev accepts, removes 4/4 resting-face and 7/10 tail accepts). Bump
+`RULE_VERSION`, keep v1 selectable, add tests, re-run `eval.phrase_rule_probe` + `eval.closed_set`. Validate only on NEW
+data (`live:test` v2 + `--phrases`, DEMO_READINESS E). Then a pre-decode speech-likeness check once smile/nod
+recordings exist.
+**Not to do:** LM fusion (rejected, D.8); tuning on the v1 held-out sentences; enabling automatic speech.
+
+## Verified status (2026-11-14 ~20:45 UTC)
 | Item | Status |
 |---|---|
-| Google Meet remote audibility | **VERIFIED (human-observed):** BlackHole 16ch as Meet mic on the Mac; the user's iPhone in the same Meet heard TACIT |
+| Google Meet remote audibility | **VERIFIED (human-observed):** BlackHole 16ch as Meet mic; the user's iPhone heard TACIT |
 | FaceTime remote audibility | NOT YET TESTED |
 | Typed synthesized speech | VERIFIED through a real call (Google Meet) |
-| Silent recognition | Front-lit session C: 3/3 silent exact (in-sample, repeated development phrases). Dim session B: 47.7% WER. Held-out live test NOT YET RUN |
-| Automatic recognised-speech transmission | STILL DISABLED. NO-GO open vocabulary; phrase mode not yet (DEMO_READINESS F) |
+| Silent recognition, held-out live v1 (frozen baseline) | **44% WER (11/25), 2/5 exact**, front-lit 127–130, end→shown p50 1385 ms; smile → wrong phrase accept; repeat ×3 → 1 window; pause 0 (D.7) |
+| LM-assisted decoding | Rejected on dev data (worse everywhere, hallucinations, ~2× decode) (D.8) |
+| Oracle top-K | NOT RUN (harness committed) |
+| Phrase rule v1 | Root cause of false accepts found (no absolute-evidence floor); v2 proposed, not implemented (D.9) |
+| Reviewed mouth-to-call | APPROVED by user; NOT STARTED |
+| Automatic recognised-speech transmission | STILL DISABLED. NO-GO open vocabulary and phrase mode |
 
 ## Restartable checkpoint (state at hand-off)
-- `main` pushed at `0229768` + docs commit; working tree clean. Server running with the new code (phrase mode on,
-  pre-decode gate, latency stages).
-- Recognition sessions (private, git-ignored `recognition/data/webcam/`): A `20261114T184530Z-s1` (partial, backlit),
-  B `20261114T185152Z-s1` (23 clips, dim), C `20261114T191005Z-bright-test` (13 clips, front-lit; its 10 prompted clips
-  have mode "" and were spoken). Results and diagnosis: DEMO_READINESS D.2–D.3.
-- This round: lighting confirmed as the main capture factor; decoder/padding/live preprocessing ruled out (eval
-  scripts in `recognition/eval/`); **defect fixed**: still-face hallucination (36/36 → 4/36 resting segments) by
-  applying the untuned pre-existing gate thresholds before decoding (`c533656`); phrase mode added display-only
-  (`0773988`, `800a9ea`, protocol: optional `RecognitionHypothesis.phraseMatch`); `stages.endpoint_wait`/`upload`
-  added (`af14b92`); `npm run live:replay` and the guided held-out `npm run live:test`; recorder `--modes ''`
-  fix + explicit nv12 + 7 unittests (`0229768`).
-- Frozen for the held-out test: decoder (fast beam, beam 10, CTC 0.1), gate thresholds (config.py), phrase list and
-  `phrase-rule-v1` (tacit_vsr/phrases.py). Changing any of them before the live test invalidates it as held-out.
-- Disk 41 GB free; preflight exit 0 with no FAIL.
-- Companion `--selftest` 7/7 PASS; camera shared by two capture processes at 30 fps (FaceTime video untested).
-- Running locally: `./scripts/tacit.sh start` server on 127.0.0.1:8790 (+ VSR sidecar :8765, whisper :8766, tacit-route
-  helper); `TACIT.app` companion open. Sol's Vite on :5173 and recogniser on :8767 are Sol's processes.
-- Built artefacts (git-ignored): `macos/TacitRoute/.build/release/tacit-route` (rebuilt with swiftc after the watchdog
-  fix; SwiftPM intermediates deleted for space), `macos/TacitCompanion/.build/TACIT.app`, `web/dist` (from `80a36ac`).
-  Rebuild everything: `./scripts/tacit.sh build` (needs disk).
-- Done this session: Live exactly-once/backpressure/shared session/owner rule/heartbeat; tacit-route (BlackHole) with
-  loopback verify, calibration, stop measurement; speech output session + typed AAC; launcher + preflight; companion;
-  fast decoder (SilentFlow, MIT) 4× faster at equal WER; warm-up; Sol's frontend committed; 3 Fable reviews, all P0/P1
-  findings fixed with tests; `live:check`, `live:stress`, `route:check`, `speech:check`, `ui:check` scripts.
-- **Next (human):** the held-out live test — DEMO_READINESS E (lighting check → Start Live preview → `npm run live:test`).
-- **Next (engineering, after that report):** native streaming TTS in tacit-route (largest latency win, ≈ −0.8 s);
-  if the user authorizes it and the pre-registered conditions in DEMO_READINESS F pass on new data, an opt-in
-  phrase-autospeak experimental mode; reduce resting/smile false triggers (needs smile/swallow recordings). AirPods
-  motion endpointing stays a separate later experiment.
+- `main` pushed. This session's commits: `4dda303` feat(server) per-window `win_*` diagnostics in hypothesis `stages`
+  (+test); `24c2baf` feat(server) `live:test` v2 (fresh set, `--set v1` kept, 22 s repeat, 12–20 s non-speech incl.
+  listening, arrival times, `--phrases`); `fd3c8d3` feat(recognition) `eval/lm_ab.py`, `eval/phrase_rule_probe.py`,
+  `eval/oracle_topk.py`; then the docs commit (AGENTS.md policy, this file, DEMO_READINESS).
+- Checks at hand-off: server typecheck clean, `npm test` **98/98**; recognition unittests 7/7; eval scripts compile.
+  `live:test` v2 typechecked only (not run — it would pause an active Live session). Web untouched.
+- Running server (`./scripts/tacit.sh start`, :8790 + sidecar :8765) was NOT restarted: it still runs the pre-`4dda303`
+  code, so `win_*` keys appear only after `./scripts/tacit.sh restart`. No background jobs left running.
+- New git-ignored artefacts: `third_party/visual/weights/lm_en_subword/` (215 MB LM, pinned rev f4e39b6d…, research-only
+  terms); results with private transcripts in `recognition/data/eval/{lm_ab,phrase_rule_probe}.jsonl` and
+  `recognition/data/eval_*.log`. The v1 live log: `recognition/data/live/2026-11-14T19-58-01-573Z-livetest.jsonl`.
+- External code: SilentFlow fast beam already vendored (MIT notice in `tacit_vsr/fast_beam.py`). Lipflow / SilentFlow
+  LM loading pattern followed (no code copied). Hushkey, Personalized-Lip-Reading, VALLR, VSP-LLM, phoneme-to-words-lm:
+  not inspected this session. No LLM correction anywhere.
+- Unchanged and frozen: decoder (fast beam 10, CTC 0.1, no LM), gate thresholds, phrase list and `phrase-rule-v1`.
+
+## Sol coordination / ownership (exact status at hand-off)
+- Ownership table in AGENTS.md is unchanged: Sol owns `web/**` + `docs/WORKSTREAM_SOL.md`; Claude owns everything else
+  incl. `macos/**` and Git.
+- `docs/WORKSTREAM_SOL.md` has **uncommitted Sol edits** (+44 lines, "Native notch sprint", 20:15–20:18 UTC): Sol
+  requests transfer of `macos/TacitCompanion/**` for a native notch UI; Sol has NOT edited native sources. Claude did not
+  stage or modify that file. **Transfer is NOT yet authorized**: the user said Sol owns the notch work "once the
+  hand-off is authorized" but has not authorized it. Claude has no uncommitted work in `macos/TacitCompanion/**`
+  (working tree clean there), so it is free to transfer the moment the user (or Claude on the user's word) records it
+  here and in the AGENTS.md ownership table. TacitRoute, server, shared, recognition and Git stay with Claude.
+- Sol's notes list companion client defects to fix after transfer (paused results accepted, nil-authorization equality,
+  stale delivery generations, URL in error text) and request an additive per-utterance generation / session boundary on
+  hypotheses — consider it when adding `speak_reviewed`.
+- Frontend requests still open: show `phraseMatch` (label it display-only; v1 can be wrong on non-speech) and the
+  brightness hint (`gate.mouth_brightness` < 90); later the reviewed-speech review UI once the contract is published.
 
 ## Requests for Sol (frontend)
 1. Send `outputGeneration: output_status.generation` with every `speak_typed` (additive, `d974748`): the server then
@@ -55,6 +83,8 @@ recognised words stays DISABLED until a silent-speech reliability gate is measur
 4. NEW optional `RecognitionHypothesis.phraseMatch` (`800a9ea`): show "Phrase list match: … (display only)" or its
    rejection reason; never feed it to speech. `gate.mouth_brightness` < 90 → "too dark, light from the front" hint.
    End→shown latency = `stages.endpoint_wait + stages.upload + recognitionMs`. Consider `preRollMs` 160 → 400.
+5. NEW additive keys in `RecognitionHypothesis.stages` (`4dda303`, no type change): `win_start`, `win_end` (browser
+   clock ms, from your header), `win_ms`, `win_frames`, `win_max_gap` — segmentation diagnostics; do not sum them into latency.
 
 ## Repository
 - `https://github.com/tanushsavadi/tacit` — PRIVATE, branch `main`. Git owner: **Claude** (AGENTS.md → Git).

@@ -1,4 +1,4 @@
-# TACIT — Demo readiness (2026-11-14, ~19:45 UTC)
+# TACIT — Demo readiness (2026-11-14, ~20:45 UTC)
 
 **Your voice. Beyond speech.** TACIT is a virtual voice for people who can silently articulate words but cannot
 produce usable audible speech: the camera reads the words they mouth, and a synthesized voice speaks into the
@@ -15,11 +15,14 @@ voice path.
 | FaceTime / Zoom remote audibility | NOT YET TESTED | — |
 | Silent recognition, good light (in-sample) | 3/3 silent sentences exact, 0/14 words wrong; voiced control 6/47 = 12.8% WER | session C (D.2) — repeated development phrases, **not** independent |
 | Silent recognition, dim light | 47.7% WER (3/13 exact); voiced 46.8% | session B (D.2) |
-| Silent recognition, held-out live test | **NOT YET RUN** — tooling ready (`npm run live:test`, E) | — |
+| Silent recognition, held-out live test (v1, real browser pipeline, front-lit 127–130) | **44% WER (11/25), 2/5 exact**, 0 missed windows; end→shown p50 1385 / p95 1483 ms | D.7 — FROZEN baseline, `recognition/data/live/2026-11-14T19-58-01-573Z-livetest.jsonl` |
 | Live pipeline (browser → server → Auto-AVSR on MPS → browser/companion) | Works; same accuracy as offline in aggregate (D.4); outputs shown display-only | `live:check`, `live:replay`, `ui:check` |
-| No-speech false triggers (resting face) | 36/36 → **4/36** after the pre-decode gate (`c533656`); smiles/swallows not yet measured | `eval/rest_probe.py` |
-| Phrase mode (30-phrase list, frozen rule) | Display-only. Dev: 37 of 45 in-list utterances accepted, 0 wrong; 0/3 own unlisted sentences, 1/96 CREMA-D unlisted accepted | D.3 |
-| Automatic speaking of recognised words | **DISABLED** (Live refuses `automatic`; `UNVALIDATED_GATE`). Recommendation: **NO-GO** open-vocabulary; phrase mode **not yet** (F) | `speech.test.ts`, `live.test.ts` |
+| No-speech false triggers | Dev resting face 36/36 → 4/36 after the pre-decode gate. **Held-out live: still 0, swallow/glance 0, smile 1** (raw "SO", phrase mode wrongly ACCEPTED "I DON'T UNDERSTAND") | D.7, D.9 |
+| Phrase mode (30-phrase list, rule v1) | Display-only. Dev: 37/45 in-list accepted, 0 wrong; unlisted 0/99 accepted. **Defect: no absolute-evidence floor** → accepts junk one-word decodings (held-out smile; dev 4/36 rest, 10/48 tails). Proposed v2 (not implemented): D.9 | D.3, D.9 |
+| LM-assisted decoding (pretrained Auto-AVSR subword LM, shallow fusion) | **Rejected**: worse WER on every dev set, ~1.7–2× decode time, fluent hallucinations | D.8 |
+| Oracle top-K (is the reference in the N-best?) | **NOT RUN** — harness committed (`eval/oracle_topk.py`) | D.10 |
+| Reviewed mouth-to-call (`speak_reviewed`) | **Policy APPROVED by the user (2026-11-14 ~20:30 UTC); implementation NOT STARTED** | AGENTS.md, HANDOFF |
+| Automatic speaking of recognised words | **DISABLED** (Live refuses `automatic`; `UNVALIDATED_GATE`). **NO-GO** open-vocabulary; **NO-GO** phrase mode (held-out wrong accept) (F) | `speech.test.ts`, `live.test.ts` |
 | Menu-bar companion, launcher, preflight | Work (`--selftest` 7/7; preflight no FAIL) | B, D.1 |
 | AirPods | Listening device only. AirPods word recognition NO-GO (`docs/research/AIRPODS_SILENT_SPEECH.md`) | — |
 
@@ -42,7 +45,10 @@ call."
 1. **Demo A — silent recognition (35 s).** Face lit from the front. Workspace → **Start Live preview**. Point at the
    status: microphone off, camera only (the recogniser never receives audio — its input is JPEG frames). Mouth a short
    sentence silently. The raw recognised words appear, with "display only — not spoken" and the phrase-list result.
-   Say it plainly: *open-vocabulary recognition is experimental; it is right on some sentences and wrong on others.*
+   Say it plainly: *open-vocabulary recognition is experimental; on fresh sentences it was exactly right 2 of 5 times
+   (44% WER, D.7).* Keep a neutral face between sentences (a smile can produce a wrong phrase-list match, D.9); mouth one
+   sentence, then wait for the text (~1.4 s) before the next. **Fallback if recognition misses:** show the abstention /
+   rejection reason, then go straight to Demo B (typed speech) — never retype the recognised words into Speak.
 2. **Demo B — a real call (30 s).** Google Meet on the Mac with **BlackHole 16ch** as the microphone; a judge's/your
    iPhone joined as an ordinary participant (no app). Type a sentence in TACIT → **Speak** → the iPhone speaks it.
    Press **⌃⇧⌘.** during a long sentence to show immediate stop.
@@ -62,7 +68,10 @@ camera and speaks them into your call as a voice — no sound from you, no app f
 
 ## D. Evidence
 
-### D.1 Regression and integration checks (this session, final code `0229768`)
+### D.1 Regression and integration checks
+Latest (2026-11-14 ~20:40 UTC, code `fd3c8d3`): `cd server && npm run typecheck && npm test` clean, **98/98**;
+`recognition` unittests 7/7; new eval scripts compile. `live:test` v2 typechecked, not yet run with a human. Web unchanged.
+Earlier, code `0229768`:
 | Command | Result |
 |---|---|
 | `cd server && npm run typecheck && npm test` | clean, **97/97** |
@@ -145,22 +154,103 @@ measured end-to-end number.
   in ~0.1–0.2 s instead of ~1 s, ≈ −0.8 s off B; (2) phrase-level commitment at natural pauses (already the design);
   (3) shorter quiet interval (480 → ~300 ms) only after the live test shows it does not split sentences.
 
-## E. Human steps for the held-out live test (≈ 5 min)
-1. Light from the front (face a window or lamp, nothing bright behind you). `cd recognition && .venv/bin/python
-   record_webcam.py --check` until **PASS mouth brightness** (≥ 90; aim for ~105).
-2. `./scripts/tacit.sh restart && ./scripts/tacit.sh open` → **Start Live preview**, allow the camera. Leave voice output off.
-3. In a terminal: `cd server && npm run live:test`. Follow the 10 prompts: 5 fresh sentences (never used in
-   development), 3 no-articulation windows (still / smile / swallow + glance away), one 3× repeat, one pause trial
-   (the script pauses Live itself). Silent only — no voice, no whisper.
-4. Paste the final report (or the log path it prints, `recognition/data/live/…`, text + timings only) back to Claude.
-   That result is the first **held-out** live number; it must be reported before any tuning on it.
-Optional: in a Meet call, type a long sentence → Speak → press ⌃⇧⌘. mid-sentence; ask the listener whether it stopped.
+### D.7 FIRST HELD-OUT LIVE TEST (v1) — frozen baseline, 2026-11-14 19:58 UTC
+`npm run live:test` (set v1), real silent articulation, real browser webcam pipeline, good front light. Recorded before
+any change to thresholds, phrase rule or model settings. **These five sentences have since been studied: never use them
+again as unseen evaluation** (they remain only behind `--set v1`).
+| REF | HYP (raw, display-only) | words wrong |
+|---|---|---|
+| YES I UNDERSTAND | YES I UNDERSTAND ✓ | 0/3 |
+| CAN WE TALK LATER | CAN WE TALK LIKE A GIRL | 2/4 |
+| MY BATTERY IS ALMOST EMPTY | MY MANUAL E IS ALMOST PLEASE | 3/5 |
+| PLEASE SEND ME THE ADDRESS | PLEASE SEND ME THE ADDRESS ✓ | 0/5 |
+| I THINK THE MEETING WENT REALLY WELL TODAY | I THINK THE BLEAK WILL AGREE WILL AGREE | 6/8 |
+- **WER 11/25 = 44%; exact 2/5; missed sentence windows 0.** Mouth brightness 126.9–130.
+- End of articulation → shown: **p50 1385 ms, p95 1483 ms** (endpoint wait 482–525 + upload 12–31 + recognition 708–982).
+- Non-articulation: still face 0; **smile 1** (raw "SO", phrase rule v1 ACCEPTED "I DON'T UNDERSTAND", margin 0.361,
+  garbage gap −0.643); swallow + glance 0.
+- Repeat ×3 "CAN WE TALK LATER": **1 window** (exact). Pause trial: 0 results after pause.
+- Phrase mode on the 5 unlisted sentences: all correctly rejected ("video fits an unlisted sentence better").
+
+### D.8 LM-assisted decoding A/B (development data only) — REJECTED
+`eval/lm_ab.py`: same encoder output per clip; production fast beam (beam 10, CTC 0.1, no LM) vs shallow fusion with
+`lm_en_subword` (Amanvir/lm_en_subword @ f4e39b6d…, the checkpoint Chaplin/SilentFlow/Lipflow use; same research-only
+terms as the VSR weights; git-ignored in `third_party/visual/weights/lm_en_subword/`). Wiring verified: TACIT's FastLM
+equals ESPnet's reference `lm.score` to 0.01 nats, and natural > scrambled sentences (−19.5 vs −43.4).
+| Set | base (prod) | LM 0.1 | LM 0.2 | LM 0.3 | LM 0.5 | LM 0.3 beam 20 | decode p50 base → LM |
+|---|---|---|---|---|---|---|---|
+| A backlit (12) | 60.7% | 58.9% | 62.5% | 62.5% | 66.1% | 67.9% | 91 → 157–205 ms |
+| B dim (23) | 47.3%, 7 exact | 50.9% | 59.8% | 58.9% | 59.8% | 54.5% | 102 → 168–228 ms |
+| C front-lit (13) | **9.8%, 10 exact** | 21.3% | 19.7% | 19.7% | 19.7% | 19.7% | 130 → 203–296 ms |
+| CREMA-D voiced (96) | **5.2%, 80 exact** | 6.0% | 5.8% | 6.0% | 7.1% | 5.6% | 142 → 240–284 ms |
+Introduced errors are fluent hallucinations, e.g. PLEASE TURN ON THE LIGHTS → "I'M GOING TO PLAY THE GIRL ON THE LIGHT";
+SEE YOU TOMORROW MORNING (correct without LM) → "IT'S A NEW SMALL MARKET". One fix (…SOME WORK PLEASE → …SOME WATER
+PLEASE) does not offset them. Lipflow's author reports the same (LM weight 0.2–0.6: no gain). Peak process RSS 2238 MB
+was unchanged by loading the LM (the peak is set earlier; the LM file is 215 MB). **Production decoding unchanged.**
+Personalised LM / LLM candidate scoring were not built: fusion with a general LM already hurts, and there is no
+disjoint personal data to tune a personal prior on.
+
+### D.9 Phrase false acceptance — root cause and proposed rule v2 (development evidence)
+**Root cause.** Rule v1 (`tacit_vsr/phrases.py`) accepts the best phrase when (1) margin to the runner-up ≥ 0.15 and
+(2) the free open-vocabulary hypothesis is NOT better than the phrase by > 1.5 nats/token. There is **no absolute
+evidence floor**: when the window contains no sentence, the free decoding is itself junk (one word, very low score), so
+check (2) passes trivially, and one phrase — almost always "I DON'T UNDERSTAND" — is relatively best. The held-out smile:
+free "SO" att −2.894/token, gap −0.643 → accepted. Upstream contributors: the browser endpointer weights jaw/mouth
+aspect velocity (a smile opens the lips, `web/src/silent/articulation.ts`), and the pre-decode gate threshold
+(aperture range ≥ 0.04 IOD) is far below the smile's 0.117 (live sentences: 0.31–0.40).
+**Evidence** (`eval/phrase_rule_probe.py`, sessions A–C + CREMA-D, 276 items; sub-segments are the closest existing
+proxies for non-sentence mouth motion — NOT smiles):
+| Kind | n | gated before decode | v1 accepts | free att/token (min / median of decoded) |
+|---|---|---|---|---|
+| in-list utterances | 45 | 0 | 37 (all correct) | −1.18 / −0.39 |
+| unlisted utterances (own + CREMA-D) | 99 | 2 | 0 | −0.51 / −0.11 |
+| resting face after speech | 36 | 32 | **4** (all "I DON'T UNDERSTAND") | −1.88 / −1.66 |
+| tail: last 0.9 s of motion + settling | 48 | 2 | **10** | median −1.30 |
+| head: 0.9 s around onset | 48 | 2 | **2** | median −0.65 |
+Two session-C tails are the smile pattern exactly: free "SO" (−2.73) → "I DON'T UNDERSTAND". Other junk accepts: "UM",
+"UGLY", "MIND", "SEE", "YES", "RIGHT", "WEEK", "EXACTLY", "YEAH", "I".
+Candidate added conditions (v1 kept), same data:
+| Added condition | in-list accepted (correct) | rest | tail | head |
+|---|---|---|---|---|
+| none (v1) | 37 (37) | 4 | 10 | 2 |
+| **free att/token ≥ −1.5** | **37 (37)** | **0** | 3 | 1 |
+| ≥ −1.5 and phrase/free word overlap ≥ ⅓ | 33 (33) | 0 | 1 | 0 |
+| ≥ −1.0 | 34 (34) | 0 | 1 | 0 |
+Unlisted sentences: 0 accepts under every rule. The one tail every rule accepts is the real end of "…CALL MY MOTHER"
+(speech, not a non-speech trigger). **Proposal (NOT implemented): `phrase-rule-v2` = v1 + free att/token ≥ −1.5**,
+plus a server-side speech-likeness check before decoding once smile/nod recordings exist. The held-out smile (−2.894,
+no overlap) would be rejected by all three — a post-hoc check, not a validation. Validation needs the v2 live test
+non-speech trials and `--phrases` (E).
+
+### D.10 Oracle top-K — NOT RUN
+`eval/oracle_topk.py` (K = 1/3/5/10, beam 10/20, candidates only from the decoder) is committed but was not run this
+session. Run it before building any reranker: if the reference is absent from the top-K, reranking cannot recover it.
+
+### D.11 Repeated articulation — diagnosis (one window out of three)
+Every v1 live window lasted **3.5–5.2 s** (frames ÷ 25 fps from the log: "YES I UNDERSTAND" 3.52 s; the repeat's window
+4.04 s), although these sentences take ~1.5–2 s to say. With a ~4 s window per repetition plus ~2 s still, the second
+result arrives ≈ 10–11 s after Enter, but v1 `live:test` listened for only **9 s**: the trial design most likely
+truncated it. Not proven — v1 did not log arrival times or window bounds. Fixed in tooling: `4dda303` adds per-window
+`win_start/win_end/win_ms/win_frames/win_max_gap` to `stages`; `24c2baf` gives the repeat trial 22 s and logs arrival
+times. Open question for the next run: why windows are ~2 s longer than the articulation (slow deliberate mouthing, or
+endpointer staying active on pre/post movements). Sol's replay test already shows the segmenter re-arms between
+repeats (two windows on recorded actor input), so a rearm bug is not indicated.
+
+## E. Next human evaluation (≈ 12 min, independent of everything studied so far)
+1. Light from the front: `cd recognition && .venv/bin/python record_webcam.py --check` until PASS (≥ 90; aim ~105–130).
+2. `./scripts/tacit.sh restart && ./scripts/tacit.sh open` → **Start Live preview**. Leave voice output off. Keep the
+   workspace window visible (hidden tabs pause capture).
+3. `cd server && npm run live:test` (set v2: 5 fresh sentences, still 15 s, smile ×3, swallow/nod, 20 s listening,
+   repeat ×3 in 22 s, pause). Then `npm run live:test -- --phrases` (20 in-list attempts, random order).
+4. Paste both reports / log paths (`recognition/data/live/…`). Do not rehearse the v2 sentences before the run.
+The v1 result (D.7) stays the frozen baseline; v2 is the first evaluation of anything changed after it.
 
 ## F. Automatic silent-to-voice: recommendation
 - **Open-vocabulary automatic speech: NO-GO.** Even in good light the model is a ~19%-WER recogniser (dev voiced
   12.8%); outputs flip between near-identical inputs; confidence features do not separate errors (session B: n-best margin ≥ 0.15
   accepted 9/23 with 2 wrong, incl. "…SOME MARIJUANA PLEASE").
-- **Phrase-mode automatic speech: NOT YET (conditional).** In-list accuracy looks strong on development data (0 wrong
+- **Phrase-mode automatic speech: NO-GO for now** — the held-out live test produced a wrong accept on a smile (D.7, D.9).
+  Earlier text, kept for reference: **NOT YET (conditional).** In-list accuracy looks strong on development data (0 wrong
   accepts; 37/45 accepted), but **4/36 resting-face segments are still accepted** (as "I DON'T UNDERSTAND") and smiles,
   swallows, listening/laughing have not been measured. Proposed, not implemented: an explicitly opt-in, per-session
   "phrase autospeak (experimental)" mode that may speak only accepted list phrases, only while Live and voice output are
@@ -171,11 +261,15 @@ Optional: in a Meet call, type a long sentence → Speak → press ⌃⇧⌘. mi
   dark capture (reported as `mouth_brightness`, not yet a gate); end of utterance (motion endpointer, experimental).
   What it cannot yet: unintended mouth movements (smile, swallow) vs speech; correct vs incorrect open-vocabulary text.
 
+- **Reviewed mouth-to-call (approved, not implemented):** the user picks one displayed candidate of the current
+  utterance and presses Speak → `speak_reviewed` (AGENTS.md). Not automatic speech; the gate above is unaffected.
+
 ## G. Limitations
 - Weights are research/non-commercial; trained on voiced LRS3 video. Silent accuracy measured only on one speaker,
   repeated prompts, in development.
 - Recognition depends strongly on front lighting; the Live web UI does not yet warn when `mouth_brightness` < 90.
-- Resting-face false triggers 4/36 remain (display-only, so nothing is spoken).
+- Phrase rule v1 accepts junk one-word decodings (smile, mouth settling) as "I DON'T UNDERSTAND" (D.9); display-only.
+- Live windows run ~2 s longer than the articulation (D.11); cause not yet measured.
 - Voice is the macOS system voice (labelled, not personal); `say` adds ~1 s.
 - No sidetone; one server per Mac; FaceTime untested; no installer.
 - Companion shows raw text but not yet the phrase result.
@@ -187,7 +281,8 @@ Optional: in a Meet call, type a long sentence → Speak → press ⌃⇧⌘. mi
 4. Consider `ARTICULATION_CONFIG.preRollMs` 160 → 400 (weak evidence, D.3); send `outputGeneration` with `speak_typed`.
 
 ## I. Git
-`main`, pushed; Claude is the only Git writer. This round: `5374284` capture stats + lighting check; `7a8f482` eval
+`main`, pushed; Claude is the only Git writer. After the held-out test: `4dda303` per-window diagnostics in
+`stages`; `24c2baf` `live:test` v2; `fd3c8d3` eval harnesses (LM A/B, phrase-rule probe, oracle top-K); then docs. This round: `5374284` capture stats + lighting check; `7a8f482` eval
 tools; `c533656` pre-decode abstention gate; `0773988` phrase mode; `800a9ea` phraseMatch to clients; `af14b92`
 latency stages + `live:replay` + `live:test`; `0229768` recorder `--modes` fix + nv12. Earlier: see HANDOFF.
 Sources (prior art): [SRAVI App Store](https://apps.apple.com/us/app/sravi/id1518790556),
