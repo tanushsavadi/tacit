@@ -46,6 +46,18 @@ class Plan(unittest.TestCase):
             f.write("# header\n\nfirst sentence\n  # indented comment\nsecond one\n")
         self.assertEqual(rw.read_prompts(f.name), ["first sentence", "second one"])
 
+    def test_paired_takes_are_adjacent_and_cover_both_modes(self):
+        import random
+        out = rw.plan_pairs(["a", "b", "c"], random.Random(1))
+        self.assertEqual(len(out), 6)
+        for i in range(0, 6, 2):
+            (p1, m1, k1), (p2, m2, k2) = out[i], out[i + 1]
+            self.assertEqual((p1, k1), (p2, k2))
+            self.assertEqual({m1, m2}, {"voiced", "silent"})
+        self.assertEqual(sorted({p for p, _, _ in out}), ["a", "b", "c"])
+        with self.assertRaises(ValueError):
+            rw.plan_pairs([])
+
     def test_nothing_to_record_rejected(self):
         with self.assertRaises(ValueError):
             rw.plan([], 0)

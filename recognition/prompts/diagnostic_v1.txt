@@ -1,0 +1,9 @@
+# Paired diagnostic (exploratory, NOT a benchmark): each sentence once spoken normally and once mouthed silently,
+# back to back under the same light. Video only. Not part of adapt_v1 or heldout_v2; never use for evaluation claims.
+#   .venv/bin/python record_webcam.py --name diag1 --prompts prompts/diagnostic_v1.txt --paired --free 0
+#   .venv/bin/python -m eval.paired_diag data/webcam/<timestamp>-diag1
+my brother found a blue wallet
+we watched five films on friday
+both puppies were very muddy
+the farmer bought ten big boxes
+please move the vase off the shelf

@@ -4,6 +4,8 @@
     .venv/bin/python record_webcam.py --check      lighting/framing check only (records 2 s, keeps nothing)
     .venv/bin/python record_webcam.py --name adapt1 --modes silent --prompts prompts/adapt_v1.txt --free 0 [--limit 50]
     .venv/bin/python record_webcam.py --name ctrl1 --modes none --free 0 --nonspeech 2   smile/swallow/listen controls
+    .venv/bin/python record_webcam.py --name diag1 --prompts prompts/diagnostic_v1.txt --paired --free 0
+        paired diagnostic: each sentence spoken normally and mouthed silently back to back (random order per pair)
 Each prompt is recorded once per mode (silent = articulate with no sound; voiced = speak normally — still no audio is
 captured; it is a control that separates "silent articulation" from "webcam domain"). Clips + manifest.jsonl go to
 recognition/data/webcam/<timestamp>-<name>/ (git-ignored; contains your face — keep private).
@@ -63,6 +65,22 @@ def plan(modes: list[str], free: int, prompts: list[str] = PROMPTS, nonspeech: i
     if not items and free == 0:
         raise ValueError("nothing to record: give --modes and/or --free N")
     return items
+
+
+def plan_pairs(prompts: list[str], rng: random.Random | None = None) -> list[tuple[str, str, int]]:
+    """(prompt, mode, pair) with each prompt's voiced and silent takes ADJACENT (same light, seconds apart). Pair order is
+    shuffled and the order inside each pair is random, so neither mode is systematically first (fatigue/practice)."""
+    if not prompts:
+        raise ValueError("no prompts to pair")
+    rng = rng or random.Random()
+    order = list(prompts)
+    rng.shuffle(order)
+    out = []
+    for k, p in enumerate(order, 1):
+        modes = ["voiced", "silent"]
+        rng.shuffle(modes)
+        out += [(p, m, k) for m in modes]
+    return out
 
 
 def camera_index(name_hint: str | None) -> str:
@@ -151,6 +169,8 @@ def main() -> None:
     ap.add_argument("--skip-check", action="store_true", help="record even if the lighting check warns")
     ap.add_argument("--prompts", default=None, help="prompt file (one sentence per line) instead of the 10 built-in prompts")
     ap.add_argument("--limit", type=int, default=0, help="record a random subset of N prompts from --prompts")
+    ap.add_argument("--paired", action="store_true", help="record every prompt voiced AND silent back to back "
+                    "(paired diagnostic; ignores --modes)")
     ap.add_argument("--nonspeech", type=int, default=0, help="also record N repetitions of each non-speech control "
                     f"({', '.join(NONSPEECH)})")
     a = ap.parse_args()
@@ -160,7 +180,8 @@ def main() -> None:
             prompts = read_prompts(a.prompts) if a.prompts else PROMPTS
             if a.limit:
                 prompts = random.sample(prompts, min(a.limit, len(prompts)))
-            items = plan(modes, a.free, prompts, a.nonspeech)
+            pairs = plan_pairs(prompts) if a.paired else None
+            items = [(p, m) for p, m, _ in pairs] if pairs else plan(modes, a.free, prompts, a.nonspeech)
         except ValueError as e:
             raise SystemExit(f"error: {e}")
         print(f"plan: {len(items)} predefined clips ({', '.join(modes) or 'none'}{', non-speech controls' if a.nonspeech else ''}) "
@@ -175,7 +196,8 @@ def main() -> None:
         return
     out = Path(__file__).resolve().parent / "data" / "webcam" / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{a.name}"
     out.mkdir(parents=True, exist_ok=True)
-    random.shuffle(items)
+    if not a.paired:
+        random.shuffle(items)
     print("Face the camera, normal lighting, mouth fully visible. Audio is NOT recorded.")
     with open(out / "manifest.jsonl", "a") as man:
         for k, (prompt, mode) in enumerate(items, 1):
@@ -186,7 +208,8 @@ def main() -> None:
             else:
                 record(cam, f, a.seconds, prompt, mode)
                 man.write(json.dumps({"file": f.name, "ref": prompt, "mode": mode, "prompted": True,
-                                      **({"prompts": Path(a.prompts).name} if a.prompts else {})}) + "\n")
+                                      **({"prompts": Path(a.prompts).name} if a.prompts else {}),
+                                      **({"pair": pairs[k - 1][2]} if a.paired else {})}) + "\n")
             man.flush()
         for k in range(a.free):
             text = input(f"\nYour own sentence #{k + 1} (type it, Enter; you will then articulate it silently): ").strip()
