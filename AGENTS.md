@@ -60,6 +60,8 @@ cd server && npm run tunnel       # PUBLIC exposure — only with explicit user 
 cd web && npm ci && npm run typecheck && npm test && npm run build   # frontend checks (also in CI)
 cd recognition && .venv/bin/python -m tacit_vsr.transcribe CLIP --ref "TEXT"   # visual-only VSR, audio never read
 cd recognition && .venv/bin/python record_webcam.py --name s1 && .venv/bin/python -m tacit_vsr.eval_session <dir>
+cd recognition && .venv/bin/python -m eval.bench --variant base [--session <dir> --tag NAME]   # frozen offline benchmark / A-B
+cd recognition && .venv/bin/python -m eval.dataset inventory | prompts-check FILE | split NAME --test-sessions DIR
 airpods/tools/build-app.sh && airpods/tools/check.sh; cd server && npm run airpods:record|analyze|gate2|heldout
 ```
 Env: `server/.env` (git-ignored; template `server/.env.example`). Never print or commit keys.

@@ -1,12 +1,36 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 20:50 UTC (clock-checked; the previous session's "~20:45" stamps were estimates)
-**Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "reviewed speech".
+**Last updated:** 2026-11-14 21:40 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "accuracy + pipeline".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
 
-## Hand-off (2026-11-14 20:50 UTC)
+## Hand-off — accuracy session (2026-11-14 21:05–21:40 UTC)
+**Done (pushed):** `e46888b` low-evidence abstention (sidecar abstains decodes with attention log-prob/token < −1.5,
+`TACIT_MIN_SHOW_ATT`; words/runner-up/alternatives withheld → never a review candidate); `c93dc50` `recognition/eval/bench.py`
+(frozen offline baseline + one-variable A/B, `--compare`, `--union` review coverage, `--session/--tag` for held-out);
+`77c77a2` recorder `--prompts/--limit/--nonspeech`, `eval/dataset.py` (inventory, prompts-check, leakage-refusing split),
+`prompts/adapt_v1.txt` (101) + `prompts/heldout_v2.txt` (60). Evidence: DEMO_READINESS D.14.
+**Results (development data, NOT validation):** baseline reproduced (silent 44/99 = 44.4%, 6/20 exact; voiced 37.7%;
+CREMA-D 6.2% with the production gate). 10 test-time variants — tempo ×5, crop zoom ×2, crop shift ×2, per-clip
+normalisation, motion trim ×2, AdaBN, tempo ensemble — **none adopted** (all worse on silent or on CREMA-D; AdaBN breaks
+this checkpoint even with in-domain statistics). Evidence floor: 0/142 real utterances lost, resting face 4/36 → 0/36.
+Review coverage base 8/20 silent; base + tempo-1.1 alternatives 10/20 (post hoc → pre-registered for E.3, not adopted).
+Personalisation not attempted: 48 own clips = 13 distinct sentences → no sentence-disjoint split possible.
+**Checks:** recognition unittests 26/26; server typecheck clean, `npm test` 115/115; isolated :8799 + sidecar :8768:
+`live:check` OK and resting-face replay (D.14). **:8790 NOT restarted** (user clients connected, voice output used at
+~21:06 UTC) → it still runs the pre-`e46888b` sidecar; run `./scripts/tacit.sh restart` when idle to activate the floor.
+**Next, in order:** (1) restart :8790 when idle; (2) the user's E.3 recording (60 held-out silent sentences + non-speech
+controls) → `eval.bench --session … --tag heldout1` — the first independent numbers since D.7; (3) E.2 Meet test;
+(4) after ≥ 2 adaptation sessions of `adapt_v1.txt`: fine-tuning experiment on a `eval.dataset split`.
+**Release targets (≤ 5% WER, ≥ 90% exact): NOT MET, NOT VALIDATED.** Do not retry: LM fusion, flip TTA, tempo/crop/
+normalisation/trim variants, AdaBN, tempo ensembles (D.8, D.12, D.14).
+**For Sol (no protocol change):** abstained hypotheses can now carry reason "too little evidence of a sentence
+(non-speech movement such as a smile or swallow?)" — show it like other abstentions; an abstention never replaces the
+latest shown (reviewable) utterance (unchanged server behaviour).
+
+## Hand-off — reviewed-speech session (2026-11-14 20:50 UTC)
 **Done this session (all pushed):** reviewed speech backend + contract (`7853bd8`, `614a261`); phrase-rule-v2 default
 (`3a76e6a`); `npm run reviewed:check` (`e0894f3`); eval grouping fix (`665c8c4`); 5-best review candidates after the
 first oracle top-K run (`3cb0871`); `npm run review` terminal review client (`605880a`); flip-TTA A/B, rejected
@@ -83,6 +107,8 @@ held-out; enabling automatic speech; any LLM rewriting of recognised words.
 | Flip TTA | Rejected (D.12) |
 | Reviewed mouth-to-call | Backend done; local route verified with real recorded silent clips (D.13); UI (Sol) + human Meet listener pending |
 | Automatic recognised-speech transmission | STILL DISABLED. NO-GO open vocabulary and phrase mode |
+| Offline benchmark / test-time variants | `eval/bench.py`; 10 variants, none adopted (D.14) |
+| Low-evidence abstention | `e46888b`; dev resting face 4/36 → 0/36, 0/142 utterances lost; smiles unmeasured; :8790 needs restart (D.14) |
 
 ## Restartable checkpoint (state at hand-off, 20:50 UTC)
 - `main` pushed through the docs commit after `e4f668d`. Checks: server typecheck clean, `npm test` **112/112**;

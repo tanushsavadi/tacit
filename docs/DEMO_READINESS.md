@@ -1,4 +1,4 @@
-# TACIT — Demo readiness (2026-11-14, 20:50 UTC)
+# TACIT — Demo readiness (2026-11-14, 21:35 UTC)
 
 **Your voice. Beyond speech.** TACIT is a virtual voice for people who can silently articulate words but cannot
 produce usable audible speech: the camera reads the words they mouth, and a synthesized voice speaks into the
@@ -17,7 +17,9 @@ picks the right candidate (or corrects it) and presses Speak.
 | Silent recognition, dim light | 47.7% WER (3/13 exact); voiced 46.8% | session B (D.2) |
 | Silent recognition, held-out live test (v1, real browser pipeline, front-lit 127–130) | **44% WER (11/25), 2/5 exact**, 0 missed windows; end→shown p50 1385 / p95 1483 ms | D.7 — FROZEN baseline, `recognition/data/live/2026-11-14T19-58-01-573Z-livetest.jsonl` |
 | Live pipeline (browser → server → Auto-AVSR on MPS → browser/companion) | Works; same accuracy as offline in aggregate (D.4); outputs shown display-only | `live:check`, `live:replay`, `ui:check` |
-| No-speech false triggers | Dev resting face 36/36 → 4/36 after the pre-decode gate. **Held-out live: still 0, swallow/glance 0, smile 1** (raw "SO", phrase mode wrongly ACCEPTED "I DON'T UNDERSTAND") | D.7, D.9 |
+| Offline benchmark + A/B (`eval/bench.py`, frozen baseline) | **10 test-time variants tried, none improves raw accuracy** (tempo, crop zoom/shift, per-clip normalisation, trim, AdaBN, tempo ensemble). Baseline unchanged: silent 44.4% WER, 6/20 exact | D.14 |
+| Low-evidence abstention (open vocabulary) | **Implemented** (`e46888b`): decodes with attention log-prob/token < −1.5 are abstained, never review candidates. Dev: 0/142 real utterances lost; resting face shown 4/36 → **0/36**. Smiles/swallows NOT measured. Active on :8790 only after the next restart | D.14 |
+| No-speech false triggers | Dev resting face 36/36 → 4/36 after the pre-decode gate (→ 0/36 with the evidence floor, D.14). **Held-out live: still 0, swallow/glance 0, smile 1** (raw "SO", phrase mode wrongly ACCEPTED "I DON'T UNDERSTAND") | D.7, D.9 |
 | Phrase mode (30-phrase list) | **`phrase-rule-v2` now default** (`3a76e6a`; v1 selectable). Dev re-run (same data the floor was chosen on — NOT validation): in-list 37/45 accepted, 0 wrong (v1 37); unlisted 0/99; resting face **0/36** (v1 4); tails 3/48 (v1 10, one real speech); heads 1/48 (v1 2). Smile/swallow/listening never recorded → **NOT VALIDATED** | D.9 |
 | LM-assisted decoding (pretrained Auto-AVSR subword LM, shallow fusion) | **Rejected**: worse WER on every dev set, ~1.7–2× decode time, fluent hallucinations | D.8 |
 | Oracle top-K (is the reference in the N-best?) | **Run (dev):** reference in top-1/3/5/10 — own silent clips 6/7/8/10 of 20, CREMA-D 80/85/92/93 of 96. Review now shows 5-best (`3cb0871`) | D.10 |
@@ -285,6 +287,40 @@ wrong kind → all refused; the pick rendered into BlackHole 16ch (system voice;
 interrupted 21 ms after stop. `npm run review` (terminal client) with clip free03: raw "PLEASE HEAR ALL THE LIGHTS",
 alternative 2 "PLEASE TURN ON THE LIGHTS" picked → rendered → STOP → off. Not tested: a human listener on the far end.
 
+### D.14 Offline benchmark, test-time A/B and low-evidence abstention (development data, 2026-11-14 21:10–21:35 UTC)
+`recognition/eval/bench.py` (`c93dc50`): own silent (20), own voiced (28), CREMA-D (96, 61 unseen speakers) and 36
+resting-face windows, through the production decode → 25 fps resample → FaceMesh → crop → encoder (MPS) → fast beam path.
+The frozen `base` run reproduces the earlier production numbers on own clips exactly; CREMA-D is 33/536 = 6.2%, 79/96
+here because the production pre-decode gate is applied (one clip decodes to 2 frames, one is gated "no lip movement").
+The adoption rule was written into the file before any variant ran (≥ 3 fewer own word errors, silent not worse, exact
+not lower, CREMA-D ≤ +3 errors, resting face not higher, p95 ≤ +300 ms).
+| Variant (one change vs base) | silent WER (exact) | voiced WER (exact) | CREMA-D WER (exact) | verdict |
+|---|---|---|---|---|
+| **base** (production) | **44/99 = 44.4% (6)** | 49/130 = 37.7% (13) | 33/536 = 6.2% (79) | frozen |
+| tempo 0.8 / 0.9 / 1.1 / 1.2 / 1.35 (resample rate) | 45 / 53 / 50 / 51 / 52 (6/4/4/5/5) | 49 / 48 / 50 / 50 / 49 | 46 / 39 / 40 / 51 / 72 | rejected |
+| crop zoom 0.9 / 1.1 | 53 (4) / 51 (6) | 63 / 48 | 36 / 34 | rejected |
+| crop shift −4 / +4 px | 55 (4) / 50 (6) | 52 / 57 | 35 / 36 | rejected |
+| per-clip intensity standardisation | 42 (5) | 49 (13) | **61** (64) | rejected (CREMA-D) |
+| trim to lip motion ± 0.3 / 0.6 s | 47 (6) / 49 (5) | 48 / 48 | **66** / 39 | rejected |
+| AdaBN (BN statistics from the user's other sessions, no labels) | 1674 (0) | degenerate | degenerate | rejected — even CREMA-D's own statistics on 12 CREMA-D clips: 1 → 415 errors (frontend-only 81): this checkpoint cannot take re-estimated BN statistics |
+| tempo ensemble 0.9/1.0/1.1, N-best pooled + rescored | 52 (6) | 45 (13) | 38 (76) | rejected; ~4× model time |
+Per-variant rows (incl. top-K, latency, RSS ≤ 3.4 GB): `recognition/data/eval/bench/summary.jsonl` (git-ignored). Every variant is worse on the
+silent clips except per-clip normalisation (−2 errors, −1 exact, CREMA-D +28 errors). A 4-pixel crop shift alone moves
+silent errors 44 → 55: outputs flip on tiny input changes (the per-utterance instability of D.3), so preprocessing is
+not the lever. **Review coverage** (reference among the 5 shown candidates, from saved N-best lists, `--union`): base
+8/20 silent, 16/28 voiced, 91/96 CREMA-D; base + tempo-1.1 alternatives 10/20, 17/28, 91/96 (raw text unchanged). Chosen
+post hoc among ~10 variants, 2 discordant clips — NOT adopted; pre-registered for the next held-out session (E.3).
+**Low-evidence abstention (`e46888b`, adopted).** Top-1 attention log-prob/token on base: every real utterance ≥ −1.18
+(silent min −1.147, voiced −1.177, CREMA-D −0.507); every resting-face window the motion gate let through ≤ −1.69; the
+v1 held-out smile was −2.894. Floor −1.5 (the phrase-rule-v2 value, set earlier): 0/142 utterances lost, resting face
+4/36 → 0/36; on the D.9 probe set 18/46 mouth-settling tails and 9/46 onset fragments are now abstained too. Verified end
+to end on an isolated server (:8799 + sidecar :8768, virtual mic off): 8 re-cut resting clips → no text (4 by the floor
+at −1.58 to −1.85, others by the motion gate), the rejected words/runner-up/alternatives withheld; 2 real silent
+utterances still shown; `npm run live:check` OK. Margin is thin (one resting clip at −1.576). Smiles, swallows and
+listening are still unmeasured. **Personalisation:** not attempted — the 48 own clips cover 13 distinct sentences, so a
+sentence-disjoint adaptation split is impossible; tooling for the data it needs is in E.3 (`77c77a2`). LM fusion and
+flip TTA stay off (D.8, D.12).
+
 ## E. Next human evaluation (≈ 12 min, independent of everything studied so far)
 1. Light from the front: `cd recognition && .venv/bin/python record_webcam.py --check` until PASS (≥ 90; aim ~105–130).
 2. `./scripts/tacit.sh restart && ./scripts/tacit.sh open` → **Start Live preview**. Leave voice output off. Keep the
@@ -295,6 +331,19 @@ alternative 2 "PLEASE TURN ON THE LIGHTS" picked → rendered → STOP → off. 
 The v1 result (D.7) stays the frozen baseline; v2 is the first evaluation of anything changed after it (phrase-rule-v2,
 5-best). Toward the release targets, ≥ 50 genuinely silent NEW labelled sentences are needed (a fresh sentence list larger
 than `live:test` v2's 5, never rehearsed) — not available yet, so every target stays NOT VALIDATED.
+
+### E.3 Held-out silent set + non-speech controls (≈ 25 min; the data every accuracy claim still needs)
+Do not read `recognition/prompts/heldout_v2.txt` beforehand. Front light first (`record_webcam.py --check`).
+```
+cd recognition
+.venv/bin/python record_webcam.py --name heldout1 --modes silent --prompts prompts/heldout_v2.txt --free 0 --nonspeech 2
+.venv/bin/python -m eval.bench --session data/webcam/<timestamp>-heldout1 --tag heldout1 --variant base --variant tempo_1.1
+.venv/bin/python -m eval.bench --union base@heldout1 tempo_1.1@heldout1
+```
+60 silent sentences + 2 × smile/swallow/listen. Pre-registered (2026-11-14 21:35 UTC): report raw WER/exact (base), the
+non-speech `shown` count (target 0), and review coverage base vs base+tempo-1.1 (adopt the second candidate pass only if
+it raises coverage by ≥ 3 sentences of 60). For adaptation later: ≥ 2 sessions of `prompts/adapt_v1.txt`, then
+`.venv/bin/python -m eval.dataset split adapt1 --test-sessions <heldout dir>` (refuses session/sentence leakage).
 
 ### E.2 Physical test — reviewed speech into Google Meet (≈ 6 min, needs a second device as listener)
 1. `./scripts/tacit.sh status` (server up) → `./scripts/tacit.sh open` → workspace: **Start Live preview** (camera).
@@ -334,7 +383,8 @@ than `live:test` v2's 5, never rehearsed) — not available yet, so every target
 - Weights are research/non-commercial; trained on voiced LRS3 video. Silent accuracy measured only on one speaker,
   repeated prompts, in development.
 - Recognition depends strongly on front lighting; the Live web UI does not yet warn when `mouth_brightness` < 90.
-- Phrase rule v2 still accepted 3 of 96 non-sentence dev windows (D.9); smiles/swallows/listening never measured.
+- Phrase rule v2 still accepted 3 of 96 non-sentence dev windows (D.9); smiles/swallows/listening never measured. The
+  open-vocabulary evidence floor (D.14) hides junk from resting faces in dev data, margin ~0.1 nats/token.
 - Open-vocabulary silent recognition: half of the dev silent sentences are not in the 10-best (D.10); review cannot
   fix those — the user must correct or retype. Speaker adaptation (fine-tuning on the user's own labelled silent
   sentences) is the most promising lever but needs ≥ ~100 new labelled own clips and was not attempted.
@@ -351,7 +401,8 @@ than `live:test` v2's 5, never rehearsed) — not available yet, so every target
 4. Consider `ARTICULATION_CONFIG.preRollMs` 160 → 400 (weak evidence, D.3); send `outputGeneration` with `speak_typed`.
 
 ## I. Git
-`main`, pushed; Claude is the only Git writer. This session: `7853bd8` speak_reviewed; `614a261` contract;
+`main`, pushed; Claude is the only Git writer. Accuracy session (21:05–21:35 UTC): `e46888b` low-evidence abstention;
+`c93dc50` `eval/bench.py`; `77c77a2` recording/split tooling + prompt lists; then docs. Reviewed-speech session: `7853bd8` speak_reviewed; `614a261` contract;
 `3a76e6a` phrase-rule-v2; `e0894f3` reviewed:check; `665c8c4` eval grouping fix; `3cb0871` 5-best; `605880a`
 `npm run review`; `e4f668d` flip-TTA harness (rejected). Previous session: After the held-out test: `4dda303` per-window diagnostics in
 `stages`; `24c2baf` `live:test` v2; `fd3c8d3` eval harnesses (LM A/B, phrase-rule probe, oracle top-K); then docs. This round: `5374284` capture stats + lighting check; `7a8f482` eval
