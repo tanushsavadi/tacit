@@ -1,0 +1,37 @@
+{
+  "name": "tacit-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/index.ts",
+    "start": "tsx src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "gemini:probe": "tsx scripts/gemini-probe.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "twilio:sim": "tsx scripts/twilio-sim.ts",
+    "tunnel": "cloudflared tunnel --url http://localhost:8790",
+    "links": "tsx scripts/links.ts",
+    "security:check": "tsx scripts/security-check.ts",
+    "bench:stt": "tsx scripts/bench-stt.ts",
+    "voice:check": "tsx scripts/voice-check.ts",
+    "twilio:preflight": "tsx scripts/twilio-preflight.ts",
+    "voice:policy-check": "tsx scripts/voice-policy-check.ts",
+    "airpods:record": "tsx scripts/airpods-record.ts",
+    "airpods:analyze": "tsx scripts/airpods-analyze.ts",
+    "airpods:gate2": "tsx scripts/airpods-gate2.ts",
+    "airpods:heldout": "tsx scripts/airpods-heldout.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^3.3.0",
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.0",
+    "vitest": "^5.1.0"
+  }
+}
