@@ -45,6 +45,7 @@ def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.
     out = {"frames": len(clip.frames), "source_fps": round(clip.source_fps, 2),
            "duration_ms": round(clip.duration_ms), "face_fraction": round(track.face_fraction, 3),
            "aperture_range": track.aperture_range, "width_range": track.width_range,
+           "capture": {"roi_brightness": track.roi_brightness, "iod_px": track.iod_px},
            "ms": {"decode": round((t1 - t0) * 1000), "landmarks_crop": round((t2 - t1) * 1000)}}
     if track.roi is None:
         out.update(text=None, error="no face tracked")

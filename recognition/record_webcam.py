@@ -1,5 +1,6 @@
 """Record webcam clips for VSR evaluation. VIDEO ONLY — the audio device is never opened ("<cam>:none").
     .venv/bin/python record_webcam.py --name s1 [--modes silent,voiced] [--free 3] [--camera N]
+    .venv/bin/python record_webcam.py --check      lighting/framing check only (records 2 s, keeps nothing)
 Each prompt is recorded once per mode (silent = articulate with no sound; voiced = speak normally — still no audio is
 captured; it is a control that separates "silent articulation" from "webcam domain"). Clips + manifest.jsonl go to
 recognition/data/webcam/<timestamp>-<name>/ (git-ignored; contains your face — keep private).
@@ -11,6 +12,7 @@ import json
 import random
 import re
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,11 +40,60 @@ def record(cam: str, path: Path, seconds: float, prompt: str, mode: str) -> None
     print(f"\n  >>> {how}:  \"{prompt}\"")
     input("      press Enter, wait for GO …")
     p = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-framerate", "30", "-video_size", "1280x720",
-                          "-i", f"{cam}:none", "-t", str(seconds), "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-an", "-y", str(path)])
+                          "-i", f"{cam}:none", "-t", str(seconds), "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", "-y", str(path)])
     time.sleep(1.0)
     print("      GO")
     p.wait()
     print(f"      saved {path.name}" if p.returncode == 0 and path.exists() else f"      FAILED (ffmpeg exit {p.returncode}) — check Camera permission for this terminal app")
+
+
+# Mouth-ROI grey level of the CREMA-D clips that decode at ~5% WER: 130-160. The first s1 session (backlit by a
+# window) measured 40-47 and decoded at 58% WER even when VOICED; post-hoc brightening did not recover it.
+MIN_BRIGHTNESS = 90.0
+MIN_IOD_PX = 35.0
+
+
+def capture_check(cam: str) -> bool:
+    """Record 2 s, measure the mouth crop the model will see, print PASS/WARN with advice. The clip is deleted."""
+    import os
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    from tacit_vsr import video
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "check.mp4"
+        print("lighting check: look at the camera and say nothing for 2 s …")
+        err = ""
+        for _ in range(3):  # opening the camera right after another open (device listing) can fail transiently
+            r = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-framerate", "30", "-video_size", "1280x720",
+                                "-i", f"{cam}:none", "-t", "2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-an", "-y", str(f)],
+                               capture_output=True, text=True)
+            if r.returncode == 0 and f.exists() and f.stat().st_size > 0:
+                break
+            err = r.stderr.strip().splitlines()[-1:] or [f"exit {r.returncode}"]
+            time.sleep(1.0)
+        else:
+            print(f"FAIL  camera capture failed ({err[0]}) — check Camera permission for this terminal app / close other camera users")
+            return False
+        track = video.MouthCropper()(video.decode_clip(f.read_bytes()).frames)
+    if track.roi is None:
+        print("FAIL  no face found — sit facing the camera, whole face in view")
+        return False
+    ok = True
+    b, iod = track.roi_brightness or 0.0, track.iod_px or 0.0
+    if b < MIN_BRIGHTNESS:
+        ok = False
+        print(f"WARN  mouth too dark: brightness {b:.0f} (need ≥ {MIN_BRIGHTNESS:.0f}; good clips 130-160). Put the light IN FRONT of you "
+              "(face the window or a lamp); never sit with a bright window behind you.")
+    else:
+        print(f"PASS  mouth brightness {b:.0f}")
+    if iod < MIN_IOD_PX:
+        ok = False
+        print(f"WARN  face too small: {iod:.0f} px between the eyes (need ≥ {MIN_IOD_PX:.0f}) — move closer to the camera")
+    else:
+        print(f"PASS  face size {iod:.0f} px between the eyes")
+    if track.face_fraction < 0.95:
+        ok = False
+        print(f"WARN  face tracked in only {track.face_fraction:.0%} of frames — keep your whole face in view")
+    return ok
 
 
 def main() -> None:
@@ -52,8 +103,17 @@ def main() -> None:
     ap.add_argument("--free", type=int, default=3, help="extra prompts you choose and type yourself")
     ap.add_argument("--seconds", type=float, default=5.5)
     ap.add_argument("--camera", default=None, help="camera name substring (default: first non-screen device)")
+    ap.add_argument("--check", action="store_true", help="lighting/framing check only")
+    ap.add_argument("--skip-check", action="store_true", help="record even if the lighting check warns")
     a = ap.parse_args()
     cam = camera_index(a.camera)
+    while not capture_check(cam):
+        if a.check or a.skip_check:
+            break
+        if input("Fix the lighting/position, then press Enter to re-check (or type 'skip' to record anyway): ").strip() == "skip":
+            break
+    if a.check:
+        return
     out = Path(__file__).resolve().parent / "data" / "webcam" / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{a.name}"
     out.mkdir(parents=True, exist_ok=True)
     modes = a.modes.split(",")

@@ -35,7 +35,7 @@ def main() -> None:
         ref = engine.normalize_text(it["ref"]); e, n = wer(ref.replace("'", ""), (r.get("text") or "").replace("'", ""))
         r.update(ref=ref, mode=it["mode"], prompted=it["prompted"], errors=e, words=n)
         rows.append(r)
-        print(f"{it['mode']:6s} {it['file']:20s} REF {ref!r:40s} HYP {r.get('text')!r:45s} WER {e}/{n} gate {r.get('gate')} ms {r['ms'].get('total')}")
+        print(f"{it['mode']:6s} {it['file']:20s} REF {ref!r:40s} HYP {r.get('text')!r:45s} WER {e}/{n} gate {r.get('gate')} capture {r.get('capture')} ms {r['ms'].get('total')}")
     with open(d / f"results-{a.device}.jsonl", "w") as fo:
         for r in rows:
             fo.write(json.dumps(r) + "\n")
@@ -44,6 +44,9 @@ def main() -> None:
         R = [r for r in rows if r["mode"] == mode]
         E, N = sum(r["errors"] for r in R), sum(r["words"] for r in R)
         print(f"{mode}: WER {E}/{N} = {E / max(N, 1):.3f}; exact {sum(r['errors'] == 0 for r in R)}/{len(R)}; no face {sum(r.get('text') is None for r in R)}")
+    B = [r["capture"]["roi_brightness"] for r in rows if (r.get("capture") or {}).get("roi_brightness") is not None]
+    if B:
+        print(f"capture: mouth brightness median {st.median(B):.0f} (CREMA-D reference 130-160; < 90 = underexposed, expect poor WER)")
     T = [r["ms"]["total"] for r in rows if "total" in r["ms"]]
     if T:
         print(f"latency per clip ({a.device}): median {st.median(T):.0f} ms, max {max(T):.0f} ms (clip length {st.median([r['duration_ms'] for r in rows]):.0f} ms)")

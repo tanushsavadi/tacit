@@ -46,6 +46,10 @@ class MouthTrack:
     aperture_range: float | None
     width_range: float | None
     aperture: list[float] = field(default_factory=list)
+    # Capture quality (diagnostic, not a gate): mean grey level of the mouth ROI (0-255; CREMA-D clips that decode at
+    # ~5% WER measure 130-160) and median inter-ocular distance in source pixels (how large the face is in the frame).
+    roi_brightness: float | None = None
+    iod_px: float | None = None
 
 
 def decode_clip(data: bytes, start_ms: float | None = None, end_ms: float | None = None,
@@ -209,7 +213,9 @@ class MouthCropper:
             x0 = int(round(np.clip(cx - 48, 0, 256 - 96)))
             y0 = int(round(np.clip(cy - 48, 0, 256 - 96)))
             roi[i] = warped[y0:y0 + 96, x0:x0 + 96]
-        return MouthTrack(roi, face_fraction, ap_range, w_range, aperture)
+        iod = float(np.median(np.linalg.norm(lms[:, 1] - lms[:, 0], axis=1)))
+        return MouthTrack(roi, face_fraction, ap_range, w_range, aperture,
+                          roi_brightness=round(float(roi.mean()), 1), iod_px=round(iod, 1))
 
 
 def roi_to_tensor(roi: np.ndarray):
