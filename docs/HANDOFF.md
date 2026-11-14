@@ -1,6 +1,6 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~20:45 UTC
+**Last updated:** 2026-11-14 ~20:30 UTC (clock-checked; earlier "~20:45" stamps were estimates)
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Session ended at the
 user's request for a clean hand-off to a fresh Opus session.
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
@@ -8,20 +8,47 @@ recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (D.7–D.11 = this session's results, E = next human test).
 
 ## Hand-off for the next Opus session (2026-11-14 ~20:45 UTC)
-**Priority 1 — reviewed mouth-to-call (`speak_reviewed`). The user EXPLICITLY APPROVED both the policy and the
-server implementation (answered "Approve as written", ~20:30 UTC). Policy text is now in AGENTS.md → product rules.
-Implementation has NOT started — no code, no protocol change yet.** Intended design (from the approved text):
-- New additive `ClientMessage speak_reviewed {requestId, outputAuthorizationId, outputGeneration, liveAuthorizationId,
-  utteranceId, candidate: 'raw'|'alternative'|'phrase', index, text, textHash}`; `SpeechSource` gains
-  `'reviewed-recognition'` (announce both in "Interface contract" before Sol depends on them).
-- Server keeps, per shown hypothesis, the exact candidates it displayed (rawText; N-best alternatives — needs an additive
-  optional `alternatives` list on `RecognitionHypothesis`, the sidecar already decodes 3; accepted phrase). It speaks
-  only an exact stored candidate of the LATEST shown utterance of the current Live authorization/generation, once per
-  utterance (exactly-once key), only while output is 'ready' with matching authorization + generation. Refuse: paused,
-  stale, newer utterance exists, text/hash mismatch, duplicate, Live not active. Pause/stop/interrupt cancel it like any
-  delivery. Never via `speak_typed`; `recognizedSpeechAllowed` stays false (it describes automatic speech).
-- Tests in `server/src/speech.test.ts` / `live.test.ts`; UI button = request to Sol (web/ and, if transferred, the
-  companion are Sol's). The companion/notch must not infer the contract (Sol's own note agrees).
+**Priority 1 — reviewed mouth-to-call: BACKEND IMPLEMENTED (`7853bd8`, 2026-11-14 ~20:25 UTC).** Contract published
+below ("Interface contract — reviewed speech"). Remaining: (a) Sol's review-and-Speak UI (web and/or notch); (b) a
+coordinated `./scripts/tacit.sh restart` so :8790 + the sidecar run the new code (the sidecar now emits `alternatives`);
+(c) the physical test silent mouthing → pick/correct → Speak → BlackHole → Google Meet listener (needs the user).
+
+## Interface contract — reviewed speech (`speak_reviewed`) — for Sol — 2026-11-14 ~20:30 UTC (`7853bd8`, additive)
+All in `shared/protocol.ts`. Nothing existing changed meaning; `recognizedSpeechAllowed`/`autoTransmitAllowed` stay
+literal `false` (they describe AUTOMATIC speech, which stays disabled). `speak_typed` is unchanged and must NOT be used
+for recognised text.
+- **`RecognitionHypothesis` (decision `'shown'` only) gains:** `generation` (Live generation it was recognised under),
+  `alternatives: string[]` (other N-best decodes, raw), `reviewCandidates: ReviewCandidate[]`, `reviewExpiresAt`
+  (server epoch ms; now +120 s). `ReviewCandidate = {kind: 'raw'|'alternative'|'phrase', index, text, textHash}`;
+  index 0 = raw; a phrase appears ONLY if `phraseMatch.accepted` and is not already listed; `textHash` = lowercase hex
+  SHA-256 of the UTF-8 text. Display these exact strings; do not re-case or edit them in the candidate list.
+- **New `ClientMessage`:** `{type:'speak_reviewed', requestId, outputAuthorizationId, outputGeneration, liveAuthorizationId,
+  liveGeneration, utteranceId, candidate, index, text, textHash}`.
+  - Pick: `candidate` = the candidate's `kind`, `index`/`text`/`textHash` echoed exactly from `reviewCandidates`.
+  - Correction: `candidate:'edited'`, `index` = the candidate the edit started from, `text` = the user's text (≤ 500
+    chars), `textHash` = SHA-256 of exactly that `text`. Spoken verbatim, labelled `user-corrected` (user-authored —
+    show it as "your correction", never as recognition).
+  - `outputGeneration` = latest `output_status.generation`; `liveGeneration` = the hypothesis' `generation` (must equal
+    current `live_status.generation`). Both REQUIRED.
+- **Server refuses** (one `speech_delivery` with `state:'refused'` + reason) when: output not `ready` / paused / stale
+  authorization / generation changed; Live not `active` / authorization or generation changed (any Live
+  pause/resume/interrupt makes earlier utterances unspeakable — mouth again); utterance is not the LATEST shown one;
+  expired; candidate kind/index/text/hash not exactly as shown; utterance already spoken (ONE speech per utterance,
+  pick or correction); duplicate `requestId`; virtual mic not ready / queue full (these two do NOT consume the
+  utterance — the user may press Speak again).
+- **Delivery:** `SpeechDelivery.source` = `'reviewed-recognition'` or `'user-corrected'` (new `SpeechSource` values —
+  the companion currently filters `source == "typed"`; extend it), plus `review: {utteranceId, liveAuthorizationId,
+  candidate, index}`. States as for typed (queued → synthesizing → routing → rendered | refused | interrupted | failed);
+  `rendered` is local only, never "heard". Output pause/stop and Live pause/interrupt/end cut it like any delivery.
+- **UI rules (AGENTS.md policy):** no pre-selection, no auto-confirm, no timeout send, never LLM-edited; the Speak
+  button needs an explicit press per utterance; hide/disable Speak once a newer shown hypothesis arrives, after expiry,
+  or while output/Live is not active. ALL-CAPS model text is put in sentence case for synthesis only (server).
+- Verified: server typecheck clean, `npm test` 109/109 (11 new tests: candidates, latest-shown target, every refusal,
+  once-per-utterance, route refusal retry, correction path, pause cut, sentence case); web typecheck clean against the
+  new types; throwaway server on :8799 (fake recogniser, `TACIT_ROUTE=off`) over a real WebSocket: shown hypothesis
+  carried `reviewCandidates`, a tampered text was refused, the genuine pick passed every check and was refused only at
+  the (disabled) virtual-mic stage. NOT yet verified: real route/BlackHole/Meet with reviewed speech (needs restart + user).
+
 **Priority 2 — evidence-based phrase false-trigger fix:** implement `phrase-rule-v2` = v1 + free-hypothesis att/token
 ≥ −1.5 (DEMO_READINESS D.9: keeps 37/37 genuine dev accepts, removes 4/4 resting-face and 7/10 tail accepts). Bump
 `RULE_VERSION`, keep v1 selectable, add tests, re-run `eval.phrase_rule_probe` + `eval.closed_set`. Validate only on NEW
@@ -39,7 +66,7 @@ recordings exist.
 | LM-assisted decoding | Rejected on dev data (worse everywhere, hallucinations, ~2× decode) (D.8) |
 | Oracle top-K | NOT RUN (harness committed) |
 | Phrase rule v1 | Root cause of false accepts found (no absolute-evidence floor); v2 proposed, not implemented (D.9) |
-| Reviewed mouth-to-call | APPROVED by user; NOT STARTED |
+| Reviewed mouth-to-call | Backend implemented + unit/WS-tested (`7853bd8`); UI (Sol) and physical Meet test pending |
 | Automatic recognised-speech transmission | STILL DISABLED. NO-GO open vocabulary and phrase mode |
 
 ## Restartable checkpoint (state at hand-off)
