@@ -4,7 +4,7 @@
 // user: this module has no path to TTS or the call, and
 // `autoTransmitAllowed` is the literal type `false` until a reliability gate is validated on real silent recordings.
 import { randomUUID } from 'node:crypto';
-import type { ClientMessage, LiveRecognitionCapability, LiveStatus, RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
+import type { ClientMessage, LiveRecognitionCapability, LiveStatus, PhraseMatch, RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
 
 export const LIVE_CAPABILITY: LiveRecognitionCapability = {
   protocol: 'tacit-live-v1', supportedInputs: ['camera'], automaticSpeechValidated: false, validationEvidence: null,
@@ -17,7 +17,18 @@ export const AUTOMATIC_GATED = 'Automatic transmission is gated until silent-spe
 
 export interface RecognizerResult {
   text: string | null; error?: string; model?: string; n_tokens?: number; face_fraction?: number;
-  ms?: Record<string, number>; gate?: Record<string, number | string | null>;
+  ms?: Record<string, number>; gate?: Record<string, number | string | null>; phrase?: unknown;
+}
+
+/** The sidecar is local, but its JSON is still validated field by field before it reaches clients. */
+export function phraseMatch(x: unknown): PhraseMatch | null {
+  if (!x || typeof x !== 'object') return null;
+  const p = x as Record<string, unknown>;
+  const str = (v: unknown, max = 200) => typeof v === 'string' && v.length <= max;
+  if (!str(p.rule, 40) || !str(p.phrase) || !str(p.runnerUp) || typeof p.accepted !== 'boolean' || !(p.reason === null || str(p.reason))
+    || ![p.margin, p.garbageGap, p.listSize].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  return { rule: p.rule as string, phrase: p.phrase as string, runnerUp: p.runnerUp as string, accepted: p.accepted as boolean,
+    reason: p.reason as string | null, margin: p.margin as number, garbageGap: p.garbageGap as number, listSize: p.listSize as number };
 }
 export type Recognizer = (input: { timesMs: number[]; frames: Buffer[] }, signal: AbortSignal) => Promise<RecognizerResult>;
 
@@ -131,6 +142,7 @@ export class LiveSession {
       uncertainty: typeof margin === 'number' ? { value: margin, kind: 'nbest-margin-per-token', calibrated: false } : null,
       model: r?.model ?? 'unavailable', source: 'visual-model', decision: reason ? 'abstained' : 'shown', reason,
       recognitionMs: ms, stages: r?.ms ?? null, gate: r?.gate ?? null, transmitted: false,
+      phraseMatch: reason ? null : phraseMatch(r?.phrase),
     };
     this.send({ type: 'recognition_hypothesis', hypothesis: h });
   }

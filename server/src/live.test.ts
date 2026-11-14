@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
-import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, MAX_INFLIGHT, type Recognizer } from './live.ts';
+import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, MAX_INFLIGHT, phraseMatch, type Recognizer } from './live.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 function setup(recognize?: Recognizer) {
@@ -18,6 +18,23 @@ const send = (live: LiveSession, auth: string, id: string, n = 3) => {
 };
 
 describe('LiveSession (tacit-live-v1)', () => {
+  it('passes a validated phrase match through as display-only; drops malformed ones and any on abstention', async () => {
+    const good = { rule: 'phrase-rule-v1', phrase: 'CAN YOU CALL MY MOTHER', runnerUp: 'CAN YOU HELP ME', accepted: true, reason: null, margin: 3.8, garbageGap: 0, listSize: 30 };
+    const results = [
+      { text: 'CAN YOU CALL MY MOTHER', model: 'm', phrase: good },
+      { text: 'X', model: 'm', phrase: { ...good, accepted: 'yes' } },
+      { text: 'X', model: 'm', phrase: { ...good, margin: Number.NaN } },
+      { text: null, error: 'no face tracked', phrase: good },
+    ];
+    let i = 0;
+    const { live, hyps, status } = setup(async () => results[i++]!);
+    live.control({ type: 'live_control', action: 'activate', mode: 'display-only', inputSource: 'camera' });
+    for (const id of ['p1', 'p2', 'p3', 'p4']) { send(live, status().authorizationId!, id); await tick(); }
+    expect(hyps().map((h) => h.phraseMatch ?? null)).toEqual([good, null, null, null]);
+    expect(hyps().every((h) => h.transmitted === false)).toBe(true);
+    expect(phraseMatch({ ...good, phrase: 'x'.repeat(201) })).toBeNull();
+  });
+
   it('refuses automatic mode; display-only activation recognises and shows, never transmits', async () => {
     const { live, calls, hyps, status } = setup();
     live.control({ type: 'live_control', action: 'activate', mode: 'automatic' });

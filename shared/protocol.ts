@@ -255,6 +255,26 @@ export interface RecognitionHypothesis {
   gate: Record<string, number | string | null> | null;
   /** Always false in this protocol version. */
   transmitted: false;
+  /**
+   * Phrase mode (additive, optional): the best phrase of a FIXED list scored against the same video, accepted only
+   * under a frozen rule (`rule`). Display-only like rawText — never spoken, never copied into typed speech. null when
+   * the utterance abstained or the recogniser did not compute it.
+   */
+  phraseMatch?: PhraseMatch | null;
+}
+
+export interface PhraseMatch {
+  rule: string;
+  /** Normalised phrase text (A–Z, apostrophes). Present even when rejected, for diagnostics. */
+  phrase: string;
+  runnerUp: string;
+  accepted: boolean;
+  reason: string | null;
+  /** Length-normalised joint-score margin over the runner-up phrase (uncalibrated). */
+  margin: number;
+  /** Free open-vocabulary score minus phrase score, per token (uncalibrated). */
+  garbageGap: number;
+  listSize: number;
 }
 
 /**

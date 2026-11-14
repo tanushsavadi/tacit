@@ -40,6 +40,7 @@ ws.on('message', (data) => {
   if (m.type === 'recognition_hypothesis') {
     const h = m.hypothesis;
     console.log(`hypothesis: ${h.decision} ${JSON.stringify(h.rawText)} (ref ${JSON.stringify(ref.toUpperCase())}) transmitted=${h.transmitted} uncertainty=${JSON.stringify(h.uncertainty)}`);
+    console.log(`phrase mode: ${h.phraseMatch ? `${h.phraseMatch.accepted ? "ACCEPTED" : "rejected"} ${JSON.stringify(h.phraseMatch.phrase)}${h.phraseMatch.reason ? ` (${h.phraseMatch.reason})` : ""}` : "not computed"} (sentence not in the phrase list → must be rejected)`);
     console.log(`latency: client round trip ${Date.now() - sentAt} ms; server ${h.recognitionMs} ms; stages ${JSON.stringify(h.stages)}`);
     if (h.transmitted !== false) fail('transmitted must be false');
     if (h.decision !== 'shown') fail(`expected shown, got ${h.decision}: ${h.reason}`);
