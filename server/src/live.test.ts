@@ -55,6 +55,19 @@ describe('LiveSession — reviewed-speech candidates', () => {
     expect(hyps()[2]!.reviewCandidates).toBeUndefined();
   });
 
+  it('a low-evidence decode (sidecar evidence floor) is abstained: reason shown, words and candidates never exposed', async () => {
+    const reason = 'too little evidence of a sentence (non-speech movement such as a smile or swallow?)';
+    const { live, out, hyps, status } = setup(async () => ({ text: null, error: reason, low_evidence_text: 'SO', alternatives: [], model: 'm' }));
+    live.control({ type: 'live_control', action: 'activate', mode: 'display-only', inputSource: 'camera' });
+    send(live, status().authorizationId!, 'smile');
+    await tick();
+    const h = hyps()[0]!;
+    expect(h).toMatchObject({ decision: 'abstained', reason, rawText: '', transmitted: false });
+    expect(h.reviewCandidates).toBeUndefined();
+    expect(live.reviewTarget()).toBeNull();
+    expect(JSON.stringify(out)).not.toContain('"SO"');
+  });
+
   it('reviewTarget() = latest SHOWN utterance of the current authorization (abstentions do not replace it); expiry stamped', async () => {
     let t = 1_000_000;
     const results = [{ text: 'FIRST', model: 'm' }, { text: 'SECOND', model: 'm' }, { text: null, error: 'no lip movement' }];

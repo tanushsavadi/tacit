@@ -29,6 +29,16 @@ def wer(ref: str, hyp: str) -> tuple[int, int]:
     return d[len(h)], len(r)
 
 
+LOW_EVIDENCE = "too little evidence of a sentence (non-speech movement such as a smile or swallow?)"
+
+
+def low_evidence(att_per_token: float | None, floor: float = config.MIN_SHOW_ATT_PER_TOKEN) -> str | None:
+    """Abstention reason when the decoded words carry too little visual evidence to be shown, else None."""
+    if att_per_token is None or att_per_token != att_per_token:  # missing / NaN: nothing to judge, keep
+        return None
+    return LOW_EVIDENCE if att_per_token < floor else None
+
+
 def transcribe(eng: engine.VSREngine, crop: video.MouthCropper, path: Path) -> dict:
     t0 = time.perf_counter()
     clip = video.decode_clip(path.read_bytes())
@@ -85,6 +95,12 @@ def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.
     out["gate"] = {**(best or {}), "nbest_margin_per_token": alt, "runner_up": texts[1][0] if len(texts) > 1 else None,
                    "frames_per_token": round(len(clip.frames) / max(out["n_tokens"], 1), 2),
                    "mouth_brightness": track.roi_brightness, "aperture_range": track.aperture_range}
+    reason = low_evidence((best or {}).get("att_per_token"))
+    if reason:
+        # Not shown, never a review candidate. The rejected words stay in a diagnostic field the server never displays.
+        out.update(text=None, error=reason, low_evidence_text=out["text"], alternatives=[],
+                   gate={**out["gate"], "runner_up": None})
+        return out
     if config.PHRASE_MODE and texts and texts[0][1]:
         # Phrase mode (display-only): best phrase of the fixed list under the frozen rule; never rewrites `text`.
         t3 = time.perf_counter()

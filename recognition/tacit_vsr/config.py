@@ -68,5 +68,12 @@ MAX_GARBAGE_GAP = _f("TACIT_MAX_GARBAGE_GAP", 1.5)
 # attention log-prob per token (incl. <eos>) >= this. Chosen on DEVELOPMENT data only (docs/DEMO_READINESS.md D.9:
 # keeps 37/37 correct in-list accepts, rest-face accepts 4 -> 0, tails 10 -> 3); not validated on held-out data.
 MIN_FREE_ATT_PER_TOKEN = _f("TACIT_MIN_FREE_ATT", -1.5)
+# Open-vocabulary display floor (2026-11-14 ~21:20 UTC): a free hypothesis whose attention log-prob per token (incl.
+# <eos>) is below this is ABSTAINED ("too little evidence of a sentence") instead of shown, so it never becomes a review
+# candidate. Same value as the phrase-rule-v2 floor above (set before this evidence). Development evidence
+# (eval/bench.py base): all 142 real utterances (own silent 20, own voiced 28, CREMA-D 94) are >= -1.18; every
+# resting-face window that passed the motion gate is <= -1.69 (4/36 -> 0/36). The held-out v1 smile was -2.894 (post-hoc
+# check, v1 is studied data). NOT validated on held-out smiles/swallows. Set to -inf (TACIT_MIN_SHOW_ATT=-inf) to disable.
+MIN_SHOW_ATT_PER_TOKEN = _f("TACIT_MIN_SHOW_ATT", -1.5)
 # "phrase-rule-v2" (default) or "phrase-rule-v1" (frozen original, kept for comparison/reproduction).
 PHRASE_RULE = os.environ.get("TACIT_PHRASE_RULE", "phrase-rule-v2")
