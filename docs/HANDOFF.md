@@ -1,17 +1,30 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~13:10 UTC
+**Last updated:** 2026-11-14 ~19:00 UTC
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: Sol (Cursor/Codex) → `docs/WORKSTREAM_SOL.md`, frozen at its ~11:55 UTC checkpoint (committed `80a36ac`).
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED until a silent-speech reliability gate is measured.
 **Start here:** `docs/DEMO_READINESS.md` (status, verified commands, latency, human checklist).
 
+## Verified status (2026-11-14)
+| Item | Status |
+|---|---|
+| Google Meet remote audibility | **VERIFIED (human-observed):** BlackHole 16ch as Meet mic on the Mac; the user's iPhone in the same Meet heard TACIT |
+| FaceTime remote audibility | NOT YET TESTED |
+| Typed synthesized speech | VERIFIED through a real call (Google Meet) |
+| Genuine silent-articulation recognition | NOT YET MEASURED under valid conditions (first `s1` was backlit: silent 65% / voiced 58% WER, capture-limited) |
+| Automatic recognised-speech transmission | STILL DISABLED (`UNVALIDATED_GATE`, Live refuses `automatic`) |
+
 ## Restartable checkpoint (state at hand-off)
-- Working tree clean; `main` pushed; CI green on every commit through `fc81189` (see DEMO_READINESS G for the last).
+- `main` pushed; CI green on every commit through `fc81189` (see DEMO_READINESS G for the last).
+- First `s1` session (`recognition/data/webcam/20261114T184530Z-s1`, 12/20 clips, git-ignored) evaluated and diagnosed
+  (DEMO_READINESS D.1): mouth-crop brightness 40–47 vs 134–164 on CREMA-D (bright window behind the user); face size
+  fine; post-hoc brightening/trimming/detector swaps do not recover it. `5374284` adds capture stats + a recorder
+  lighting check (`record_webcam.py --check`). Gate unchanged.
+- Disk freed by the user: 41.2 GB; preflight exit 0 with no FAIL.
 - Companion `--selftest` 7/7 PASS; camera shared by two capture processes at 30 fps (FaceTime video untested).
 - Running locally: `./scripts/tacit.sh start` server on 127.0.0.1:8790 (+ VSR sidecar :8765, whisper :8766, tacit-route
   helper); `TACIT.app` companion open. Sol's Vite on :5173 and recogniser on :8767 are Sol's processes.
-- **Disk is nearly full (0.2–0.4 GB free)** — first thing to fix; preflight FAILs until ≥ 2 GB (Swift builds hit ENOSPC).
 - Built artefacts (git-ignored): `macos/TacitRoute/.build/release/tacit-route` (rebuilt with swiftc after the watchdog
   fix; SwiftPM intermediates deleted for space), `macos/TacitCompanion/.build/TACIT.app`, `web/dist` (from `80a36ac`).
   Rebuild everything: `./scripts/tacit.sh build` (needs disk).
@@ -19,9 +32,12 @@ recognised words stays DISABLED until a silent-speech reliability gate is measur
   loopback verify, calibration, stop measurement; speech output session + typed AAC; launcher + preflight; companion;
   fast decoder (SilentFlow, MIT) 4× faster at equal WER; warm-up; Sol's frontend committed; 3 Fable reviews, all P0/P1
   findings fixed with tests; `live:check`, `live:stress`, `route:check`, `speech:check`, `ui:check` scripts.
-- **Next (human):** FaceTime Audio call with a second listener (DEMO_READINESS C/E.2); `s1` silent recording (E.3).
-- **Next (engineering, after those):** if the call works → AirPods-assisted endpointing experiment (user request,
-  deferred until FaceTime is verified); faster TTS (native AVSpeechSynthesizer streaming in tacit-route — `say` is the
+- **Next (human):** front-lit silent re-recording `s2` (DEMO_READINESS E.3: `record_webcam.py --check` until brightness
+  PASS, then all 20 prompts + 3 own sentences) → `eval_session`. Optional: FaceTime call; pause mid-sentence in a call.
+- **Next (engineering):** after `s2`: if voiced WER approaches CREMA-D, calibrate gate features on silent clips (needs
+  more held-out silent data than one session); if voiced stays poor in good light, investigate the speaker domain.
+  Consider a "too dark" warning in the Live path (backend could return `capture.roi_brightness`; needs a protocol
+  addition + Sol). AirPods-assisted endpointing experiment (user request; Meet call now verified); faster TTS (native AVSpeechSynthesizer streaming in tacit-route — `say` is the
   largest measured delay, 0.8–1.75 s); ask Sol to send `outputGeneration` with `speak_typed`.
 
 ## Requests for Sol (frontend)
@@ -48,9 +64,11 @@ recognised words stays DISABLED until a silent-speech reliability gate is measur
   `PYTORCH_ENABLE_MPS_FALLBACK=1` (max_pool3d missing on MPS); encoder 191 ms vs 455 ms CPU, identical outputs.
 - Gate features emitted per utterance (att/ctc log-prob per token, n-best margin, runner-up, frames/token): on the one
   error vs a correct clip, att −0.31 vs −0.11, margin 0.07 vs 0.37 — promising, not yet calibrated.
-- **Next (needs the user):** `cd recognition && .venv/bin/python record_webcam.py --name s1` (10 prompts × silent/voiced
-  + 3 own sentences, video only), then `.venv/bin/python -m tacit_vsr.eval_session <dir>`. Silent vs voiced WER on the
-  same prompts separates "silent articulation" from "webcam domain".
+- **First webcam session `s1` (2026-11-14, partial 12 clips, backlit):** silent 13/20 = 65% WER (0/4 exact), voiced
+  21/36 = 58% (2/8 exact), no-face 0, 555 ms per 5.5 s clip on MPS. Voiced ≈ silent ⇒ capture domain dominates.
+  Mouth-ROI brightness 40–47 (CREMA-D 134–164); inter-ocular 88–89 px (CREMA-D 39–64). Variants (trim, contrast,
+  gamma, CLAHE, BlazeFace, downscale) gave no consistent gain. Diagnostic scripts were throwaway (not committed).
+- **Next (needs the user):** front-lit re-record (`record_webcam.py --check`, then `--name s2`), then `eval_session`.
 
 ## AirPods deliberate articulation w3 → w4: NO-GO (pre-registered; details in docs/research/AIRPODS_SILENT_SPEECH.md)
 - w4 held-out primary 26% (13/50, p=0.19 vs 20%); strongest baseline rhythm-ROCKET 42%; frozen threshold accepted 1/50
