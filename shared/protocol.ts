@@ -211,11 +211,57 @@ export interface VoicePolicyStatus {
   presynthActive: boolean;
 }
 
+/**
+ * Live Silent Speech (protocol 'tacit-live-v1'). The user activates Live once per session; utterances are recognised
+ * and shown to the user. `autoTransmitAllowed` stays false until a recognition reliability gate is validated on real
+ * silent recordings — the server never speaks recognised text before then, whatever the client requests.
+ */
+export type LiveMode = 'display-only' | 'automatic';
+export interface LiveStatus {
+  authorizationId: string | null;
+  /** Incremented on activate/pause/interrupt/end; in-flight results from an older generation are dropped. */
+  generation: number;
+  state: 'off' | 'active' | 'paused';
+  mode: LiveMode;
+  autoTransmitAllowed: false;
+  reason: string;
+}
+export interface LiveRecognitionCapability {
+  protocol: 'tacit-live-v1';
+  supportedInputs: readonly 'camera'[];
+  /** Always false until validated; `validationEvidence` will reference the measurement when it exists. */
+  automaticSpeechValidated: false;
+  validationEvidence: null;
+  maxFrames: number;
+  maxBytes: number;
+  maxDurationMs: number;
+}
+/** Raw model output for one utterance. `rawText` is never rewritten or completed by any language model. */
+export interface RecognitionHypothesis {
+  utteranceId: string;
+  authorizationId: string;
+  rawText: string;
+  final: true;
+  /** Not yet computed (needs incremental decoding). */
+  stable: false;
+  uncertainty: { value: number; kind: 'nbest-margin-per-token'; calibrated: false } | null;
+  model: string;
+  source: 'visual-model';
+  decision: 'shown' | 'abstained';
+  reason: string | null;
+  /** Server receipt of the last frame → result, ms; plus the service's own stage timings. */
+  recognitionMs: number;
+  stages: Record<string, number> | null;
+  gate: Record<string, number | string | null> | null;
+  /** Always false in this protocol version. */
+  transmitted: false;
+}
+
 export interface ServiceStatus {
   gemini: { configured: boolean; model: string | null };
   logging?: TurnLogStatus;
   voicePolicy?: VoicePolicyStatus;
-  recognition: { reachable: boolean; model: string | null; device: string | null; checkedAt: number | null };
+  recognition: { reachable: boolean; model: string | null; device: string | null; checkedAt: number | null; live?: LiveRecognitionCapability };
   voice: { listening: boolean; publicUrl: string | null; providers: Record<string, boolean> };
 }
 
@@ -271,7 +317,14 @@ export type ClientMessage =
   | { type: 'set_turn_logging'; mode: TurnLogMode }
   | { type: 'delete_turn_logs' }
   /** Explicit user choices for this session; see VoicePolicyStatus. */
-  | { type: 'set_voice_policy'; allowSystemFallback?: boolean; personalPresynth?: boolean };
+  | { type: 'set_voice_policy'; allowSystemFallback?: boolean; personalPresynth?: boolean }
+  /** Live Silent Speech session control. `activate` with mode 'automatic' is refused while autoTransmitAllowed=false. */
+  | { type: 'live_control'; action: 'activate' | 'pause' | 'resume' | 'interrupt' | 'end'; mode?: LiveMode; inputSource?: 'camera' }
+  /**
+   * One endpointed utterance from the camera: followed by exactly `frameTimesMs.length` binary WebSocket messages,
+   * each one JPEG frame, in order. Times are the browser's monotonic capture timestamps (performance.now, ms).
+   */
+  | { type: 'visual_utterance'; utteranceId: string; authorizationId: string; startMs: number; endMs: number; endpointMs: number; frameTimesMs: number[] };
 
 export type ServerMessage =
   | { type: 'snapshot'; snapshot: Snapshot }
@@ -279,7 +332,9 @@ export type ServerMessage =
   | { type: 'airpods_gesture'; t: number; gesture: 'nod' | 'shake'; accepted: boolean; reason: string }
   | { type: 'cue'; cue: 'options' | 'proposed' | 'confirmed' | 'cancelled' | 'uncertain' }
   /** Sent once to each authenticated user connection. `callerInvitePath` = `/?invite=…#caller` (append to the origin). */
-  | { type: 'session_info'; callerInvitePath: string; authRequired: boolean };
+  | { type: 'session_info'; callerInvitePath: string; authRequired: boolean }
+  | { type: 'live_status'; status: LiveStatus }
+  | { type: 'recognition_hypothesis'; hypothesis: RecognitionHypothesis };
 
 /**
  * Remote-caller channel (`/ws/caller`): a second browser (phone/laptop) acting as the far end of a
