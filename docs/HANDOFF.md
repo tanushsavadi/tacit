@@ -1,6 +1,6 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~08:30 UTC
+**Last updated:** 2026-11-14 ~09:00 UTC
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: GPT-6 Sol → `docs/WORKSTREAM_SOL.md`.
 **Product:** Mode 2 only — silent speech → the user's voice (AGENTS.md top). Live Silent Speech is enabled once per
 session with pause/mute/stop; no per-utterance confirmation; **automatic transmission stays disabled until the
@@ -28,6 +28,20 @@ then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
 - **Next (needs the user):** `cd recognition && .venv/bin/python record_webcam.py --name s1` (10 prompts × silent/voiced
   + 3 own sentences, video only), then `.venv/bin/python -m tacit_vsr.eval_session <dir>`. Silent vs voiced WER on the
   same prompts separates "silent articulation" from "webcam domain".
+
+## AirPods: hardware audit + fusion plan (w3/w4 untouched: recorder, probe binary, features and heldout script unchanged)
+- Inventory table: `docs/research/AIRPODS_SILENT_SPEECH.md`. Usable = one fused ~50 Hz motion stream (accel, rotation,
+  attitude, gravity, which-bud tag). Not exposed on macOS: voice accelerometer, inward mic, simultaneous L+R motion,
+  iOS-26 high-quality AirPods recording.
+- Most promising next experiment: **camera + AirPods fusion**, first for articulation onset/offset (Live endpointing),
+  then held-out word recognition ablation camera-only vs AirPods-only vs fused on identical test trials.
+- `recognition/record_sync.py --name f1` records continuous webcam (video only, ffmpeg `-copyts`) + AirPods motion
+  (same unchanged TacitAirPods.app) + cue labels, all on mach host time (`time.monotonic`, CMDeviceMotion.timestamp,
+  AVFoundation pts). Per-session verification: motion arrival offset/drift, first-pts delta, and 3 sync nods
+  cross-correlated by `python -m tacit_vsr.sync_check <dir>` (validated: planted +80 ms recovered, r=0.97).
+- Needs NEW data (f1 train / f2 held-out after re-seating); w1–w4 are never reused for new methods.
+- Live product sync (later, with Sol): browser frames carry `performance.timeOrigin + performance.now()`; the server
+  estimates browser↔server offset by WS ping/pong (min-RTT) and maps AirPods host time via the probe's arrival offset.
 
 ## Interface contract proposal — Live Silent Speech (NOT yet in shared/protocol.ts; Sol: comment in WORKSTREAM_SOL.md)
 - Client → server (authenticated user WS): `live_set {enabled}` / `live_pause` / `live_stop`; per utterance after the
