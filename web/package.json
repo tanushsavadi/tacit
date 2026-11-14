@@ -1,0 +1,37 @@
+{
+  "name": "tacit-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "test:browser": "node tests/silent-browser.mjs",
+    "test:microphone": "node tests/silent-microphone-smoke.mjs",
+    "test:vision": "node tests/silent-vision-browser.mjs",
+    "validate:human": "node tests/physical-validation.mjs",
+    "open:local": "node scripts/open-local.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.2.3",
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-slot": "^1.5.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "playwright": "^1.65.1",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.0",
+    "vite": "^8.3.8"
+  }
+}
