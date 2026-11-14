@@ -262,6 +262,7 @@ final class Router {
     private var boundID = AudioDeviceID(0)
     private var builtHw: (rate: Double, channels: Int) = (0, 0)
     private var watchdogs: [String: DispatchWorkItem] = [:]
+    private var durationsMs: [String: Double] = [:]
     var queue = PlaybackQueue(capacity: 8)
     private var configObserver: NSObjectProtocol?
     private let renderLock = NSLock()
@@ -366,8 +367,10 @@ final class Router {
             DispatchQueue.main.async { guard let self else { return }; self.completed(id, epoch: epoch) }
         }
         if let when { p.play(at: when) }
-        // Watchdog: if the engine silently stops (configuration change) the completion may never fire.
-        let ms = Double(buf.frameLength) / fmt.sampleRate * 1000 * Double(queue.scheduled.count) + 3000
+        // Watchdog: if the engine silently stops (configuration change) the completion may never fire. Its deadline is
+        // the audio still ahead of this item (every scheduled duration up to and including it) + 3 s margin.
+        durationsMs[id] = Double(buf.frameLength) / fmt.sampleRate * 1000
+        let ms = queue.scheduled.reduce(0) { $0 + (durationsMs[$1] ?? 0) } + 3000
         let w = DispatchWorkItem { [weak self] in
             guard let self, self.queue.scheduled.contains(id), self.queue.epoch == epoch else { return }
             self.stop(reason: "playback did not complete (watchdog)")
@@ -379,6 +382,7 @@ final class Router {
 
     private func completed(_ id: String, epoch: Int) {
         watchdogs.removeValue(forKey: id)?.cancel()
+        durationsMs.removeValue(forKey: id)
         onEvents(queue.playedBack(id, epoch: epoch))
     }
 
@@ -386,6 +390,7 @@ final class Router {
     func stop(reason: String) {
         for w in watchdogs.values { w.cancel() }
         watchdogs.removeAll()
+        durationsMs.removeAll()
         let ev = queue.stopAll(reason: reason)
         player?.stop()   // completions fire with the old epoch and are ignored
         player?.play()
