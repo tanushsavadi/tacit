@@ -60,23 +60,50 @@ then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
 - Probe `watch/` builds (device + simulator SDKs, unsigned). Deploy blocked on user: Xcode Apple ID/team, iPhone
   connected + Developer Mode on iPhone and Watch. No ultrasonic emission without a separate reviewed plan.
 
-## Interface contract — Live Silent Speech `tacit-live-v1` (PUBLISHED in shared/protocol.ts, commit 96d0e32)
-For Sol's `web/src/silent/port.ts` adapter (user WS `/ws?token=`, same auth as today). Restart the server to get it.
-- Capability: `snapshot.services.recognition.live` (present when the VSR service is reachable): protocol, supportedInputs
-  ['camera'], `automaticSpeechValidated:false`, `validationEvidence:null`, limits maxFrames 300 / maxBytes 12 MB / 10 s.
-- Client → server: `live_control {action:'activate'|'pause'|'resume'|'interrupt'|'end', mode?, inputSource?:'camera'}`.
-  `activate` with `mode:'automatic'` is refused (reason in `live_status`); `display-only` returns a fresh
-  `authorizationId`. Every control bumps `generation`; in-flight results from older generations come back abstained.
+## Interface contract — Live + voice output (for Sol; all in shared/protocol.ts, all additive) — 2026-11-14 ~10:45 UTC
+Server :8790 restarted with this code (`./scripts/tacit.sh restart`). Auth unchanged: user WS `/ws?token=`.
+
+**1. Live Silent Speech `tacit-live-v1` (unchanged wire format; ONE server-wide session since b0ba703)**
+- Capability: `snapshot.services.recognition.live` when the VSR sidecar is healthy (reported as soon as it listens).
+- C→S `live_control {action:'activate'|'pause'|'resume'|'interrupt'|'end', mode?, inputSource?:'camera'}`. `mode:'automatic'`
+  is refused (live_status.reason). No caller/session needed for display-only.
+- S→C `live_status {status}` on connect and after EVERY control from ANY client (the companion can pause your session).
+  Detect your control's effect by a generation/state transition, never by "the next live_status".
 - Per utterance: `visual_utterance {utteranceId, authorizationId, startMs, endMs, endpointMs, frameTimesMs[]}` then exactly
-  `frameTimesMs.length` binary WS messages, each one JPEG frame in order (times = performance.now ms, strictly increasing).
-- Server → client: `live_status {status: LiveStatus}` on connect and after each control;
-  `recognition_hypothesis {hypothesis}` exactly once per `visual_utterance` (also for rejects): `rawText` (raw model
-  output, never LLM-edited), `decision 'shown'|'abstained'`, `reason`, `uncertainty` (n-best margin/token,
-  `calibrated:false`), `recognitionMs`, `stages`, `gate`, **`transmitted:false` always**. No path to TTS/call exists.
-- Backend: `server/src/live.ts` (+5 tests) → `recognition/tacit_vsr/service.py` on 127.0.0.1:8765, auto-started and
-  supervised by the server (`RECOGNITION_AUTOSTART=off` to disable). `npm run live:check` = end-to-end check.
-- Verified (2nd instance :8791): automatic refused; display-only; 61 real CREMA-D JPEG frames → "IT'S ELEVEN O'CLOCK",
-  transmitted=false; warm round trip 683 ms for a 2.5 s utterance (cold 1.29 s). Voiced studio clips, not silent speech.
+  frameTimesMs.length binary JPEG messages on the SAME socket (frames are matched per socket).
+- S→C `recognition_hypothesis` exactly once per header, incl. rejects: `decision 'shown'|'abstained'`, `reason`, `rawText`
+  (raw model output), `uncertainty {calibrated:false}`, `recognitionMs`, `stages`, `transmitted:false`, `stable:false`.
+  Abstain reasons now include: duplicate utteranceId (per authorization), incomplete (new header / control / sender
+  disconnect before all frames), "Recogniser busy" (>2 in flight per server — dropped, NOT queued), stale authorization,
+  Live paused/off, frame-order/count/size/duration limits (300 frames, 12 MB, 10 s), no face tracked.
+- Pausing/interrupting/ending Live also interrupts any speech output in progress. Last user client disconnect ends Live
+  and stops voice output.
+
+**2. Voice output into the virtual microphone (NEW)**
+- `snapshot.services.voiceRoute: VoiceRouteStatus` and in every `output_status.status.route`: `state` 'unconfigured' |
+  'starting' | 'ready' | 'unavailable' | 'error', deviceName/Uid, sampleRate, gainDb, calibrated, `readers` (bundle ids of
+  apps currently reading the virtual mic — e.g. 'com.apple.FaceTime'; null = unknown; refreshed every 15 s), warnings
+  (echo risk, muted), reason. `readers` non-empty is the only local evidence that a call app selected the mic.
+- C→S `output_control {action:'enable'|'pause'|'resume'|'stop'}` → S→C `output_status {status: SpeechOutputStatus}`
+  (`authorizationId` fresh on enable, `generation`, `state 'off'|'ready'|'paused'`, `voice` label, `queued`,
+  `recognizedSpeechAllowed:false`). output_status is also unsolicited on queue/route changes.
+- C→S `speak_typed {requestId, outputAuthorizationId, text}` — ONLY for text the user typed (AAC fallback), sent by an
+  explicit action. ≤500 chars, unique requestId, needs state 'ready' + matching authorization + route ready; max 4 pending.
+- S→C `speech_delivery {delivery}` for each state change: queued → synthesizing → routing (again with
+  `timings.firstAudioAt` when audio starts) → exactly one terminal state: rendered | refused | interrupted | failed.
+  Carries `outputAuthorizationId` + `generation` (added for Sol's correlation request), `source:'typed'|'recognized'`,
+  `voice`, `reason`, `timings {requestedAt, synthStartAt, synthEndAt, firstAudioAt, renderedAt, endedAt}` (server ms).
+  **`rendered` = written into the virtual mic on this Mac. `remoteAudibility` is always 'unknown'.** UI must not say
+  "sent"/"heard" — say "spoken into <device>".
+- Recognised words are never spoken (Live refuses automatic; ReliabilityGate = UNVALIDATED). UI must not copy model text
+  into speak_typed (Sol already committed to this).
+
+**3. What Sol may show:** Listening (Live active) · Recognising (utterance sent, awaiting hypothesis) · raw text "shown"
+(display only, uncalibrated) · Speaking (delivery has firstAudioAt) · Paused · route state/device/readers/warnings ·
+measured timings from the messages. Not: remote delivery, confidence %, "recognised speech sent".
+
+**4. Integration tests that should pass:** server `npm test` (91), `npm run live:check`, `npm run speech:check`
+(both against :8790); Sol: web typecheck/test/build + its live-recognition browser test against :8790.
 
 ## AirPods silent speech — CONCLUDED: NO-GO for word recognition (details: docs/research/AIRPODS_SILENT_SPEECH.md)
 - Gate 1 (deliberate jaw opening) detectable; Gate 2 five words, strict w1-tuned → w2 held-out: with the w1-chosen
