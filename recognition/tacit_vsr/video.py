@@ -219,3 +219,25 @@ def roi_to_tensor(roi: np.ndarray):
     x = torch.from_numpy(roi[:, 4:92, 4:92].astype(np.float32) / 255.0)
     x = (x - 0.421) / 0.165
     return x.unsqueeze(0)
+
+
+def frames_from_jpegs(times_ms: list[float], jpegs: list[bytes], fps: float = config.MODEL_FPS) -> DecodedClip:
+    """Browser-captured JPEG frames with real capture timestamps (performance.now ms) → constant-rate RGB frames,
+    using the same nearest-preceding-timestamp resampling as decode_clip (no fabricated frame rate)."""
+    if not jpegs or len(jpegs) != len(times_ms):
+        raise ValueError("frames and timestamps must be non-empty and the same length")
+    frames, times = [], []
+    for t, b in sorted(zip(times_ms, jpegs), key=lambda p: p[0]):
+        img = cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR)
+        if img is None:
+            continue
+        frames.append(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)); times.append(t / 1000.0)
+    if not frames:
+        raise ValueError("no decodable JPEG frames")
+    t = np.asarray(times) - times[0]
+    med_dt = float(np.median(np.diff(t))) if len(t) > 1 else 1 / 30
+    end = float(t[-1]) + (med_dt if med_dt > 0 else 1 / 30)
+    n_out = max(1, int(round(end * fps)))
+    pick = np.clip(np.searchsorted(t, (np.arange(n_out) + 0.5) / fps, side="right") - 1, 0, len(frames) - 1)
+    src_fps = (len(frames) - 1) / t[-1] if t[-1] > 0 else 0.0
+    return DecodedClip([frames[i] for i in pick], src_fps, len(frames), end * 1000.0, 0.0, end * 1000.0)

@@ -32,10 +32,17 @@ def wer(ref: str, hyp: str) -> tuple[int, int]:
 def transcribe(eng: engine.VSREngine, crop: video.MouthCropper, path: Path) -> dict:
     t0 = time.perf_counter()
     clip = video.decode_clip(path.read_bytes())
+    out = recognize_clip(eng, crop, clip, t0)
+    out["file"] = str(path)
+    return out
+
+
+def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.DecodedClip, t0: float) -> dict:
+    """Shared by the CLI and the live service: decoded clip → raw free-decoded text + gate features + latency."""
     t1 = time.perf_counter()
     track = crop(clip.frames)
     t2 = time.perf_counter()
-    out = {"file": str(path), "frames": len(clip.frames), "source_fps": round(clip.source_fps, 2),
+    out = {"frames": len(clip.frames), "source_fps": round(clip.source_fps, 2),
            "duration_ms": round(clip.duration_ms), "face_fraction": round(track.face_fraction, 3),
            "aperture_range": track.aperture_range, "width_range": track.width_range,
            "ms": {"decode": round((t1 - t0) * 1000), "landmarks_crop": round((t2 - t1) * 1000)}}
