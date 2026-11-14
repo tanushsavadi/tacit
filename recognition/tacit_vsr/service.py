@@ -39,7 +39,7 @@ class Service:
         # Its output is discarded and never reported.
         w = time.perf_counter()
         with torch.no_grad():
-            self.eng.nbest(self.eng.encode(torch.zeros(1, 50, 88, 88)), 3)
+            self.eng.nbest(self.eng.encode(torch.zeros(1, 50, 88, 88)), config.NBEST)
         print(f"[vsr] warm-up {round((time.perf_counter() - w) * 1000)} ms (decoder: {config.DECODER})", flush=True)
 
     def recognize(self, body: dict) -> dict:

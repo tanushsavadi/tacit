@@ -64,7 +64,7 @@ def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.
         return out
     x = video.roi_to_tensor(track.roi)
     enc, ms_enc = engine.timed(eng.encode, x)
-    hyps, ms_dec = engine.timed(eng.nbest, enc, 3)
+    hyps, ms_dec = engine.timed(eng.nbest, enc, config.NBEST)
     out["ms"].update(encode=round(ms_enc), beam_decode=round(ms_dec))
     out["decoder"] = config.DECODER
     best = alt = None

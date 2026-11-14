@@ -45,6 +45,10 @@ FREE_DECODE_BEAM = int(_f("TACIT_BEAM", 10))
 # Free-decoding implementation: "fast" (KV-cached, adapted from SilentFlow; ~4x faster, same WER on the 96-clip
 # benchmark — eval/bench_decoder.py) or "espnet" (original BatchBeamSearch). Instant revert: TACIT_DECODER=espnet.
 DECODER = os.environ.get("TACIT_DECODER", "fast")
+# N-best hypotheses decoded per utterance: #1 is the raw text, the rest are display-only review alternatives. Oracle
+# top-K on development data (docs/DEMO_READINESS.md D.10, beam 10): reference in top-1/3/5 = silent own sessions 6/7/8
+# of 20, CREMA-D 80/85/92 of 96; top-1 identical to nbest 3. Beam 20 gave nothing more.
+NBEST = int(_f("TACIT_NBEST", 5))
 # Phrase mode: also score the fixed phrase list (tacit_vsr/phrases.py) per utterance, display-only (~100 ms on MPS).
 PHRASE_MODE = os.environ.get("TACIT_PHRASES", "1") != "0"
 
