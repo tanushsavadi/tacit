@@ -1,10 +1,10 @@
-# TACIT — Demo readiness (2026-11-14, ~20:45 UTC)
+# TACIT — Demo readiness (2026-11-14, 20:50 UTC)
 
 **Your voice. Beyond speech.** TACIT is a virtual voice for people who can silently articulate words but cannot
 produce usable audible speech: the camera reads the words they mouth, and a synthesized voice speaks into the
 ordinary call they are already in (Google Meet verified). Automatic speaking of recognised words stays **disabled**
-until a held-out reliability test passes; until then recognition is display-only and typed speech is the labelled
-voice path.
+until a held-out reliability test passes. Recognised words reach the call only through **reviewed speech**: the user
+picks the right candidate (or corrects it) and presses Speak.
 
 ## A. Status at a glance
 
@@ -18,11 +18,13 @@ voice path.
 | Silent recognition, held-out live test (v1, real browser pipeline, front-lit 127–130) | **44% WER (11/25), 2/5 exact**, 0 missed windows; end→shown p50 1385 / p95 1483 ms | D.7 — FROZEN baseline, `recognition/data/live/2026-11-14T19-58-01-573Z-livetest.jsonl` |
 | Live pipeline (browser → server → Auto-AVSR on MPS → browser/companion) | Works; same accuracy as offline in aggregate (D.4); outputs shown display-only | `live:check`, `live:replay`, `ui:check` |
 | No-speech false triggers | Dev resting face 36/36 → 4/36 after the pre-decode gate. **Held-out live: still 0, swallow/glance 0, smile 1** (raw "SO", phrase mode wrongly ACCEPTED "I DON'T UNDERSTAND") | D.7, D.9 |
-| Phrase mode (30-phrase list, rule v1) | Display-only. Dev: 37/45 in-list accepted, 0 wrong; unlisted 0/99 accepted. **Defect: no absolute-evidence floor** → accepts junk one-word decodings (held-out smile; dev 4/36 rest, 10/48 tails). Proposed v2 (not implemented): D.9 | D.3, D.9 |
+| Phrase mode (30-phrase list) | **`phrase-rule-v2` now default** (`3a76e6a`; v1 selectable). Dev re-run (same data the floor was chosen on — NOT validation): in-list 37/45 accepted, 0 wrong (v1 37); unlisted 0/99; resting face **0/36** (v1 4); tails 3/48 (v1 10, one real speech); heads 1/48 (v1 2). Smile/swallow/listening never recorded → **NOT VALIDATED** | D.9 |
 | LM-assisted decoding (pretrained Auto-AVSR subword LM, shallow fusion) | **Rejected**: worse WER on every dev set, ~1.7–2× decode time, fluent hallucinations | D.8 |
-| Oracle top-K (is the reference in the N-best?) | **NOT RUN** — harness committed (`eval/oracle_topk.py`) | D.10 |
-| Reviewed mouth-to-call (`speak_reviewed`) | **Policy APPROVED by the user (2026-11-14 ~20:30 UTC); implementation NOT STARTED** | AGENTS.md, HANDOFF |
-| Automatic speaking of recognised words | **DISABLED** (Live refuses `automatic`; `UNVALIDATED_GATE`). **NO-GO** open-vocabulary; **NO-GO** phrase mode (held-out wrong accept) (F) | `speech.test.ts`, `live.test.ts` |
+| Oracle top-K (is the reference in the N-best?) | **Run (dev):** reference in top-1/3/5/10 — own silent clips 6/7/8/10 of 20, CREMA-D 80/85/92/93 of 96. Review now shows 5-best (`3cb0871`) | D.10 |
+| Flip test-time augmentation | **Rejected** (pre-registered): CREMA-D 5.2→5.4%, own silent 44.4→51.5% | D.12 |
+| Reviewed mouth-to-call (`speak_reviewed`) | **Backend implemented and locally verified** (`7853bd8`, `e0894f3`, `605880a`): real recorded silent clip → Auto-AVSR → candidates → explicit pick → system voice → BlackHole 16ch `rendered`; tamper/stale/duplicate refused; stop 21 ms. Web/notch UI: Sol (in progress); fallback `npm run review`. **Remote audibility of reviewed speech NOT yet human-confirmed** | D.13, HANDOFF contract |
+| Release targets (≤ 5% WER and ≥ 90% exact on ≥ 50 new silent labelled utterances; 0 accepted non-speech) | **NOT VALIDATED — not met on any data so far** (best honest held-out: 44% WER, 2/5 exact). Targets, not results | D.7 |
+| Automatic speaking of recognised words | **DISABLED, unchanged** (Live refuses `automatic`; `UNVALIDATED_GATE`; `recognizedSpeechAllowed: false`). **NO-GO** open-vocabulary; **NO-GO** phrase mode (F) | `speech.test.ts`, `live.test.ts` |
 | Menu-bar companion, launcher, preflight | Work (`--selftest` 7/7; preflight no FAIL) | B, D.1 |
 | AirPods | Listening device only. AirPods word recognition NO-GO (`docs/research/AIRPODS_SILENT_SPEECH.md`) | — |
 
@@ -42,6 +44,11 @@ cd server && npm run live:test    # guided held-out live test (E)
 **Opening (15 s).** "Millions of people — after a laryngectomy, on a ventilator, with ALS — can still shape words with
 their lips but have no voice. Phones offer type-to-speak. TACIT lets them *mouth* their words and be heard in a normal
 call."
+**Preferred flow once the review UI is up (web/notch from Sol, or `cd server && npm run review` in a terminal):**
+mouth a sentence → the candidates appear (raw first, then alternatives) → *you* pick the right one or fix it → press
+Speak → the iPhone in the Meet hears it. Say plainly that the pick is yours: the model's raw text is wrong often
+(44% WER held-out), and the right sentence is among the 5 candidates more often than first (D.10) — nothing is spoken
+without your press. The A/B script below remains the fallback.
 1. **Demo A — silent recognition (35 s).** Face lit from the front. Workspace → **Start Live preview**. Point at the
    status: microphone off, camera only (the recogniser never receives audio — its input is JPEG frames). Mouth a short
    sentence silently. The raw recognised words appear, with "display only — not spoken" and the phrase-list result.
@@ -54,7 +61,7 @@ call."
    Press **⌃⇧⌘.** during a long sentence to show immediate stop.
 3. **Close (10 s).** "Both halves run locally on this laptop today. Connecting them automatically is gated behind a
    reliability test, because a wrong word spoken in someone's voice is worse than silence."
-Do **not** type the recognised words into Speak to imply automation. If recognition misses on stage, say so and show
+Do **not** type the recognised words into typed Speak to imply automation; use reviewed Speak, which is labelled. If recognition misses on stage, say so and show
 the abstention ("no lip movement", "ambiguous") — the safety behaviour is part of the product.
 
 **What is novel (defensible).** Not lip-reading (Auto-AVSR, Chaplin), not closed-phrase clinical lip-reading apps
@@ -221,10 +228,29 @@ Unlisted sentences: 0 accepts under every rule. The one tail every rule accepts 
 plus a server-side speech-likeness check before decoding once smile/nod recordings exist. The held-out smile (−2.894,
 no overlap) would be rejected by all three — a post-hoc check, not a validation. Validation needs the v2 live test
 non-speech trials and `--phrases` (E).
+**Implemented (`3a76e6a`, default; `TACIT_PHRASE_RULE=phrase-rule-v1` restores v1).** Re-run of
+`eval.phrase_rule_probe` through the real model with v2 (same 276 items, decodes identical 276/276): accepts 41 =
+predicted 41 from the v1 dump — in-list 37 (all correct), unlisted 0, rest 0, tail 3 ("UGLY", "RIGHT" → I DON'T
+UNDERSTAND; real speech "AND YOU CALL MY MOTHER"), head 1 ("I"). Still DEVELOPMENT evidence; non-speech behaviour
+on smiles/swallows/listening is unmeasured. `eval.closed_set` was not re-run: its in/out-of-list acceptance is the
+same computation as the probe's utt_in/utt_out rows (identical above), and top-1 does not depend on the rule.
 
-### D.10 Oracle top-K — NOT RUN
-`eval/oracle_topk.py` (K = 1/3/5/10, beam 10/20, candidates only from the decoder) is committed but was not run this
-session. Run it before building any reranker: if the reference is absent from the top-K, reranking cannot recover it.
+### D.10 Oracle top-K (development data, first run 2026-11-14 ~20:35 UTC)
+`eval/oracle_topk.py`: candidates only from the visual decoder (no LM); the reference is used only to score them.
+Exact sentence within the top-K (beam 10; beam 20 identical or worse):
+| Set | n | top-1 | top-3 | top-5 | top-10 |
+|---|---|---|---|---|---|
+| own silent, A backlit | 4 | 0 | 0 | 0 | 0 |
+| own silent, B dim (prompted + own) | 13 | 3 | 4 | 5 | 7 |
+| own silent, C front-lit | 3 | 3 | 3 | 3 | 3 |
+| **own silent, all** | **20** | **6** | **7** | **8** | **10** |
+| own voiced, all | 28 | 13 | 16 | 16 | 16 |
+| CREMA-D voiced (unseen speakers) | 96 | 80 | 85 | 92 | 93 |
+Oracle WER (best of top-5): own silent B 59.6→44.7% (prompted), CREMA-D 5.2→1.7%. Top-1 at nbest 10 equals the
+production numbers on every set, so raising the production N-best from 3 to 5 (`3cb0871`) leaves the raw text
+unchanged and gives review 4 alternatives. Consequence: a reranker could at best move 6→8 of 20 silent sentences;
+the user's own pick in review captures that upper bound without any model guessing. Half of the silent sentences are
+not in the top-10 at all — only a better visual model / adaptation helps those.
 
 ### D.11 Repeated articulation — diagnosis (one window out of three)
 Every v1 live window lasted **3.5–5.2 s** (frames ÷ 25 fps from the log: "YES I UNDERSTAND" 3.52 s; the repeat's window
@@ -236,6 +262,20 @@ times. Open question for the next run: why windows are ~2 s longer than the arti
 endpointer staying active on pre/post movements). Sol's replay test already shows the segmenter re-arms between
 repeats (two windows on recorded actor input), so a rearm bug is not indicated.
 
+### D.12 Flip test-time augmentation — REJECTED (pre-registered rule)
+`eval/tta_ab.py`: mean of the encoder outputs for the mouth crop and its mirror (Auto-AVSR trains with flips), same
+decoder. Rule written before the run: adopt only if CREMA-D improves and own silent does not worsen. Result: CREMA-D
+5.2% → 5.4% (80 → 79 exact), own silent 44.4% → 51.5% (6 → 5 of 20), own voiced 37.7% → 43.8%. Not adopted.
+
+### D.13 Reviewed speech — local verification (2026-11-14 ~20:30–20:45 UTC, server :8790 restarted on the new code)
+`npm run reviewed:check -- ../recognition/data/webcam/20261114T191005Z-bright-test` (recorded SILENT clips of the
+user, sent as browser JPEG frames through Live; nobody was reading BlackHole): "I DON'T UNDERSTAND" shown in 1252 ms
+with 3 candidates; tampered text, wrong hash, stale Live generation, unknown utterance, stale output authorization,
+wrong kind → all refused; the pick rendered into BlackHole 16ch (system voice; press → first audio 1292 ms, rendered
+2672 ms); a second Speak for the same utterance refused; emergency stop during a second reviewed utterance →
+interrupted 21 ms after stop. `npm run review` (terminal client) with clip free03: raw "PLEASE HEAR ALL THE LIGHTS",
+alternative 2 "PLEASE TURN ON THE LIGHTS" picked → rendered → STOP → off. Not tested: a human listener on the far end.
+
 ## E. Next human evaluation (≈ 12 min, independent of everything studied so far)
 1. Light from the front: `cd recognition && .venv/bin/python record_webcam.py --check` until PASS (≥ 90; aim ~105–130).
 2. `./scripts/tacit.sh restart && ./scripts/tacit.sh open` → **Start Live preview**. Leave voice output off. Keep the
@@ -243,7 +283,23 @@ repeats (two windows on recorded actor input), so a rearm bug is not indicated.
 3. `cd server && npm run live:test` (set v2: 5 fresh sentences, still 15 s, smile ×3, swallow/nod, 20 s listening,
    repeat ×3 in 22 s, pause). Then `npm run live:test -- --phrases` (20 in-list attempts, random order).
 4. Paste both reports / log paths (`recognition/data/live/…`). Do not rehearse the v2 sentences before the run.
-The v1 result (D.7) stays the frozen baseline; v2 is the first evaluation of anything changed after it.
+The v1 result (D.7) stays the frozen baseline; v2 is the first evaluation of anything changed after it (phrase-rule-v2,
+5-best). Toward the release targets, ≥ 50 genuinely silent NEW labelled sentences are needed (a fresh sentence list larger
+than `live:test` v2's 5, never rehearsed) — not available yet, so every target stays NOT VALIDATED.
+
+### E.2 Physical test — reviewed speech into Google Meet (≈ 6 min, needs a second device as listener)
+1. `./scripts/tacit.sh status` (server up) → `./scripts/tacit.sh open` → workspace: **Start Live preview** (camera).
+2. Google Meet on the Mac: microphone = **BlackHole 16ch**; join from the iPhone as an ordinary participant; mute the
+   iPhone's own mic, unmute its speaker.
+3. Terminal: `cd server && npm run review` (or Sol's UI if it shows the candidates + Speak). Type `o` → "[voice] ready".
+4. Mouth "please turn on the lights" silently → candidates appear → type the number of the correct one → Enter.
+   Record: did the iPhone play it? (yes/no, words heard). Then mouth a NEW sentence of your own, pick or `e N` to
+   correct, Enter; record the same.
+5. Safety on the call: mouth something, type its number, then immediately `s` → the iPhone must hear nothing or a cut
+   phrase; press the same number again → "refused" (already spoken / output off). Pause Live in the browser → older
+   candidates must be refused.
+6. Report: per attempt — raw text, which candidate (or correction) you picked, heard yes/no. Only a "yes" from the
+   listener counts as remote audibility.
 
 ## F. Automatic silent-to-voice: recommendation
 - **Open-vocabulary automatic speech: NO-GO.** Even in good light the model is a ~19%-WER recogniser (dev voiced
@@ -261,27 +317,34 @@ The v1 result (D.7) stays the frozen baseline; v2 is the first evaluation of any
   dark capture (reported as `mouth_brightness`, not yet a gate); end of utterance (motion endpointer, experimental).
   What it cannot yet: unintended mouth movements (smile, swallow) vs speech; correct vs incorrect open-vocabulary text.
 
-- **Reviewed mouth-to-call (approved, not implemented):** the user picks one displayed candidate of the current
-  utterance and presses Speak → `speak_reviewed` (AGENTS.md). Not automatic speech; the gate above is unaffected.
+- **Reviewed mouth-to-call (implemented, D.13):** the user picks one displayed candidate of the current utterance (or
+  corrects it — spoken as `user-corrected`) and presses Speak → `speak_reviewed`. Not automatic speech; the gate above
+  is unaffected.
 
 ## G. Limitations
 - Weights are research/non-commercial; trained on voiced LRS3 video. Silent accuracy measured only on one speaker,
   repeated prompts, in development.
 - Recognition depends strongly on front lighting; the Live web UI does not yet warn when `mouth_brightness` < 90.
-- Phrase rule v1 accepts junk one-word decodings (smile, mouth settling) as "I DON'T UNDERSTAND" (D.9); display-only.
+- Phrase rule v2 still accepted 3 of 96 non-sentence dev windows (D.9); smiles/swallows/listening never measured.
+- Open-vocabulary silent recognition: half of the dev silent sentences are not in the 10-best (D.10); review cannot
+  fix those — the user must correct or retype. Speaker adaptation (fine-tuning on the user's own labelled silent
+  sentences) is the most promising lever but needs ≥ ~100 new labelled own clips and was not attempted.
 - Live windows run ~2 s longer than the articulation (D.11); cause not yet measured.
 - Voice is the macOS system voice (labelled, not personal); `say` adds ~1 s.
 - No sidetone; one server per Mac; FaceTime untested; no installer.
 - Companion shows raw text but not yet the phrase result.
 
 ## H. Requests for Sol (frontend, all optional/additive)
+0. **Review-and-Speak UI** for `speak_reviewed` (contract: HANDOFF → "Interface contract — reviewed speech").
 1. Show `hypothesis.phraseMatch` when present: "Phrase list match: … (display only)" or its rejection reason.
 2. Warn when `hypothesis.gate.mouth_brightness` < 90: "Your face is too dark for reliable reading — light from the front."
 3. Show end→shown latency = `stages.endpoint_wait + stages.upload + recognitionMs`.
 4. Consider `ARTICULATION_CONFIG.preRollMs` 160 → 400 (weak evidence, D.3); send `outputGeneration` with `speak_typed`.
 
 ## I. Git
-`main`, pushed; Claude is the only Git writer. After the held-out test: `4dda303` per-window diagnostics in
+`main`, pushed; Claude is the only Git writer. This session: `7853bd8` speak_reviewed; `614a261` contract;
+`3a76e6a` phrase-rule-v2; `e0894f3` reviewed:check; `665c8c4` eval grouping fix; `3cb0871` 5-best; `605880a`
+`npm run review`; `e4f668d` flip-TTA harness (rejected). Previous session: After the held-out test: `4dda303` per-window diagnostics in
 `stages`; `24c2baf` `live:test` v2; `fd3c8d3` eval harnesses (LM A/B, phrase-rule probe, oracle top-K); then docs. This round: `5374284` capture stats + lighting check; `7a8f482` eval
 tools; `c533656` pre-decode abstention gate; `0773988` phrase mode; `800a9ea` phraseMatch to clients; `af14b92`
 latency stages + `live:replay` + `live:test`; `0229768` recorder `--modes` fix + nv12. Earlier: see HANDOFF.

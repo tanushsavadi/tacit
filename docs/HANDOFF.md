@@ -1,17 +1,22 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~20:30 UTC (clock-checked; earlier "~20:45" stamps were estimates)
-**Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Session ended at the
-user's request for a clean hand-off to a fresh Opus session.
+**Last updated:** 2026-11-14 20:50 UTC (clock-checked; the previous session's "~20:45" stamps were estimates)
+**Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "reviewed speech".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
-**Start here:** this section, then `docs/DEMO_READINESS.md` (D.7–D.11 = this session's results, E = next human test).
+**Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
 
-## Hand-off for the next Opus session (2026-11-14 ~20:45 UTC)
-**Priority 1 — reviewed mouth-to-call: BACKEND IMPLEMENTED (`7853bd8`, 2026-11-14 ~20:25 UTC).** Contract published
-below ("Interface contract — reviewed speech"). Remaining: (a) Sol's review-and-Speak UI (web and/or notch); (b) a
-coordinated `./scripts/tacit.sh restart` so :8790 + the sidecar run the new code (the sidecar now emits `alternatives`);
-(c) the physical test silent mouthing → pick/correct → Speak → BlackHole → Google Meet listener (needs the user).
+## Hand-off (2026-11-14 20:50 UTC)
+**Done this session (all pushed):** reviewed speech backend + contract (`7853bd8`, `614a261`); phrase-rule-v2 default
+(`3a76e6a`); `npm run reviewed:check` (`e0894f3`); eval grouping fix (`665c8c4`); 5-best review candidates after the
+first oracle top-K run (`3cb0871`); `npm run review` terminal review client (`605880a`); flip-TTA A/B, rejected
+(`e4f668d`). :8790 was restarted twice (both times verified idle: Live off, output off, no app reading BlackHole) and
+now runs all of it; Live and output were left OFF.
+**Next, in order:** (1) Sol's review-and-Speak UI (web and/or notch) on the contract below — or use `npm run review`;
+(2) the user's physical test DEMO_READINESS E.2 (reviewed speech → Meet listener) — the only way to claim remote
+audibility of reviewed speech; (3) DEMO_READINESS E (live:test v2 + `--phrases`: first held-out numbers for v2 and
+smile/swallow/listening controls); (4) only with ≥ 100 new labelled own silent clips: speaker adaptation experiment.
+**Release targets (≤ 5% WER, ≥ 90% exact on ≥ 50 new silent utterances, 0 accepted non-speech): NOT VALIDATED.**
 
 ## Interface contract — reviewed speech (`speak_reviewed`) — for Sol — 2026-11-14 ~20:30 UTC (`7853bd8`, additive)
 All in `shared/protocol.ts`. Nothing existing changed meaning; `recognizedSpeechAllowed`/`autoTransmitAllowed` stay
@@ -43,20 +48,24 @@ for recognised text.
 - **UI rules (AGENTS.md policy):** no pre-selection, no auto-confirm, no timeout send, never LLM-edited; the Speak
   button needs an explicit press per utterance; hide/disable Speak once a newer shown hypothesis arrives, after expiry,
   or while output/Live is not active. ALL-CAPS model text is put in sentence case for synthesis only (server).
-- Verified: server typecheck clean, `npm test` 109/109 (11 new tests: candidates, latest-shown target, every refusal,
+- Verified: server typecheck clean, `npm test` 109/109 at `7853bd8` (now 112/112; 11 new tests: candidates, latest-shown target, every refusal,
   once-per-utterance, route refusal retry, correction path, pause cut, sentence case); web typecheck clean against the
   new types; throwaway server on :8799 (fake recogniser, `TACIT_ROUTE=off`) over a real WebSocket: shown hypothesis
   carried `reviewCandidates`, a tampered text was refused, the genuine pick passed every check and was refused only at
-  the (disabled) virtual-mic stage. NOT yet verified: real route/BlackHole/Meet with reviewed speech (needs restart + user).
+  the (disabled) virtual-mic stage. Later, on the restarted :8790 with REAL recorded silent clips and the real route:
+  `npm run reviewed:check` and `npm run review` rendered picks into BlackHole 16ch, all refusals held, stop → interrupted
+  in 21 ms (DEMO_READINESS D.13). NOT yet verified: a human listener on the far end (DEMO_READINESS E.2).
+- Since `3cb0871` the sidecar decodes 5-best: up to 4 `alternatives`. Since `3a76e6a` `phraseMatch.rule` is
+  `'phrase-rule-v2'` and has optional `freeAttPerToken` (v2 rejects < −1.5 with reason "too little evidence of a sentence").
+- Terminal fallback UI (backend-owned): `cd server && npm run review` — numbers speak candidates, `e N` edits, o/p/r/s.
+  Pure message builder for clients to mirror: `server/src/reviewed.ts` `buildReviewedRequest`.
 
-**Priority 2 — evidence-based phrase false-trigger fix:** implement `phrase-rule-v2` = v1 + free-hypothesis att/token
-≥ −1.5 (DEMO_READINESS D.9: keeps 37/37 genuine dev accepts, removes 4/4 resting-face and 7/10 tail accepts). Bump
-`RULE_VERSION`, keep v1 selectable, add tests, re-run `eval.phrase_rule_probe` + `eval.closed_set`. Validate only on NEW
-data (`live:test` v2 + `--phrases`, DEMO_READINESS E). Then a pre-decode speech-likeness check once smile/nod
-recordings exist.
-**Not to do:** LM fusion (rejected, D.8); tuning on the v1 held-out sentences; enabling automatic speech.
+**Phrase-rule-v2: IMPLEMENTED** (`3a76e6a`, D.9: dev re-run reproduces the analysis exactly; NOT validated). Next for
+false triggers: a pre-decode speech-likeness check once smile/nod/listening recordings exist (live:test v2 has them).
+**Not to do:** LM fusion (D.8); flip TTA (D.12); tuning on the v1 held-out sentences or on dev data then calling it
+held-out; enabling automatic speech; any LLM rewriting of recognised words.
 
-## Verified status (2026-11-14 ~20:45 UTC)
+## Verified status (2026-11-14 20:50 UTC)
 | Item | Status |
 |---|---|
 | Google Meet remote audibility | **VERIFIED (human-observed):** BlackHole 16ch as Meet mic; the user's iPhone heard TACIT |
@@ -64,13 +73,23 @@ recordings exist.
 | Typed synthesized speech | VERIFIED through a real call (Google Meet) |
 | Silent recognition, held-out live v1 (frozen baseline) | **44% WER (11/25), 2/5 exact**, front-lit 127–130, end→shown p50 1385 ms; smile → wrong phrase accept; repeat ×3 → 1 window; pause 0 (D.7) |
 | LM-assisted decoding | Rejected on dev data (worse everywhere, hallucinations, ~2× decode) (D.8) |
-| Oracle top-K | NOT RUN (harness committed) |
-| Phrase rule v1 | Root cause of false accepts found (no absolute-evidence floor); v2 proposed, not implemented (D.9) |
-| Reviewed mouth-to-call | Backend implemented + unit/WS-tested (`7853bd8`); UI (Sol) and physical Meet test pending |
+| Oracle top-K | Run on dev: reference in top-1/3/5/10 — own silent 6/7/8/10 of 20; CREMA-D 80/85/92/93 of 96 (D.10) |
+| Phrase rule | v2 default (`3a76e6a`); dev: rest 4→0, tails 10→3, heads 2→1, in-list 37 kept; NOT validated (D.9) |
+| Flip TTA | Rejected (D.12) |
+| Reviewed mouth-to-call | Backend done; local route verified with real recorded silent clips (D.13); UI (Sol) + human Meet listener pending |
 | Automatic recognised-speech transmission | STILL DISABLED. NO-GO open vocabulary and phrase mode |
 
-## Restartable checkpoint (state at hand-off)
-- `main` pushed. This session's commits: `4dda303` feat(server) per-window `win_*` diagnostics in hypothesis `stages`
+## Restartable checkpoint (state at hand-off, 20:50 UTC)
+- `main` pushed through the docs commit after `e4f668d`. Checks: server typecheck clean, `npm test` **112/112**;
+  recognition unittests **15/15**; web typecheck clean (read-only check, Sol's files untouched). Running :8790 = current
+  code; Live off, output off. No background jobs. Sol's uncommitted files (`docs/WORKSTREAM_SOL.md`,
+  `macos/TacitCompanion/**` incl. new `ReviewedTextView.swift` etc.) are untouched and unstaged — Sol is mid-edit.
+- New git-ignored artefacts this session: `recognition/data/eval/{phrase_rule_probe_v2,oracle_topk,tta_ab}.jsonl`,
+  `recognition/data/eval_{phrase_v2,oracle_topk,tta_ab}.log` (private transcripts); `server/data/run/{driver,stop}.mts`
+  (scratch test drivers, ignored).
+- Licensing: the user stated (2026-11-14 ~20:40 UTC) they hold written permission from all authors to reuse code; no
+  external code was copied this session anyway. Keep attributions/notices regardless.
+- Previous session's commits: `4dda303` feat(server) per-window `win_*` diagnostics in hypothesis `stages`
   (+test); `24c2baf` feat(server) `live:test` v2 (fresh set, `--set v1` kept, 22 s repeat, 12–20 s non-speech incl.
   listening, arrival times, `--phrases`); `fd3c8d3` feat(recognition) `eval/lm_ab.py`, `eval/phrase_rule_probe.py`,
   `eval/oracle_topk.py`; then the docs commit (AGENTS.md policy, this file, DEMO_READINESS).
@@ -84,7 +103,8 @@ recordings exist.
 - External code: SilentFlow fast beam already vendored (MIT notice in `tacit_vsr/fast_beam.py`). Lipflow / SilentFlow
   LM loading pattern followed (no code copied). Hushkey, Personalized-Lip-Reading, VALLR, VSP-LLM, phoneme-to-words-lm:
   not inspected this session. No LLM correction anywhere.
-- Unchanged and frozen: decoder (fast beam 10, CTC 0.1, no LM), gate thresholds, phrase list and `phrase-rule-v1`.
+- Decoder still fast beam 10, CTC 0.1, no LM (top-1 unchanged); N-best 3 → 5 (`3cb0871`); gate thresholds and phrase list
+  unchanged; phrase rule v1 → v2 default (`3a76e6a`, v1 selectable).
 
 ## Sol coordination / ownership (updated 2026-11-14 ~20:25 UTC)
 - **Companion ownership TRANSFERRED to Sol by the user's explicit authorization (2026-11-14 ~20:25 UTC).** Steps per
@@ -116,6 +136,8 @@ recordings exist.
 4. NEW optional `RecognitionHypothesis.phraseMatch` (`800a9ea`): show "Phrase list match: … (display only)" or its
    rejection reason; never feed it to speech. `gate.mouth_brightness` < 90 → "too dark, light from the front" hint.
    End→shown latency = `stages.endpoint_wait + stages.upload + recognitionMs`. Consider `preRollMs` 160 → 400.
+6. **Reviewed speech UI** on "Interface contract — reviewed speech" (top of this file). Do not reuse `speak_typed`;
+   label `user-corrected` deliveries as the user's correction. Extend the companion's `source == "typed"` delivery filter.
 5. NEW additive keys in `RecognitionHypothesis.stages` (`4dda303`, no type change): `win_start`, `win_end` (browser
    clock ms, from your header), `win_ms`, `win_frames`, `win_max_gap` — segmentation diagnostics; do not sum them into latency.
 
