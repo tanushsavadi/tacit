@@ -1,4 +1,4 @@
-# TACIT — Demo readiness (2026-11-14, 21:35 UTC)
+# TACIT — Demo readiness (2026-11-14, 22:00 UTC)
 
 **Your voice. Beyond speech.** TACIT is a virtual voice for people who can silently articulate words but cannot
 produce usable audible speech: the camera reads the words they mouth, and a synthesized voice speaks into the
@@ -321,6 +321,25 @@ listening are still unmeasured. **Personalisation:** not attempted — the 48 ow
 sentence-disjoint adaptation split is impossible; tooling for the data it needs is in E.3 (`77c77a2`). LM fusion and
 flip TTA stay off (D.8, D.12).
 
+### D.15 Paired voiced/silent diagnostic on EXISTING pairs (exploratory, 2026-11-14 ~21:45–22:00 UTC)
+`eval/paired_diag.py` (`55be59d`) on the 16 sentences already recorded both voiced and silent in the same session
+(A backlit 3, B dim 10, C front-lit 3 — all REHEARSED common prompts, so this says nothing about fresh sentences).
+| Factor | Finding |
+|---|---|
+| Capture timing | 29.95–29.97 fps, frame-interval SD ≤ 0.3 ms, 0–1 gaps; resampled to 25 fps identically for both modes. **Not a problem** |
+| Tracking / alignment | Face tracked 100%; alignment-point jitter 0.5–0.7% of inter-ocular distance; crops centred on the mouth in both modes (contact sheets inspected). **Not a problem** |
+| Illumination (model-input ROI) | Front-lit C: mean 107–110 = the training normalisation mean (107.4), contrast 39. Dim A/B: mean ~40, contrast ~15, lip edges barely visible. **The dominant capture factor**: voiced takes alone go from 22/47 errors, reference log-prob −1.08/token (dim B) to 1/14, −0.26 (front-lit C) |
+| Silent vs voiced, same light | Reference log-prob silent − voiced: front-lit −0.19, +0.14, −0.69; dim B ranges −1.8…+1.7 (erratic); silent worse in 9/16 pairs. Errors: C silent 0/14 vs voiced 1/14; B 28/47 vs 22/47; A 9/15 vs 6/15. **A modest, inconsistent penalty — not the main issue on these data** |
+| Articulation features | Silent mouthing is exaggerated, not reduced: aperture range larger in 10/10 B pairs (0.27 vs 0.17 IOD), faster opening, more opening peaks per word; slower in C (1.28 vs 1.55 words/s, span +0.7 s) |
+| Model space | Encoder output of each silent take is closer (DTW cosine) to the SAME sentence voiced than to other sentences in 15/16 pairs (ratio median ≈ 0.5): the model sees the user's silent and voiced speech as the same thing |
+| Speaker / domain | Reference log-prob/token: own front-lit voiced −0.22…−0.28 vs CREMA-D median −0.11 (p10 −0.42): a moderate gap even on rehearsed sentences in good light |
+Preliminary reading: lighting first, then speaker/model mismatch; silence itself is secondary. Two caveats keep this
+preliminary: the sentences were rehearsed and common, and the only fresh front-lit silent test (live v1, D.7) gave
+44% WER — whether fresh VOICED speech in good light also fails is exactly what the new 5-pair session decides (E.4).
+Fine-tuning cost probe (one clip, forward+backward of the hybrid CTC/attention loss, no optimiser step, nothing saved):
+MPS 186 ms/step training the top 3 encoder blocks (42.6M of 250.4M parameters), 255–261 ms training all 12; peak RSS
+2.2 GB. 100 clips × 5 epochs ≈ 2–3 min — compute is not the constraint, labelled data is.
+
 ## E. Next human evaluation (≈ 12 min, independent of everything studied so far)
 1. Light from the front: `cd recognition && .venv/bin/python record_webcam.py --check` until PASS (≥ 90; aim ~105–130).
 2. `./scripts/tacit.sh restart && ./scripts/tacit.sh open` → **Start Live preview**. Leave voice output off. Keep the
@@ -331,6 +350,29 @@ flip TTA stay off (D.8, D.12).
 The v1 result (D.7) stays the frozen baseline; v2 is the first evaluation of anything changed after it (phrase-rule-v2,
 5-best). Toward the release targets, ≥ 50 genuinely silent NEW labelled sentences are needed (a fresh sentence list larger
 than `live:test` v2's 5, never rehearsed) — not available yet, so every target stays NOT VALIDATED.
+
+### E.4 Paired diagnostic — 5 new sentences, voiced + silent (≈ 6 min; do this BEFORE E.3)
+Front light (`record_webcam.py --check` → PASS, aim 105–130); same seat, same light for all 10 takes; video only.
+```
+cd recognition
+.venv/bin/python record_webcam.py --name diag1 --prompts prompts/diagnostic_v1.txt --paired --free 0
+.venv/bin/python -m eval.paired_diag data/webcam/<timestamp>-diag1 --cremad
+```
+Each sentence is recorded twice back to back (order random per pair): "SPEAK NORMALLY" and "ARTICULATE SILENTLY". Speak
+at your normal pace in both; do not exaggerate the silent take. Reading the result (exploratory, 5 pairs):
+- fresh VOICED takes good (≈ CREMA-D log-prob, mostly exact) but silent bad → silent articulation is the problem →
+  adapt on SILENT clips;
+- fresh voiced ALSO bad in good light → speaker/model mismatch on unfamiliar sentences → adapt on the user's speech
+  (silent preferred, voiced clips usable as extra training data since the model treats them alike, D.15);
+- ROI mean < 90, tracking < 100% or frame gaps → fix capture first.
+**Smallest worthwhile fine-tuning experiment (recommended after E.4, not started):** record `adapt_v1.txt` silently in
+2 sessions (≈ 50 sentences each, ≈ 15 min each, front-lit) + one `heldout_v2.txt` session on a different occasion;
+`eval.dataset split` (session- and sentence-disjoint). Start from the pretrained LRS3_V_WER19.1 weights; train ONLY the
+top 3 conformer encoder blocks (42.6M params), BatchNorm statistics frozen (AdaBN broke this model, D.14), hybrid loss
+0.9 attention + 0.1 CTC as in Auto-AVSR, AdamW lr 1e-4 with warm-up, ≤ 5 epochs, early stop on the other adaptation
+session; augment with the training-time random 88-crop + time masking. Pre-registered success: held-out silent WER
+down ≥ 10 points absolute vs base on the same held-out session, non-speech shown not higher, CREMA-D WER up ≤ 1 point.
+Second arm only if the first helps: all 12 blocks. LoRA is the fallback if the top-3 arm forgets CREMA-D.
 
 ### E.3 Held-out silent set + non-speech controls (≈ 25 min; the data every accuracy claim still needs)
 Do not read `recognition/prompts/heldout_v2.txt` beforehand. Front light first (`record_webcam.py --check`).
@@ -401,7 +443,8 @@ it raises coverage by ≥ 3 sentences of 60). For adaptation later: ≥ 2 sessio
 4. Consider `ARTICULATION_CONFIG.preRollMs` 160 → 400 (weak evidence, D.3); send `outputGeneration` with `speak_typed`.
 
 ## I. Git
-`main`, pushed; Claude is the only Git writer. Accuracy session (21:05–21:35 UTC): `e46888b` low-evidence abstention;
+`main`, pushed; Claude is the only Git writer. Paired diagnostic (21:45–22:00 UTC): `55be59d` recorder `--paired` +
+`eval/paired_diag.py` + `prompts/diagnostic_v1.txt`; then docs. Accuracy session (21:05–21:35 UTC): `e46888b` low-evidence abstention;
 `c93dc50` `eval/bench.py`; `77c77a2` recording/split tooling + prompt lists; then docs. Reviewed-speech session: `7853bd8` speak_reviewed; `614a261` contract;
 `3a76e6a` phrase-rule-v2; `e0894f3` reviewed:check; `665c8c4` eval grouping fix; `3cb0871` 5-best; `605880a`
 `npm run review`; `e4f668d` flip-TTA harness (rejected). Previous session: After the held-out test: `4dda303` per-window diagnostics in

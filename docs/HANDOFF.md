@@ -1,10 +1,23 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 21:40 UTC (clock-checked)
+**Last updated:** 2026-11-14 22:00 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "accuracy + pipeline".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
+
+## Hand-off — paired diagnostic (2026-11-14 21:45–22:00 UTC)
+**Asked by the user before recording the 60 held-out sentences:** is it silent articulation, capture/preprocessing, or
+speaker/model mismatch? **Built (`55be59d`, pushed):** `record_webcam.py --paired` (voiced + silent back to back) and
+`eval/paired_diag.py` (capture timing, tracking jitter, ROI illumination, lip features, raw recognition, teacher-forced
+reference log-prob, encoder-space DTW, CREMA-D reference, ROI contact sheets), 5 new sentences in
+`prompts/diagnostic_v1.txt`. **Preliminary run on the 16 existing pairs (rehearsed prompts, DEMO_READINESS D.15):**
+capture timing and tracking fine; lighting is the dominant capture factor; silence is a modest, inconsistent penalty;
+the model encodes silent ≈ voiced (15/16 pairs); moderate speaker gap vs CREMA-D even in good light. Fine-tuning cost
+probe: 186 ms/step (top 3 blocks) on MPS. **Next:** the user records E.4 (5 pairs, ~6 min) → run `eval.paired_diag`
+→ then the recommended top-3-block fine-tuning experiment (E.4) needs `adapt_v1` × 2 sessions + a `heldout_v2`
+session. Production recognizer unchanged; no training run started. An empty `data/webcam/20261114T215105Z-heldout1/`
+(0-line manifest, no clips) exists — an aborted start, left untouched; it is skipped by the tools.
 
 ## Hand-off — accuracy session (2026-11-14 21:05–21:40 UTC)
 **Done (pushed):** `e46888b` low-evidence abstention (sidecar abstains decodes with attention log-prob/token < −1.5,
