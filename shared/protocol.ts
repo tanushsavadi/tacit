@@ -387,7 +387,9 @@ export type ClientMessage =
    * User-authored typed speech (AAC fallback), sent by an explicit user action. Spoken only when output is enabled,
    * not paused, the authorization matches and the route is ready. Never presented as recognised speech.
    */
-  | { type: 'speak_typed'; requestId: string; outputAuthorizationId: string; text: string };
+  | { type: 'speak_typed'; requestId: string; outputAuthorizationId: string; text: string;
+      /** Recommended: the output_status.generation the user saw when sending. A mismatch (pause/interrupt since) is refused. */
+      outputGeneration?: number };
 
 export type ServerMessage =
   | { type: 'snapshot'; snapshot: Snapshot }

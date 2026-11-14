@@ -78,7 +78,7 @@ describe('SpeechOutput — typed AAC fallback', () => {
     out.control('pause');
     release(); await tick(); await tick();
     expect(terminal('p1')[0]).toMatchObject({ state: 'interrupted' });
-    expect(terminal('p2')[0]).toMatchObject({ state: 'interrupted', reason: 'Cancelled before playback.' });
+    expect(terminal('p2')).toEqual([expect.objectContaining({ state: 'interrupted', reason: 'Paused.' })]); // ended at once, not after TTS returns
     expect(terminal('p3')[0]).toMatchObject({ state: 'interrupted' });
     expect(route.plays).toHaveLength(0);
     expect(synthCalls).toEqual(['first', 'second']);
@@ -101,6 +101,35 @@ describe('SpeechOutput — typed AAC fallback', () => {
     expect(route.plays).toHaveLength(0);
     for (let i = 0; i < MAX_PENDING + 1; i++) typed(out, `q${i}`);
     expect(terminal(`q${MAX_PENDING}`)[0]!.reason).toMatch(/Too many/);
+  });
+
+  it('stop during synthesis ends the request immediately (queued 0) and aborts the TTS call', async () => {
+    let aborted = false;
+    const { out, route, terminal } = setup({ synth: () => new Promise<void>(() => {}) });
+    (out as unknown as { tts: { synth: (t: string, f: string, s?: AbortSignal) => Promise<never> } }).tts.synth = (_t, _f, sig) =>
+      new Promise((_r, rej) => sig?.addEventListener('abort', () => { aborted = true; rej(new Error('aborted')); }));
+    out.control('enable');
+    typed(out, 's1');
+    await tick();
+    out.control('stop');
+    expect(terminal('s1')).toEqual([expect.objectContaining({ state: 'interrupted' })]);
+    expect(out.status().queued).toBe(0);
+    expect(aborted).toBe(true);
+    await tick();
+    expect(terminal('s1')).toHaveLength(1);
+    expect(route.plays).toHaveLength(0);
+  });
+
+  it('a message written before a pause/interrupt (outputGeneration) is refused after it', async () => {
+    const { out, route, terminal } = setup();
+    out.control('enable');
+    const gen = out.status().generation;
+    out.control('pause'); out.control('resume');
+    out.speakTyped({ requestId: 'old', outputAuthorizationId: out.status().authorizationId, text: 'hi', outputGeneration: gen });
+    expect(terminal('old')[0]).toMatchObject({ state: 'refused', reason: expect.stringContaining('paused or interrupted') });
+    out.speakTyped({ requestId: 'new', outputAuthorizationId: out.status().authorizationId, text: 'hi', outputGeneration: out.status().generation });
+    await tick();
+    expect(route.plays.map((p) => p.id)).toEqual(['new']);
   });
 
   it('interrupt() (Live paused / call change) cancels in-flight speech but keeps the session enabled', async () => {

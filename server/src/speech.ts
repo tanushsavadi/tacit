@@ -23,8 +23,8 @@ export const UNVALIDATED_GATE: ReliabilityGate = Object.freeze({
 export const MAX_TYPED_CHARS = 500;
 export const MAX_PENDING = 4;
 
-interface Synth { synth(text: string, format?: 'file'): Promise<TtsResult>; label: string }
-interface Req { d: SpeechDelivery; generation: number }
+interface Synth { synth(text: string, format?: 'file', signal?: AbortSignal): Promise<TtsResult>; label: string }
+interface Req { d: SpeechDelivery; generation: number; abort: AbortController; routed: boolean }
 
 export class SpeechOutput extends EventEmitter {
   private st: { authorizationId: string | null; generation: number; state: 'off' | 'ready' | 'paused'; reason: string } =
@@ -70,10 +70,12 @@ export class SpeechOutput extends EventEmitter {
   private cut(reason: string): void {
     this.st = { ...this.st, generation: this.st.generation + 1 };
     for (const r of this.waiting.splice(0)) this.finish(r, 'interrupted', reason);
+    // Still synthesizing: end it now (immediate terminal state) and abort the TTS call — nothing more is sent to it.
+    for (const r of [...this.active]) if (!r.routed) { r.abort.abort(); this.finish(r, 'interrupted', reason); }
     if (this.active.size) this.route()?.stop(reason); // route answers 'interrupted' for what it holds
   }
 
-  speakTyped(msg: { requestId: unknown; outputAuthorizationId: unknown; text: unknown }): void {
+  speakTyped(msg: { requestId: unknown; outputAuthorizationId: unknown; text: unknown; outputGeneration?: unknown }): void {
     const id = typeof msg.requestId === 'string' && msg.requestId.length <= 100 ? msg.requestId : '';
     const text = typeof msg.text === 'string' ? msg.text.trim() : '';
     const d = this.newDelivery(id || `invalid-${randomUUID()}`, 'typed', text);
@@ -83,6 +85,7 @@ export class SpeechOutput extends EventEmitter {
     this.remember(id);
     if (this.st.state !== 'ready') return refuse(this.st.state === 'paused' ? 'Voice output is paused.' : 'Voice output is off: enable it first.');
     if (msg.outputAuthorizationId !== this.st.authorizationId) return refuse('Stale voice-output authorization.');
+    if (msg.outputGeneration !== undefined && msg.outputGeneration !== this.st.generation) return refuse('Voice output was paused or interrupted after this message was written; send it again if you still want it spoken.');
     if (!text) return refuse('Nothing to say.');
     if (text.length > MAX_TYPED_CHARS) return refuse(`Longer than ${MAX_TYPED_CHARS} characters.`);
     this.enqueue(d);
@@ -127,7 +130,7 @@ export class SpeechOutput extends EventEmitter {
       d.state = 'refused'; d.reason = `Too many messages waiting (${MAX_PENDING}); wait or stop.`; d.timings.endedAt = this.now();
       return this.deliver(d);
     }
-    this.waiting.push({ d, generation: this.st.generation });
+    this.waiting.push({ d, generation: this.st.generation, abort: new AbortController(), routed: false });
     this.deliver(d);
     this.announce();
     void this.work();
@@ -142,14 +145,16 @@ export class SpeechOutput extends EventEmitter {
         this.active.add(r);
         r.d.state = 'synthesizing'; r.d.timings.synthStartAt = this.now(); this.deliver(r.d);
         let audio: TtsResult;
-        try { audio = await this.tts.synth(r.d.text, 'file'); } catch (e) {
-          this.finish(r, 'failed', `Speech synthesis failed: ${e instanceof Error ? e.message : String(e)}. Nothing was sent.`);
+        try { audio = await this.tts.synth(r.d.text, 'file', r.abort.signal); } catch (e) {
+          if (this.active.has(r)) this.finish(r, 'failed', `Speech synthesis failed: ${e instanceof Error ? e.message : String(e)}. Nothing was sent.`);
           continue;
         }
+        if (!this.active.has(r)) continue; // already ended by a cut while synthesizing
         r.d.timings.synthEndAt = this.now(); r.d.voice = audio.voice;
         if (r.generation !== this.st.generation || this.st.state !== 'ready') { this.finish(r, 'interrupted', 'Cancelled before playback.'); continue; }
         const route = this.route();
         if (!route) { this.finish(r, 'failed', 'Virtual microphone disappeared.'); continue; }
+        r.routed = true;
         r.d.state = 'routing'; this.deliver(r.d);
         void route.play(r.d.requestId, audio.audio, audio.mime, (t) => { r.d.timings.firstAudioAt = t; this.deliver(r.d); }).then((o) => {
           if (o.state === 'rendered') { r.d.timings.renderedAt = o.renderedAt; this.finish(r, 'rendered', null); }
@@ -160,6 +165,7 @@ export class SpeechOutput extends EventEmitter {
   }
 
   private finish(r: Req, state: 'rendered' | 'interrupted' | 'failed', reason: string | null): void {
+    if (r.d.state === 'rendered' || r.d.state === 'interrupted' || r.d.state === 'failed') return; // exactly one terminal state
     this.active.delete(r);
     r.d.state = state; r.d.reason = reason; r.d.timings.endedAt = this.now();
     this.deliver(r.d);

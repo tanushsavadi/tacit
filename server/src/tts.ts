@@ -31,7 +31,8 @@ export interface Tts {
   /** Shown in the UI, e.g. "elevenlabs:<voice>" or "macos-say (system voice, not personal)". */
   label: string;
   personal: boolean;
-  synth(text: string, format?: TtsFormat): Promise<TtsResult>;
+  /** `signal` aborts synthesis (e.g. the user stopped voice output while it was being generated). */
+  synth(text: string, format?: TtsFormat, signal?: AbortSignal): Promise<TtsResult>;
 }
 
 export function macSay(voice = process.env.SAY_VOICE): Tts {
@@ -39,7 +40,7 @@ export function macSay(voice = process.env.SAY_VOICE): Tts {
   return {
     label,
     personal: false,
-    async synth(text, format = 'file') {
+    async synth(text, format = 'file', signal) {
       const requestTs = Date.now();
       const rate = format === 'ulaw_8000' ? 8000 : 22050;
       const dir = await mkdtemp(join(tmpdir(), 'tacit-tts-'));
@@ -48,7 +49,7 @@ export function macSay(voice = process.env.SAY_VOICE): Tts {
         const args = ['-o', out, '--file-format=WAVE', `--data-format=LEI16@${rate}`];
         if (voice) args.push('-v', voice);
         args.push('--', text);
-        await run('say', args, { timeout: 15_000 });
+        await run('say', args, { timeout: 15_000, signal });
         const wav = await readFile(out);
         if (format === 'ulaw_8000') {
           return { audio: encodeMulaw(toMono(parseWav(wav))), mime: 'audio/x-mulaw;rate=8000', requestTs, firstByteTs: Date.now(), voice: label };
@@ -77,14 +78,14 @@ export function elevenLabs(o: ElevenLabsOptions): Tts {
   return {
     label,
     personal: true,
-    async synth(text, format = 'file') {
+    async synth(text, format = 'file', signal) {
       const requestTs = Date.now();
       const outFmt = format === 'ulaw_8000' ? 'ulaw_8000' : 'mp3_44100_128';
       const res = await fetch(`${base}/v1/text-to-speech/${encodeURIComponent(o.voiceId)}?output_format=${outFmt}`, {
         method: 'POST',
         headers: { 'xi-api-key': o.apiKey, 'content-type': 'application/json' },
         body: JSON.stringify({ text, model_id: modelId }),
-        signal: AbortSignal.timeout(o.timeoutMs ?? 10_000),
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(o.timeoutMs ?? 10_000)]) : AbortSignal.timeout(o.timeoutMs ?? 10_000),
       });
       if (!res.ok || !res.body) throw new Error(`ElevenLabs HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
       const chunks: Buffer[] = [];
@@ -202,20 +203,21 @@ export class VoiceRouter implements Tts {
     return this.policy.personalPresynth;
   }
 
-  async synth(text: string, format?: TtsFormat): Promise<TtsResult> {
-    if (!this.personalTts) return this.system.synth(text, format);
+  async synth(text: string, format?: TtsFormat, signal?: AbortSignal): Promise<TtsResult> {
+    if (!this.personalTts) return this.system.synth(text, format, signal);
     let reason: string;
     if (this.personalError) reason = `unavailable (${this.personalError})`;
     else {
       try {
-        return await this.personalTts.synth(text, format);
+        return await this.personalTts.synth(text, format, signal);
       } catch (e) {
+        if (signal?.aborted) throw e; // cancelled by the user: never fall back to another voice
         reason = `failed (${(e instanceof Error ? e.message : String(e)).slice(0, 80)})`;
       }
     }
     if (!this.policy.allowSystemFallback) throw new Error(`Personal voice ${reason}. The system voice is not approved for this session`);
     console.warn(`[tts] personal voice ${reason}; user-approved system voice substituted`);
-    const r = await this.system.synth(text, format);
+    const r = await this.system.synth(text, format, signal);
     return { ...r, voice: `${this.system.label} — SUBSTITUTED for your personal voice (approved fallback; personal voice ${reason})` };
   }
 
