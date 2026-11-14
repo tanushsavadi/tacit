@@ -32,7 +32,10 @@ then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
 ## AirPods deliberate articulation w3 → w4: NO-GO (pre-registered; details in docs/research/AIRPODS_SILENT_SPEECH.md)
 - w4 held-out primary 26% (13/50, p=0.19 vs 20%); strongest baseline rhythm-ROCKET 42%; frozen threshold accepted 1/50
   words, 2/20 control false accepts. Bud changed L (w3) → R (w4). Within-session w3 73% did not generalize.
-- AirPods motion remains useful only as an articulation-activity signal (candidate Live endpointing aid), not words.
+- Earbud diagnosis: both buds share a head-aligned frame (no axis mirroring), but articulation motion is
+  mirror-symmetric between buds (all L→R template correlations negative on ry/rz). Exploratory same-bud pairs: R→R 70%
+  (vs rhythm 42%), L→L 52% — hypothesis only. Recorder now has `--require-bud` + `budcheck`; held-out refuses cross-bud.
+- Next AirPods step: user runs budcheck with only the LEFT AirPod; if L-only is reliable → w5/w6 (protocol in research doc).
 
 ## AirPods: hardware audit + fusion plan (w3/w4 untouched: recorder, probe binary, features and heldout script unchanged)
 - Inventory table: `docs/research/AIRPODS_SILENT_SPEECH.md`. Usable = one fused ~50 Hz motion stream (accel, rotation,
