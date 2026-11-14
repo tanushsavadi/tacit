@@ -1,0 +1,52 @@
+# TRAINING session A (silent). Fixed partition of adapt_v1.txt (random.Random(20261114).shuffle; A = 0:50, B = 50:).
+# Recording commands: docs/DEMO_READINESS.md E.5. Never train or select on heldout_v2.txt.
+my back hurts a little
+I like this song
+make it a little louder
+my feet are cold
+I want to go home
+I would like a cup of tea
+I need my glasses cleaned
+I dropped my pen
+have a safe trip
+I agree with you
+I would like to brush my teeth
+can you pass me the remote
+maybe later today
+the water is too cold
+could you lower the bed
+can you read me the mail
+I would like some juice
+did I take my medicine
+I need my blanket
+not right now thank you
+please push my chair
+I am getting tired
+I want to wear the blue shirt
+please move my leg
+I want to sit up
+just a little bit
+happy birthday to you
+please call the nurse
+please tell my sister
+I feel a bit dizzy
+how long will it take
+please stay a little longer
+please ask my husband
+please write that down
+let us play cards
+I need to cough
+I hope you feel better
+please ask my wife
+can we go for a walk
+what did the doctor say
+I would like some fresh air
+call me when you get there
+can I have a pillow
+see you next week
+good afternoon everyone
+make it a little quieter
+I want to watch the news
+thank you for visiting
+I would like more soup
+I changed my mind

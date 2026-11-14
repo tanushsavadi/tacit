@@ -58,6 +58,11 @@ class Plan(unittest.TestCase):
         with self.assertRaises(ValueError):
             rw.plan_pairs([])
 
+    def test_resume_skips_already_recorded_prompt_mode_pairs(self):
+        import json as _j
+        lines = [_j.dumps({"file": "clip01-silent.mp4", "ref": "a", "mode": "silent"}), ""]
+        self.assertEqual(rw.remaining([("a", "silent"), ("a", "voiced"), ("b", "silent")], lines), [("a", "voiced"), ("b", "silent")])
+
     def test_nothing_to_record_rejected(self):
         with self.assertRaises(ValueError):
             rw.plan([], 0)

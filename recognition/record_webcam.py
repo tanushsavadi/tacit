@@ -83,6 +83,12 @@ def plan_pairs(prompts: list[str], rng: random.Random | None = None) -> list[tup
     return out
 
 
+def remaining(items: list[tuple[str, str]], manifest_lines: list[str]) -> list[tuple[str, str]]:
+    """Items not yet recorded in an existing session (matched on prompt text + mode), for --resume."""
+    done = {(json.loads(l).get("ref"), json.loads(l).get("mode")) for l in manifest_lines if l.strip()}
+    return [(p, m) for p, m in items if (p, m) not in done]
+
+
 def camera_index(name_hint: str | None) -> str:
     out = subprocess.run(["ffmpeg", "-hide_banner", "-f", "avfoundation", "-list_devices", "true", "-i", ""], capture_output=True, text=True).stderr
     video = out.split("AVFoundation video devices:")[1].split("AVFoundation audio devices:")[0]
@@ -94,7 +100,9 @@ def camera_index(name_hint: str | None) -> str:
     raise SystemExit(f"no camera found:\n{video}")
 
 
-def record(cam: str, path: Path, seconds: float, prompt: str, mode: str) -> None:
+def record(cam: str, path: Path, seconds: float, prompt: str, mode: str, lead: float = 1.5) -> None:
+    """`lead` s after starting the camera "GO" is shown; the clip is extended by the same margin beyond the original 1 s,
+    so the first word is not lost to camera start-up (diag1: one take opened mid-word, one began with a black frame)."""
     if mode == "nonspeech":
         print(f"\n  >>> {prompt}")
     else:
@@ -102,8 +110,8 @@ def record(cam: str, path: Path, seconds: float, prompt: str, mode: str) -> None
         print(f"\n  >>> {how}:  \"{prompt}\"")
     input("      press Enter, wait for GO …")
     p = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-pixel_format", "nv12", "-framerate", "30", "-video_size", "1280x720",
-                          "-i", f"{cam}:none", "-t", str(seconds), "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", "-y", str(path)])
-    time.sleep(1.0)
+                          "-i", f"{cam}:none", "-t", str(seconds + max(0.0, lead - 1.0)), "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", "-y", str(path)])
+    time.sleep(lead)
     print("      GO")
     p.wait()
     print(f"      saved {path.name}" if p.returncode == 0 and path.exists() else f"      FAILED (ffmpeg exit {p.returncode}) — check Camera permission for this terminal app")
@@ -169,11 +177,17 @@ def main() -> None:
     ap.add_argument("--skip-check", action="store_true", help="record even if the lighting check warns")
     ap.add_argument("--prompts", default=None, help="prompt file (one sentence per line) instead of the 10 built-in prompts")
     ap.add_argument("--limit", type=int, default=0, help="record a random subset of N prompts from --prompts")
+    ap.add_argument("--resume", default=None, help="continue an interrupted session dir: records only the prompts not yet "
+                    "in its manifest (same --prompts/--modes as the original run)")
     ap.add_argument("--paired", action="store_true", help="record every prompt voiced AND silent back to back "
                     "(paired diagnostic; ignores --modes)")
     ap.add_argument("--nonspeech", type=int, default=0, help="also record N repetitions of each non-speech control "
                     f"({', '.join(NONSPEECH)})")
     a = ap.parse_args()
+    if a.resume and a.paired:
+        raise SystemExit("error: --resume does not support --paired sessions")
+    if a.resume and not (Path(a.resume) / "manifest.jsonl").exists():
+        raise SystemExit(f"error: no manifest.jsonl in {a.resume}")
     if not a.check:  # validate before touching the camera or creating a session folder
         try:
             modes = parse_modes(a.modes)
@@ -194,13 +208,21 @@ def main() -> None:
             break
     if a.check:
         return
-    out = Path(__file__).resolve().parent / "data" / "webcam" / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{a.name}"
+    if a.resume:
+        out = Path(a.resume).resolve()
+        lines = (out / "manifest.jsonl").read_text().splitlines()
+        items = remaining(items, lines)
+        start = len([l for l in lines if l.strip()])
+        print(f"resuming {out.name}: {start} clips already recorded, {len(items)} to go")
+    else:
+        out = Path(__file__).resolve().parent / "data" / "webcam" / f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{a.name}"
+        start = 0
     out.mkdir(parents=True, exist_ok=True)
     if not a.paired:
         random.shuffle(items)
     print("Face the camera, normal lighting, mouth fully visible. Audio is NOT recorded.")
     with open(out / "manifest.jsonl", "a") as man:
-        for k, (prompt, mode) in enumerate(items, 1):
+        for k, (prompt, mode) in enumerate(items, start + 1):
             f = out / f"clip{k:02d}-{mode}.mp4"
             if mode == "nonspeech":
                 record(cam, f, a.seconds, NONSPEECH[prompt], mode)

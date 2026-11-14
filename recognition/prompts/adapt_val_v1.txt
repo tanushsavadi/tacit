@@ -1,0 +1,22 @@
+# VALIDATION session (silent): selects the training epoch only — never trained on, never the final evaluation.
+# Disjoint from adapt_v1, heldout_v2, diagnostic_v1, the phrase list, live:test, CREMA-D and all recordings so far.
+the dentist moved my appointment
+could you pick up some batteries
+my cousin is visiting next month
+the soup tastes a little bland
+we need to fix the fence
+please feed the fish tonight
+the laptop is very slow today
+I think it might snow later
+her birthday party is on saturday
+the kettle is boiling over
+bring a jacket just in case
+the hallway light keeps flickering
+I would love a slice of cake
+the pharmacy opens at nine
+turn left after the bridge
+my knee feels much better now
+the neighbors are having a barbecue
+please wipe the kitchen counter
+the remote is under the cushion
+we forgot to buy coffee filters
