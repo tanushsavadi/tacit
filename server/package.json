@@ -20,7 +20,8 @@
     "airpods:record": "tsx scripts/airpods-record.ts",
     "airpods:analyze": "tsx scripts/airpods-analyze.ts",
     "airpods:gate2": "tsx scripts/airpods-gate2.ts",
-    "airpods:heldout": "tsx scripts/airpods-heldout.ts"
+    "airpods:heldout": "tsx scripts/airpods-heldout.ts",
+    "live:check": "tsx scripts/live-check.ts"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",

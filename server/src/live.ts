@@ -1,0 +1,123 @@
+// Live Silent Speech session (protocol 'tacit-live-v1', shared/protocol.ts). One instance per authenticated user
+// connection. Recognised text is only ever SHOWN to the user: this module has no path to TTS or the call, and
+// `autoTransmitAllowed` is the literal type `false` until a reliability gate is validated on real silent recordings.
+import { randomUUID } from 'node:crypto';
+import type { ClientMessage, LiveRecognitionCapability, LiveStatus, RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
+
+export const LIVE_CAPABILITY: LiveRecognitionCapability = {
+  protocol: 'tacit-live-v1', supportedInputs: ['camera'], automaticSpeechValidated: false, validationEvidence: null,
+  maxFrames: 300, maxBytes: 12 * 1024 * 1024, maxDurationMs: 10_000,
+};
+export const AUTOMATIC_GATED = 'Automatic transmission is gated until silent-speech reliability is validated on real silent recordings.';
+
+export interface RecognizerResult {
+  text: string | null; error?: string; model?: string; n_tokens?: number; face_fraction?: number;
+  ms?: Record<string, number>; gate?: Record<string, number | string | null>;
+}
+export type Recognizer = (input: { timesMs: number[]; frames: Buffer[] }, signal: AbortSignal) => Promise<RecognizerResult>;
+
+type Utterance = Extract<ClientMessage, { type: 'visual_utterance' }>;
+interface Pending { msg: Utterance; frames: Buffer[]; bytes: number; generation: number; reject: string | null; answered: boolean }
+
+export class LiveSession {
+  private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, reason: 'Live is off.' };
+  private pending: Pending | null = null;
+  private inflight = new Set<AbortController>();
+  droppedBinary = 0;
+
+  constructor(private recognize: Recognizer, private send: (m: ServerMessage) => void, private now = () => Date.now()) {}
+
+  get current(): LiveStatus { return { ...this.status }; }
+  announce(): void { this.send({ type: 'live_status', status: this.current }); }
+
+  control(msg: Extract<ClientMessage, { type: 'live_control' }>): void {
+    const s = this.status;
+    const bump = (patch: Partial<LiveStatus>) => {
+      for (const c of this.inflight) c.abort();
+      this.inflight.clear();
+      this.status = { ...s, ...patch, generation: s.generation + 1 };
+    };
+    switch (msg.action) {
+      case 'activate':
+        if ((msg.mode ?? 'display-only') === 'automatic') { this.status = { ...s, reason: AUTOMATIC_GATED }; break; }
+        if (msg.inputSource && msg.inputSource !== 'camera') { this.status = { ...s, reason: 'Only camera input is supported by this recogniser.' }; break; }
+        bump({ authorizationId: randomUUID(), state: 'active', mode: 'display-only', reason: 'Live (display only): recognised words are shown to you, not spoken.' });
+        break;
+      case 'pause': if (s.state === 'active') bump({ state: 'paused', reason: 'Paused.' }); break;
+      case 'resume': if (s.state === 'paused') bump({ state: 'active', reason: 'Live (display only).' }); break;
+      case 'interrupt': bump({ reason: s.state === 'off' ? s.reason : 'Interrupted: pending utterances dropped.' }); break;
+      case 'end': bump({ authorizationId: null, state: 'off', reason: 'Live ended.' }); break;
+    }
+    this.pending = null;
+    this.announce();
+  }
+
+  /** Header for one utterance; the next frameTimesMs.length binary messages are its JPEG frames. */
+  utterance(msg: Utterance): void {
+    const t = msg.frameTimesMs, L = LIVE_CAPABILITY;
+    let reject: string | null = null;
+    if (this.status.state !== 'active') reject = `Live is ${this.status.state}.`;
+    else if (msg.authorizationId !== this.status.authorizationId) reject = 'Stale authorization.';
+    else if (!Array.isArray(t) || t.length < 1 || t.length > L.maxFrames) reject = `Need 1–${L.maxFrames} frames.`;
+    else if (!t.every((x, i) => Number.isFinite(x) && (i === 0 || x > t[i - 1]!))) reject = 'Frame times must be finite and strictly increasing.';
+    else if (t.at(-1)! - t[0]! > L.maxDurationMs) reject = `Utterance longer than ${L.maxDurationMs} ms.`;
+    this.pending = { msg, frames: [], bytes: 0, generation: this.status.generation, reject, answered: false };
+    if (reject) { // answer now; keep `pending` so this utterance's frames are swallowed
+      this.pending.answered = true;
+      this.result(msg, null, reject, 0);
+      if (!Array.isArray(t) || !t.length) this.pending = null;
+    }
+  }
+
+  frame(buf: Buffer): void {
+    const p = this.pending;
+    if (!p) { this.droppedBinary++; return; }
+    p.frames.push(buf); p.bytes += buf.length;
+    if (!p.reject && p.bytes > LIVE_CAPABILITY.maxBytes) p.reject = `Utterance larger than ${LIVE_CAPABILITY.maxBytes} bytes.`;
+    if (p.frames.length < p.msg.frameTimesMs.length) return;
+    this.pending = null;
+    if (p.reject) { if (!p.answered) this.result(p.msg, null, p.reject, 0); return; }
+    void this.run(p);
+  }
+
+  close(): void { this.control({ type: 'live_control', action: 'end' }); }
+
+  private async run(p: Pending): Promise<void> {
+    const received = this.now(), ctl = new AbortController();
+    this.inflight.add(ctl);
+    let r: RecognizerResult | null = null, err: string | null = null;
+    try { r = await this.recognize({ timesMs: p.msg.frameTimesMs, frames: p.frames }, ctl.signal); }
+    catch (e) { err = ctl.signal.aborted ? 'Dropped: Live was paused, interrupted or ended.' : `Recognition failed: ${e instanceof Error ? e.message : String(e)}`; }
+    this.inflight.delete(ctl);
+    if (p.generation !== this.status.generation) err = 'Dropped: Live was paused, interrupted or ended.';
+    this.result(p.msg, r, err, this.now() - received);
+  }
+
+  private result(msg: Utterance, r: RecognizerResult | null, err: string | null, ms: number): void {
+    const text = (r?.text ?? '').trim();
+    const reason = err ?? (r?.error ? r.error : !text ? 'No words decoded.' : null);
+    const margin = r?.gate?.nbest_margin_per_token;
+    const h: RecognitionHypothesis = {
+      utteranceId: msg.utteranceId, authorizationId: msg.authorizationId, rawText: reason ? '' : text,
+      final: true, stable: false,
+      uncertainty: typeof margin === 'number' ? { value: margin, kind: 'nbest-margin-per-token', calibrated: false } : null,
+      model: r?.model ?? 'unavailable', source: 'visual-model', decision: reason ? 'abstained' : 'shown', reason,
+      recognitionMs: ms, stages: r?.ms ?? null, gate: r?.gate ?? null, transmitted: false,
+    };
+    this.send({ type: 'recognition_hypothesis', hypothesis: h });
+  }
+}
+
+/** HTTP client for recognition/tacit_vsr/service.py (127.0.0.1 only). */
+export function httpRecognizer(baseUrl: string, timeoutMs = 20_000): Recognizer {
+  return async ({ timesMs, frames }, signal) => {
+    const res = await fetch(`${baseUrl}/recognize`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'jpeg-frames', timesMs, frames: frames.map((f) => f.toString('base64')) }),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]),
+    });
+    const body = (await res.json()) as RecognizerResult & { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    return body;
+  };
+}

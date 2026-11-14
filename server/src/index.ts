@@ -22,6 +22,8 @@ import { launchWhisperServer, whisperCpp, whisperServer, withSttFallback, type S
 import { TwilioCall, twiml, validTwilioSignature } from './twilio.ts';
 import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig } from './auth.ts';
 import { TurnLog } from './turnlog.ts';
+import { LIVE_CAPABILITY, LiveSession, httpRecognizer } from './live.ts';
+import { spawn } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -137,11 +139,28 @@ async function pruneLogs(): Promise<void> {
 void pruneLogs();
 setInterval(() => void pruneLogs(), 3_600_000).unref();
 
+// Auto-start the local Auto-AVSR service (recognition/tacit_vsr/service.py) when using the default URL.
+const RECOGNITION_DIR = fileURLToPath(new URL('../../recognition/', import.meta.url));
+const RECOGNITION_PY = `${RECOGNITION_DIR}.venv/bin/python`;
+let recognitionRestarts = 0;
+function launchRecognition(): void {
+  const port = new URL(RECOGNITION_URL).port || '8765';
+  const p = spawn(RECOGNITION_PY, ['-m', 'tacit_vsr.service', '--port', port, '--parent-pid', String(process.pid)], { cwd: RECOGNITION_DIR, stdio: ['ignore', 'pipe', 'pipe'] });
+  p.stdout.on('data', (d: Buffer) => { for (const l of String(d).split('\n')) if (l.startsWith('[vsr]')) console.log(`[recognition] ${l.slice(6)}`); });
+  p.stderr.resume();
+  p.on('exit', (code) => {
+    console.log(`[recognition] service exited (${code})`);
+    if (++recognitionRestarts <= 5) setTimeout(launchRecognition, 1000);
+  });
+  process.on('exit', () => p.kill());
+}
+if (!process.env.RECOGNITION_URL && process.env.RECOGNITION_AUTOSTART !== 'off' && existsSync(RECOGNITION_PY)) launchRecognition();
+
 async function probeRecognition(): Promise<void> {
   try {
     const res = await fetch(`${RECOGNITION_URL}/health`, { signal: AbortSignal.timeout(1500) });
     const body = (await res.json()) as { model?: string; device?: string };
-    controller.setServices({ recognition: { reachable: res.ok, model: body.model ?? null, device: body.device ?? null, checkedAt: Date.now() } });
+    controller.setServices({ recognition: { reachable: res.ok, model: body.model ?? null, device: body.device ?? null, checkedAt: Date.now(), ...(res.ok ? { live: LIVE_CAPABILITY } : {}) } });
   } catch {
     const prev = controller.snapshot().services.recognition;
     if (prev.reachable || prev.checkedAt === null)
@@ -359,16 +378,22 @@ uiWss.on('connection', (ws) => {
   console.log(`[ui] user client connected (${uiClients.size} open)`);
   ws.send(JSON.stringify({ type: 'snapshot', snapshot: controller.snapshot() } satisfies ServerMessage));
   ws.send(JSON.stringify({ type: 'session_info', callerInvitePath: `/?invite=${auth.secrets.callerToken}#caller`, authRequired: !auth.disabled } satisfies ServerMessage));
-  ws.on('message', async (data) => {
+  ws.binaryType = 'nodebuffer';
+  const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); });
+  live.announce();
+  ws.on('message', async (data, isBinary) => {
     try {
+      if (isBinary) return live.frame(data as Buffer); // JPEG frames of the current visual_utterance
       const msg = JSON.parse(String(data)) as ClientMessage;
+      if (msg.type === 'live_control') return live.control(msg);
+      if (msg.type === 'visual_utterance') return live.utterance(msg);
       const verdict = (await handleClient(msg)) as { accepted?: boolean; reason?: string } | undefined;
       if (verdict?.accepted === false) console.log(`[ui] ${msg.type} rejected: ${verdict.reason}`);
     } catch (e) {
       console.error('[ui] bad message', e instanceof Error ? e.message : e);
     }
   });
-  ws.on('close', () => uiClients.delete(ws));
+  ws.on('close', () => { uiClients.delete(ws); live.close(); });
 });
 
 callerWss.on('connection', (ws) => {
