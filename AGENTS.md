@@ -62,6 +62,7 @@ cd recognition && .venv/bin/python -m tacit_vsr.transcribe CLIP --ref "TEXT"   #
 cd recognition && .venv/bin/python record_webcam.py --name s1 && .venv/bin/python -m tacit_vsr.eval_session <dir>
 cd recognition && .venv/bin/python -m eval.bench --variant base [--session <dir> --tag NAME]   # frozen offline benchmark / A-B
 cd recognition && .venv/bin/python -m eval.dataset inventory | prompts-check FILE | split NAME --test-sessions DIR
+cd recognition && .venv/bin/python -m adapt.finetune --name N --train DIR --train DIR --val DIR [--dry-run]   # personal adaptation (overlay, base untouched)
 airpods/tools/build-app.sh && airpods/tools/check.sh; cd server && npm run airpods:record|analyze|gate2|heldout
 ```
 Env: `server/.env` (git-ignored; template `server/.env.example`). Never print or commit keys.

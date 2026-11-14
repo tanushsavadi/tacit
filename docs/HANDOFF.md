@@ -1,10 +1,30 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 22:00 UTC (clock-checked)
+**Last updated:** 2026-11-14 22:35 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "accuracy + pipeline".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
+
+## Hand-off — personal adaptation pipeline (2026-11-14 22:10–22:35 UTC)
+**State:** pipeline READY, waiting for the user's recordings (DEMO_READINESS E.5 has the exact commands). Nothing trained
+on real adaptation data; production unchanged (no overlay loading in `tacit_vsr`); base weights unchanged
+(SHA-256 e740cef3…); notch/BlackHole/server untouched; :8790 still needs the idle restart from the accuracy session.
+**Done (pushed):** `705e5ff` prompt partitions A 50 / B 51 / validation 20 (new) + recorder `--resume` + 1.5 s camera
+lead-in; `c51b3e1` `recognition/adapt/` — Lipflow/Silent Voice recipe (front end + embed + Conformer block 0, BN frozen,
+0.1 CTC + 0.9 attention, crop/flip/gain/time-mask, AdamW 1e-4, 6 epochs), validation-epoch selection + early stop,
+hygiene refusals, overlays pinned to the base hash, `eval.bench --overlay`. Tests 36/36. Measured 0.87 s/step on MPS.
+**Diag1 review (D.16):** no methodological issue; silent-articulation shift and a speaker/domain gap both supported;
+decoding (search) not the failure; endpointing untested by this design.
+**Synthetic lip-sync data (user question):** recommendation NO before the demo. Audio-driven lip-sync (Higgsfield-type
+tools) renders the generator's average VOICED articulation on the user's face — identity and texture, not the user's
+own silent articulation, which is exactly the gap measured (same face, same light: voiced 20% vs silent 57%). SynthVSR
+(Liu et al., CVPR 2023) gained from thousands of hours of synthetic data for generic pretraining, not single-speaker
+silent personalisation. Higgsfield's API, cost and controls were NOT checked (no account call made); every clip would
+need human review for mouth artifacts. If ever tried: a separate arm after real adaptation works, same untouched real
+validation/final sets, synthetic never used for evaluation. Real-recording augmentation is already in the recipe.
+**Next:** user records adaptA, adaptB, adaptVal (~35 min) → `adapt.finetune --dry-run` then train arm 1 → bench base vs
+overlay on adaptVal + CREMA-D → report → only then heldout_v2 once (Phase C) and a default-off selector.
 
 ## Hand-off — paired diagnostic (2026-11-14 21:45–22:00 UTC)
 **Asked by the user before recording the 60 held-out sentences:** is it silent articulation, capture/preprocessing, or

@@ -1,4 +1,4 @@
-# TACIT — Demo readiness (2026-11-14, 22:00 UTC)
+# TACIT — Demo readiness (2026-11-14, 22:35 UTC)
 
 **Your voice. Beyond speech.** TACIT is a virtual voice for people who can silently articulate words but cannot
 produce usable audible speech: the camera reads the words they mouth, and a synthesized voice speaks into the
@@ -340,6 +340,40 @@ Fine-tuning cost probe (one clip, forward+backward of the hybrid CTC/attention l
 MPS 186 ms/step training the top 3 encoder blocks (42.6M of 250.4M parameters), 255–261 ms training all 12; peak RSS
 2.2 GB. 100 clips × 5 epochs ≈ 2–3 min — compute is not the constraint, labelled data is.
 
+### D.16 Fresh five-pair diagnostic (diag1) — independent review, and the adaptation pipeline (2026-11-14 22:10–22:35 UTC)
+Session `20261114T220939Z-diag1` (5 NEW sentences, each voiced + silent back to back, front-lit). Exploratory — not a
+benchmark, never to be used for tuning. Re-run here with `eval.paired_diag`: voiced 6/30 = 20.0% WER, 2/5 exact; silent
+17/30 = 56.7%, 1/5 exact; reference log-prob/token voiced −0.57 vs silent −1.28 (CTC −1.49 vs −2.82); CREMA-D median −0.11.
+**Methodology check (no issue found):** labels match the prompts in every pair; order inside pairs mixed (voiced first
+2×, silent first 3×; silent worse under both orders); every take 5.52 s / 165 source frames / 29.97 fps / 0 gaps →
+138 model frames; whole clips, no endpoint trimming, identical crop/normalisation/decoder for both modes; ROI brightness
+135 / 134, contrast 38 / 37, tracking 100% (one black camera warm-up frame in clip01). Start-of-clip strips: 8/10 takes
+begin with closed lips; clip06 (voiced) may open mid-"MY" (decoded exactly anyway) → the recorder now shows GO 1.5 s
+after the camera starts (`705e5ff`).
+**Supported by these 5 pairs (associations, not proven causes):** (1) a silent-articulation shift — same speaker, same
+light and pipeline, silent is worse in 4/5 pairs and the reference is far less likely under the model; silent takes
+show larger lip spreading (width range 4/5) and different opening dynamics; the strips show lips held closer with
+isolated exaggerated openings. (2) Speaker/domain mismatch as well — fresh VOICED sentences in good light are 20% WER
+(CREMA-D 6.2%), reference log-prob −0.57 vs −0.11. (3) Decoding is NOT the failure: in every wrong take the model
+scores its own wrong output above the reference (no search errors), so wider beams/reranking cannot fix it.
+(4) Endpointing is not tested here (whole fixed clips); it remains a live-path question (D.11). The encoder still maps
+each silent take nearer to the same sentence voiced than to other sentences (5/5, ratio 0.33–0.69): the information is
+there but shifted — the case speaker adaptation is meant for.
+**Silent Voice / Lipflow (read from source):** Silent Voice `lipread/adapt.py` wraps Lipflow `lipflow/train_vsr.py`
+(@ e37453b): trains the visual front end + embedding + Conformer block 0 (their scope, chosen on held-out speaker runs:
+36.3% → front end 32.2% → front end + block 0 29.6%), freezes the other blocks, CTC head, decoder and LM, freezes all
+BatchNorm statistics, loss (0.1 CTC + 0.9 label-smoothed attention)/tokens, augmentation crop/flip/gain/time-mask,
+AdamW 1e-4, batch 1, 6 epochs. Self-reported (their MEASURED.md, one speaker, not reproduced): 500 sentences from 2
+sessions, 100-clip third session final pass 20.9% → 9.8% WER, 48 → 69 exact. The same scope exists in our checkpoint
+(162 tensors, 25.78 M parameters = their numbers) → **chosen as our primary arm**; our earlier top-3-block plan had no
+evidence and stays only as an alternative (`--scope top3`).
+**Pipeline (`c51b3e1`):** `recognition/adapt/finetune.py` + `overlay.py`, tests 36/36. Verified on this Mac: gradients and
+the hybrid loss through the real checkpoint on MPS (encoder) + CPU (decoder/CTC, the production layout); a 1-epoch
+timing run on 23 old dev clips (output discarded, validation numbers not looked at): **0.87 s/step**, peak RSS 2.3 GB,
+base SHA-256 unchanged; overlay → `eval.bench --overlay` loads with the base-hash check. The 190 ms probe (top-3 blocks)
+does not carry over: back-propagating through the 3D/ResNet front end costs ~4.5×. Estimate for 101 training clips:
+≈ 9 min training + 1 min validation + 2 min one-time cropping per run.
+
 ## E. Next human evaluation (≈ 12 min, independent of everything studied so far)
 1. Light from the front: `cd recognition && .venv/bin/python record_webcam.py --check` until PASS (≥ 90; aim ~105–130).
 2. `./scripts/tacit.sh restart && ./scripts/tacit.sh open` → **Start Live preview**. Leave voice output off. Keep the
@@ -350,6 +384,40 @@ MPS 186 ms/step training the top 3 encoder blocks (42.6M of 250.4M parameters), 
 The v1 result (D.7) stays the frozen baseline; v2 is the first evaluation of anything changed after it (phrase-rule-v2,
 5-best). Toward the release targets, ≥ 50 genuinely silent NEW labelled sentences are needed (a fresh sentence list larger
 than `live:test` v2's 5, never rehearsed) — not available yet, so every target stays NOT VALIDATED.
+
+### E.5 Personal adaptation — recording, training, evaluation (supersedes the plan at the end of E.4)
+Prompt sets (all pairwise sentence-disjoint and disjoint from every earlier recording, `eval.dataset prompts-check`):
+training A `prompts/adapt_v1_a.txt` (50), training B `prompts/adapt_v1_b.txt` (51), validation `prompts/adapt_val_v1.txt`
+(20, new), final `prompts/heldout_v2.txt` (60, untouched). Video only (camera opened as `<cam>:none`, `-an`).
+**Phase A — record now (≈ 35 min):**
+```
+cd recognition
+.venv/bin/python record_webcam.py --check
+.venv/bin/python record_webcam.py --name adaptA --modes silent --prompts prompts/adapt_v1_a.txt --free 0
+.venv/bin/python record_webcam.py --name adaptB --modes silent --prompts prompts/adapt_v1_b.txt --free 0
+.venv/bin/python record_webcam.py --name adaptVal --modes silent --prompts prompts/adapt_val_v1.txt --free 0 --nonspeech 1
+# interrupted? rerun the same command with --resume data/webcam/<that session>
+```
+Optional, for the voiced-supplement arm only: `--name adaptAvoiced --modes voiced --prompts prompts/adapt_v1_a.txt --free 0`.
+**Phase B — train + validate (≈ 15 min per arm):**
+```
+.venv/bin/python -m adapt.finetune --name silent1 --train data/webcam/<…-adaptA> --train data/webcam/<…-adaptB> --val data/webcam/<…-adaptVal> --dry-run
+.venv/bin/python -m adapt.finetune --name silent1 --train data/webcam/<…-adaptA> --train data/webcam/<…-adaptB> --val data/webcam/<…-adaptVal>
+.venv/bin/python -m eval.bench --session data/webcam/<…-adaptVal> --tag val --variant base
+.venv/bin/python -m eval.bench --session data/webcam/<…-adaptVal> --tag val --variant base --overlay data/adapt/silent1
+.venv/bin/python -m eval.bench --variant base --overlay data/adapt/silent1      # CREMA-D + dev sets regression
+```
+Pre-registered (22:35 UTC): arm 1 = silent-only, default recipe. Arm 2 (silent + voiced A) only if recorded; it replaces
+arm 1 only if its validation silent WER is ≥ 5 points lower. At most these two arms; no hyperparameter search on the
+validation set. Overfitting signs to report: training loss falling while validation word errors rise (log.jsonl), and
+the selected epoch. Validation numbers are VALIDATION, not final.
+**Phase C — once, only for the chosen overlay:** record `heldout_v2` (`--name heldout1 --modes silent --prompts
+prompts/heldout_v2.txt --free 0 --nonspeech 2`), then `eval.bench --session <…-heldout1> --tag final --variant base`
+and the same with `--overlay data/adapt/<chosen>`. Adopt only if final silent WER drops ≥ 10 points, non-speech shown
+does not rise and CREMA-D WER rises ≤ 1 point. Production loads no overlay until then; the selector (default = base,
+instant rollback) is added only in Phase C.
+**Synthetic lip-sync data (asked 22:30 UTC): not recommended before the demo** — see HANDOFF; real-data augmentation is
+already in the recipe.
 
 ### E.4 Paired diagnostic — 5 new sentences, voiced + silent (≈ 6 min; do this BEFORE E.3)
 Front light (`record_webcam.py --check` → PASS, aim 105–130); same seat, same light for all 10 takes; video only.
@@ -443,7 +511,8 @@ it raises coverage by ≥ 3 sentences of 60). For adaptation later: ≥ 2 sessio
 4. Consider `ARTICULATION_CONFIG.preRollMs` 160 → 400 (weak evidence, D.3); send `outputGeneration` with `speak_typed`.
 
 ## I. Git
-`main`, pushed; Claude is the only Git writer. Paired diagnostic (21:45–22:00 UTC): `55be59d` recorder `--paired` +
+`main`, pushed; Claude is the only Git writer. Adaptation (22:10–22:35 UTC): `705e5ff` recording sessions (partitions,
+`--resume`, camera lead-in); `c51b3e1` Lipflow-recipe trainer + overlays + `bench --overlay`; then docs. Paired diagnostic (21:45–22:00 UTC): `55be59d` recorder `--paired` +
 `eval/paired_diag.py` + `prompts/diagnostic_v1.txt`; then docs. Accuracy session (21:05–21:35 UTC): `e46888b` low-evidence abstention;
 `c93dc50` `eval/bench.py`; `77c77a2` recording/split tooling + prompt lists; then docs. Reviewed-speech session: `7853bd8` speak_reviewed; `614a261` contract;
 `3a76e6a` phrase-rule-v2; `e0894f3` reviewed:check; `665c8c4` eval grouping fix; `3cb0871` 5-best; `605880a`
