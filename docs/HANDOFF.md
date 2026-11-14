@@ -1,6 +1,6 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~19:00 UTC
+**Last updated:** 2026-11-14 ~19:50 UTC
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: Sol (Cursor/Codex) → `docs/WORKSTREAM_SOL.md`, frozen at its ~11:55 UTC checkpoint (committed `80a36ac`).
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED until a silent-speech reliability gate is measured.
@@ -12,16 +12,24 @@ recognised words stays DISABLED until a silent-speech reliability gate is measur
 | Google Meet remote audibility | **VERIFIED (human-observed):** BlackHole 16ch as Meet mic on the Mac; the user's iPhone in the same Meet heard TACIT |
 | FaceTime remote audibility | NOT YET TESTED |
 | Typed synthesized speech | VERIFIED through a real call (Google Meet) |
-| Genuine silent-articulation recognition | NOT YET MEASURED under valid conditions (first `s1` was backlit: silent 65% / voiced 58% WER, capture-limited) |
-| Automatic recognised-speech transmission | STILL DISABLED (`UNVALIDATED_GATE`, Live refuses `automatic`) |
+| Silent recognition | Front-lit session C: 3/3 silent exact (in-sample, repeated development phrases). Dim session B: 47.7% WER. Held-out live test NOT YET RUN |
+| Automatic recognised-speech transmission | STILL DISABLED. NO-GO open vocabulary; phrase mode not yet (DEMO_READINESS F) |
 
 ## Restartable checkpoint (state at hand-off)
-- `main` pushed; CI green on every commit through `fc81189` (see DEMO_READINESS G for the last).
-- First `s1` session (`recognition/data/webcam/20261114T184530Z-s1`, 12/20 clips, git-ignored) evaluated and diagnosed
-  (DEMO_READINESS D.1): mouth-crop brightness 40–47 vs 134–164 on CREMA-D (bright window behind the user); face size
-  fine; post-hoc brightening/trimming/detector swaps do not recover it. `5374284` adds capture stats + a recorder
-  lighting check (`record_webcam.py --check`). Gate unchanged.
-- Disk freed by the user: 41.2 GB; preflight exit 0 with no FAIL.
+- `main` pushed at `0229768` + docs commit; working tree clean. Server running with the new code (phrase mode on,
+  pre-decode gate, latency stages).
+- Recognition sessions (private, git-ignored `recognition/data/webcam/`): A `20261114T184530Z-s1` (partial, backlit),
+  B `20261114T185152Z-s1` (23 clips, dim), C `20261114T191005Z-bright-test` (13 clips, front-lit; its 10 prompted clips
+  have mode "" and were spoken). Results and diagnosis: DEMO_READINESS D.2–D.3.
+- This round: lighting confirmed as the main capture factor; decoder/padding/live preprocessing ruled out (eval
+  scripts in `recognition/eval/`); **defect fixed**: still-face hallucination (36/36 → 4/36 resting segments) by
+  applying the untuned pre-existing gate thresholds before decoding (`c533656`); phrase mode added display-only
+  (`0773988`, `800a9ea`, protocol: optional `RecognitionHypothesis.phraseMatch`); `stages.endpoint_wait`/`upload`
+  added (`af14b92`); `npm run live:replay` and the guided held-out `npm run live:test`; recorder `--modes ''`
+  fix + explicit nv12 + 7 unittests (`0229768`).
+- Frozen for the held-out test: decoder (fast beam, beam 10, CTC 0.1), gate thresholds (config.py), phrase list and
+  `phrase-rule-v1` (tacit_vsr/phrases.py). Changing any of them before the live test invalidates it as held-out.
+- Disk 41 GB free; preflight exit 0 with no FAIL.
 - Companion `--selftest` 7/7 PASS; camera shared by two capture processes at 30 fps (FaceTime video untested).
 - Running locally: `./scripts/tacit.sh start` server on 127.0.0.1:8790 (+ VSR sidecar :8765, whisper :8766, tacit-route
   helper); `TACIT.app` companion open. Sol's Vite on :5173 and recogniser on :8767 are Sol's processes.
@@ -32,13 +40,11 @@ recognised words stays DISABLED until a silent-speech reliability gate is measur
   loopback verify, calibration, stop measurement; speech output session + typed AAC; launcher + preflight; companion;
   fast decoder (SilentFlow, MIT) 4× faster at equal WER; warm-up; Sol's frontend committed; 3 Fable reviews, all P0/P1
   findings fixed with tests; `live:check`, `live:stress`, `route:check`, `speech:check`, `ui:check` scripts.
-- **Next (human):** front-lit silent re-recording `s2` (DEMO_READINESS E.3: `record_webcam.py --check` until brightness
-  PASS, then all 20 prompts + 3 own sentences) → `eval_session`. Optional: FaceTime call; pause mid-sentence in a call.
-- **Next (engineering):** after `s2`: if voiced WER approaches CREMA-D, calibrate gate features on silent clips (needs
-  more held-out silent data than one session); if voiced stays poor in good light, investigate the speaker domain.
-  Consider a "too dark" warning in the Live path (backend could return `capture.roi_brightness`; needs a protocol
-  addition + Sol). AirPods-assisted endpointing experiment (user request; Meet call now verified); faster TTS (native AVSpeechSynthesizer streaming in tacit-route — `say` is the
-  largest measured delay, 0.8–1.75 s); ask Sol to send `outputGeneration` with `speak_typed`.
+- **Next (human):** the held-out live test — DEMO_READINESS E (lighting check → Start Live preview → `npm run live:test`).
+- **Next (engineering, after that report):** native streaming TTS in tacit-route (largest latency win, ≈ −0.8 s);
+  if the user authorizes it and the pre-registered conditions in DEMO_READINESS F pass on new data, an opt-in
+  phrase-autospeak experimental mode; reduce resting/smile false triggers (needs smile/swallow recordings). AirPods
+  motion endpointing stays a separate later experiment.
 
 ## Requests for Sol (frontend)
 1. Send `outputGeneration: output_status.generation` with every `speak_typed` (additive, `d974748`): the server then
@@ -46,6 +52,9 @@ recognised words stays DISABLED until a silent-speech reliability gate is measur
 2. Live is now ended by the server when the socket that sent `activate` closes; other clients (companion) can only
    pause/resume/end. UI clients that miss a 10 s WebSocket ping are terminated (browsers answer pings automatically).
 3. `speech_delivery` may now end `failed` with reason "audio rendered as silence".
+4. NEW optional `RecognitionHypothesis.phraseMatch` (`800a9ea`): show "Phrase list match: … (display only)" or its
+   rejection reason; never feed it to speech. `gate.mouth_brightness` < 90 → "too dark, light from the front" hint.
+   End→shown latency = `stages.endpoint_wait + stages.upload + recognitionMs`. Consider `preRollMs` 160 → 400.
 
 ## Repository
 - `https://github.com/tanushsavadi/tacit` — PRIVATE, branch `main`. Git owner: **Claude** (AGENTS.md → Git).
