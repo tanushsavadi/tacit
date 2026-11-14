@@ -22,6 +22,7 @@ picks the right candidate (or corrects it) and presses Speak.
 | LM-assisted decoding (pretrained Auto-AVSR subword LM, shallow fusion) | **Rejected**: worse WER on every dev set, ~1.7–2× decode time, fluent hallucinations | D.8 |
 | Oracle top-K (is the reference in the N-best?) | **Run (dev):** reference in top-1/3/5/10 — own silent clips 6/7/8/10 of 20, CREMA-D 80/85/92/93 of 96. Review now shows 5-best (`3cb0871`) | D.10 |
 | Flip test-time augmentation | **Rejected** (pre-registered): CREMA-D 5.2→5.4%, own silent 44.4→51.5% | D.12 |
+| Alternative models / personalisation | No openly usable model credibly beats the current one (best reported VALLR 18.7% vs 19.1%, LLM-generated words). Personal phrase templates: cross-session 45/45 on 10 phrases (generic 44/45 — ceiling) but do not reject own unlisted sentences | `docs/research/VSR_ALTERNATIVES.md` |
 | Reviewed mouth-to-call (`speak_reviewed`) | **Backend implemented and locally verified** (`7853bd8`, `e0894f3`, `605880a`): real recorded silent clip → Auto-AVSR → candidates → explicit pick → system voice → BlackHole 16ch `rendered`; tamper/stale/duplicate refused; stop 21 ms. Web/notch UI: Sol (in progress); fallback `npm run review`. **Remote audibility of reviewed speech NOT yet human-confirmed** | D.13, HANDOFF contract |
 | Release targets (≤ 5% WER and ≥ 90% exact on ≥ 50 new silent labelled utterances; 0 accepted non-speech) | **NOT VALIDATED — not met on any data so far** (best honest held-out: 44% WER, 2/5 exact). Targets, not results | D.7 |
 | Automatic speaking of recognised words | **DISABLED, unchanged** (Live refuses `automatic`; `UNVALIDATED_GATE`; `recognizedSpeechAllowed: false`). **NO-GO** open-vocabulary; **NO-GO** phrase mode (F) | `speech.test.ts`, `live.test.ts` |
@@ -266,6 +267,9 @@ repeats (two windows on recorded actor input), so a rearm bug is not indicated.
 `eval/tta_ab.py`: mean of the encoder outputs for the mouth crop and its mirror (Auto-AVSR trains with flips), same
 decoder. Rule written before the run: adopt only if CREMA-D improves and own silent does not worsen. Result: CREMA-D
 5.2% → 5.4% (80 → 79 exact), own silent 44.4% → 51.5% (6 → 5 of 20), own voiced 37.7% → 43.8%. Not adopted.
+
+Pre-synthesis (`e583589`): while voice output is on, shown candidates are synthesized locally in advance (voice policy
+applies; nothing sent before Speak). Unit-tested; latency effect NOT yet measured on :8790 (Live was active, no restart).
 
 ### D.13 Reviewed speech — local verification (2026-11-14 ~20:30–20:45 UTC, server :8790 restarted on the new code)
 `npm run reviewed:check -- ../recognition/data/webcam/20261114T191005Z-bright-test` (recorded SILENT clips of the

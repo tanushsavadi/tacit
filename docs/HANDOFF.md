@@ -17,6 +17,9 @@ now runs all of it; Live and output were left OFF.
 audibility of reviewed speech; (3) DEMO_READINESS E (live:test v2 + `--phrases`: first held-out numbers for v2 and
 smile/swallow/listening controls); (4) only with ≥ 100 new labelled own silent clips: speaker adaptation experiment.
 **Release targets (≤ 5% WER, ≥ 90% exact on ≥ 50 new silent utterances, 0 accepted non-speech): NOT VALIDATED.**
+**Later (20:55–21:05 UTC):** `e583589` pre-synthesizes shown review candidates locally while output is on (tests 114/114;
+needs a `./scripts/tacit.sh restart` to take effect — NOT restarted because Live was ACTIVE on :8790 at ~20:57 UTC,
+someone was using it). Alternatives/personalisation desk review + `eval/enroll_knn.py` → `docs/research/VSR_ALTERNATIVES.md`.
 
 ## Interface contract — reviewed speech (`speak_reviewed`) — for Sol — 2026-11-14 ~20:30 UTC (`7853bd8`, additive)
 All in `shared/protocol.ts`. Nothing existing changed meaning; `recognizedSpeechAllowed`/`autoTransmitAllowed` stay
