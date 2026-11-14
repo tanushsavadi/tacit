@@ -35,6 +35,12 @@ class Service:
         self.crop = video.MouthCropper()
         self.lock = threading.Lock()  # one inference at a time (MediaPipe graph + model are not shared-safe)
         print(f"[vsr] {config.MODEL_NAME} on {device}, loaded in {round((time.perf_counter() - t) * 1000)} ms", flush=True)
+        # Warm-up on a blank 2 s clip so the user's first utterance does not pay kernel compilation / allocator cost.
+        # Its output is discarded and never reported.
+        w = time.perf_counter()
+        with torch.no_grad():
+            self.eng.nbest(self.eng.encode(torch.zeros(1, 50, 88, 88)), 3)
+        print(f"[vsr] warm-up {round((time.perf_counter() - w) * 1000)} ms (decoder: {config.DECODER})", flush=True)
 
     def recognize(self, body: dict) -> dict:
         t0 = time.perf_counter()
