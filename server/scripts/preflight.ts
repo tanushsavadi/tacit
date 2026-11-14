@@ -41,6 +41,12 @@ try {
   add('USER ACTION', 'camera permission', 'allow camera for the browser/companion the first time; a call app using the same camera may block it — FaceTime Audio leaves it free');
 } catch { add('INFO', 'camera', 'could not enumerate'); }
 
+try {
+  const kb = Number((await sh('df', ['-k', root])).trim().split('\n').at(-1)!.split(/\s+/)[3]);
+  const gb = kb / 1024 / 1024;
+  add(gb >= 2 ? 'PASS' : gb >= 0.5 ? 'USER ACTION' : 'FAIL', 'free disk space', `${gb.toFixed(1)} GB free${gb < 2 ? ' — free some space: TTS temp audio, logs and builds fail or slow down when the disk is full' : ''}`);
+} catch { add('INFO', 'free disk space', 'unknown'); }
+
 // ── virtual microphone ──
 const bin = routeBinary();
 if (!bin) add('FAIL', 'tacit-route (virtual-mic helper)', 'not built: ./scripts/tacit.sh build');
