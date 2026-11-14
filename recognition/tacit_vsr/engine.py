@@ -93,6 +93,16 @@ class VSREngine:
             pre_beam_score_key=None if ctc_weight == 1.0 else "decoder",
         ).eval()
 
+    @torch.no_grad()
+    def nbest(self, enc: torch.Tensor, n: int = 3) -> list[tuple[float, list[int]]]:
+        """Free decoding: up to n (score, token ids without sos/eos), best first, with config.DECODER."""
+        if config.DECODER == "fast":
+            from .fast_beam import beam_search
+            return beam_search(self.model, None, enc, beam=self.beam.beam_size, ctc_weight=self.ctc_weight,
+                               lm_weight=0.0, nbest=n, no_repeat=0)
+        return [(float(h.score), [int(i) for i in h.yseq.tolist() if int(i) not in (self.sos,)])
+                for h in self.beam(enc)[:n]]
+
     # ------------------------------------------------------------------
     def tokenize(self, norm_text: str) -> list[int]:
         return [self.tok2id.get(p, self.unk) for p in self.spm.EncodeAsPieces(norm_text)]
