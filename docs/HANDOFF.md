@@ -1,12 +1,12 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 23:40 UTC (clock-checked)
+**Last updated:** 2026-11-14 23:27 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "accuracy + pipeline".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
 
-## Hand-off — adaptation pre-run review (2026-11-14 23:20–23:40 UTC)
+## Hand-off — adaptation pre-run review (2026-11-14 23:20–23:27 UTC)
 **While the user records adaptA/adaptB/adaptVal** (adaptA started 23:23 UTC; webcam, MPS, server untouched by Claude).
 Independent review of `recognition/adapt/` — recipe sound: scope = frontend+embed+block0 only (others, CTC head,
 decoder frozen; grads flow through the frozen decoder); every `_BatchNorm` in eval, dropout on; AdamW over trainable

@@ -435,7 +435,7 @@ training: loss epoch1→k, val errors per epoch (log.jsonl), wall time; overfitt
 Status: VALIDATION (val set chose the epoch → optimistic); not held-out, not a release claim.
 ```
 
-**Decision checklist (written 2026-11-14 23:35 UTC, before any adaptation result exists):**
+**Decision checklist (written 2026-11-14 ~23:25 UTC, before any adaptation result exists):**
 1. Data: dry-run counts match what was recorded (50 / 51 / 20 silent; no "missing on disk" warnings); hygiene passed.
 2. Run integrity: `run.json` present, `base_sha256` = e740cef3…, selected epoch > 0, log shows no NaN/zero losses.
 3. Proceed to Phase C (record heldout_v2 once) only if ALL hold on the bench numbers (proposal — the user may veto before
