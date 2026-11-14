@@ -1,0 +1,29 @@
+name: TacitWatchProbe
+options:
+  deploymentTarget: { watchOS: "11.0" }
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""   # set your (free) Personal Team ID, or pick it in Xcode → Signing & Capabilities
+targets:
+  TacitWatchProbe:
+    type: application
+    platform: watchOS
+    sources: [TacitWatchProbe]
+    info:
+      path: TacitWatchProbe/Info.plist
+      properties:
+        CFBundleDisplayName: TACIT Probe
+        CFBundleShortVersionString: "0.1"
+        CFBundleVersion: "1"
+        WKApplication: true
+        WKWatchOnly: true
+        NSMicrophoneUsageDescription: TACIT Probe records short labelled microphone trials to test silent-speech sensing. Recordings stay on the watch until you copy them.
+        NSMotionUsageDescription: TACIT Probe records wrist motion during labelled trials.
+        WKBackgroundModes: [physical-therapy]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: edu.hackumass.tacit.watchprobe
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_KEY_CFBundleDisplayName: TACIT Probe
