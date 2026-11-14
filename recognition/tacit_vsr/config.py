@@ -45,6 +45,8 @@ FREE_DECODE_BEAM = int(_f("TACIT_BEAM", 10))
 # Free-decoding implementation: "fast" (KV-cached, adapted from SilentFlow; ~4x faster, same WER on the 96-clip
 # benchmark — eval/bench_decoder.py) or "espnet" (original BatchBeamSearch). Instant revert: TACIT_DECODER=espnet.
 DECODER = os.environ.get("TACIT_DECODER", "fast")
+# Phrase mode: also score the fixed phrase list (tacit_vsr/phrases.py) per utterance, display-only (~100 ms on MPS).
+PHRASE_MODE = os.environ.get("TACIT_PHRASES", "1") != "0"
 
 # --- abstention thresholds (see docs/research/visual.md for how they were set) ----
 MIN_FRAMES = int(_f("TACIT_MIN_FRAMES", 12))  # < ~0.5 s at 25 fps

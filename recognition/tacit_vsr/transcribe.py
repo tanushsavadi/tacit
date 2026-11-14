@@ -15,7 +15,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import config, engine, video
+from . import config, engine, phrases, video
 
 
 def wer(ref: str, hyp: str) -> tuple[int, int]:
@@ -83,6 +83,12 @@ def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.
     out["gate"] = {**(best or {}), "nbest_margin_per_token": alt, "runner_up": texts[1][0] if len(texts) > 1 else None,
                    "frames_per_token": round(len(clip.frames) / max(out["n_tokens"], 1), 2),
                    "mouth_brightness": track.roi_brightness, "aperture_range": track.aperture_range}
+    if config.PHRASE_MODE and texts and texts[0][1]:
+        # Phrase mode (display-only): best phrase of the fixed list under the frozen rule; never rewrites `text`.
+        t3 = time.perf_counter()
+        out["phrase"] = phrases.classify(eng, enc, texts[0][1])
+        out["ms"]["phrase"] = round((time.perf_counter() - t3) * 1000)
+        out["ms"]["total"] = round((time.perf_counter() - t0) * 1000)
     return out
 
 

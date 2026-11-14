@@ -139,6 +139,46 @@ class VSREngine:
                 blank=0, reduction="sum", zero_infinity=False))
         return att, ctc
 
+    @torch.no_grad()
+    def score_texts(self, enc: torch.Tensor, texts: list[str]) -> list[CandidateScore]:
+        """score_text for many candidates in ONE batched decoder pass + one batched CTC call (same numbers: causal
+        masking means right-padding never affects the valid positions)."""
+        from espnet.nets.pytorch_backend.transformer.mask import subsequent_mask
+
+        norms = [normalize_text(t) for t in texts]
+        ids = [self.tokenize(n) for n in norms]
+        out: list[CandidateScore | None] = [None] * len(texts)
+        live = [i for i, x in enumerate(ids) if x]
+        for i in range(len(texts)):
+            if not ids[i]:
+                out[i] = CandidateScore(texts[i], norms[i], 0, float("-inf"), float("-inf"), float("-inf"))
+        if live:
+            T, L = enc.size(0), max(len(ids[i]) for i in live) + 1
+            B = len(live)
+            ys_in = torch.full((B, L), self.eos, dtype=torch.long)
+            ys_out = torch.full((B, L), self.eos, dtype=torch.long)
+            for b, i in enumerate(live):
+                n = len(ids[i])
+                ys_in[b, 0] = self.sos; ys_in[b, 1:n + 1] = torch.tensor(ids[i])
+                ys_out[b, :n] = torch.tensor(ids[i])  # then <eos> (already filled)
+            memory = enc.unsqueeze(0).expand(B, -1, -1)
+            logits, _ = self.model.decoder(ys_in, subsequent_mask(L).unsqueeze(0), memory, None)
+            tok = torch.log_softmax(logits, dim=-1).gather(2, ys_out.unsqueeze(-1)).squeeze(-1)
+            valid = torch.arange(L).unsqueeze(0) < torch.tensor([len(ids[i]) + 1 for i in live]).unsqueeze(1)
+            att = (tok * valid).sum(1)
+            ctc_logp = torch.log_softmax(self.model.ctc.ctc_lo(enc.unsqueeze(0)), dim=-1).transpose(0, 1).expand(-1, B, -1)
+            lens = torch.tensor([len(ids[i]) for i in live])
+            targets = torch.zeros((B, int(lens.max())), dtype=torch.long)
+            for b, i in enumerate(live):
+                targets[b, :len(ids[i])] = torch.tensor(ids[i])
+            ctc = -torch.nn.functional.ctc_loss(ctc_logp, targets, torch.full((B,), T), lens, blank=0, reduction="none", zero_infinity=False)
+            w = self.ctc_weight
+            for b, i in enumerate(live):
+                c = float(ctc[b]) if len(ids[i]) <= T and torch.isfinite(ctc[b]) else float("-inf")
+                a = float(att[b])
+                out[i] = CandidateScore(texts[i], norms[i], len(ids[i]), a, c, (1 - w) * a + w * c if c != float("-inf") else float("-inf"))
+        return out  # type: ignore[return-value]
+
     def score_text(self, enc: torch.Tensor, text: str) -> CandidateScore:
         norm = normalize_text(text)
         ids = self.tokenize(norm)
