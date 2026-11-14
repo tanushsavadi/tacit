@@ -2,7 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
-const target = process.env.TACIT_SERVER ?? 'http://localhost:8790';
+// The local server binds 127.0.0.1 only. `localhost` can resolve to ::1 first and miss it.
+const target = process.env.TACIT_SERVER ?? 'http://127.0.0.1:8790';
 
 export default defineConfig({
   plugins: [react()],

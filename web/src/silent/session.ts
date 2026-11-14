@@ -7,6 +7,7 @@ export interface LiveSessionState { phase: LivePhase; hypothesis: VisualHypothes
 /** No TTS or text-send path here. A future shared-contract adapter delegates acceptance/delivery to the server. */
 export class LiveSpeechSession {
   private auth: LiveAuthorization | null = null;
+  private pausedAuth: LiveAuthorization | null = null;
   private epoch = 0;
   private tasks = new Set<AbortController>();
   private seen = new Set<string>();
@@ -27,9 +28,9 @@ export class LiveSpeechSession {
     this.emit({ phase: 'starting', hypothesis: null, reason: null });
     try {
       if (controller.signal.aborted) return false;
-      const auth = await this.port.activate(callId!, controller.signal, input, mode);
+      const auth = await this.port.activate(callId ?? 'display-only', controller.signal, input, mode);
       if (epoch !== this.epoch || controller.signal.aborted) { this.port.end(auth); return false; }
-      if (auth.callId !== callId || auth.mode !== mode) { this.port.end(auth); throw new Error('The live authorization does not match this call and recognition mode.'); }
+      if (auth.callId !== (callId ?? 'display-only') || auth.mode !== mode) { this.port.end(auth); throw new Error('The live authorization does not match this call and recognition mode.'); }
       this.auth = auth; this.authorizedAtMs = this.now(); this.emit({ phase: 'listening' }); return true;
     } catch (e) { if (epoch === this.epoch) this.emit({ phase: 'error', reason: e instanceof Error ? e.message : String(e) }); return false; }
     finally { this.tasks.delete(controller); }
@@ -55,7 +56,7 @@ export class LiveSpeechSession {
       else { this.overloads++; this.emit({ phase: 'uncertain', reason: 'Recognition is behind. This window was discarded without submission.' }); }
       return;
     }
-    const epoch = this.epoch; const controller = new AbortController(); this.tasks.add(controller); this.inFlightBytes = bytes;
+    const epoch = this.epoch; const controller = new AbortController(); this.tasks.add(controller); this.retained = null; this.inFlightBytes = bytes;
     this.emit({ phase: 'recognizing', reason: null });
     try {
       const result = await withDeadline(() => this.port.submit(auth, utterance, controller.signal), controller, this.timeoutMs);
@@ -85,10 +86,13 @@ export class LiveSpeechSession {
     if (!this.auth || this.state.phase === 'paused') return;
     this.port.interrupt(this.auth); this.invalidate(false); this.emit({ phase: 'listening', reason: 'Tracking lost. Incomplete articulation discarded.' });
   }
-  pause() { if (this.auth) this.port.pause(this.auth); this.invalidate(); this.auth = null; this.emit({ phase: 'paused', hypothesis: null, reason: 'Live speech paused. No articulation is being transmitted.' }); }
+  pause() { if (this.auth) { this.pausedAuth = this.auth; this.port.pause(this.auth); } this.invalidate(); this.auth = null; this.emit({ phase: 'paused', hypothesis: null, reason: 'Live speech paused. No articulation is being transmitted.' }); }
+  /** Server status no longer matches this browser. Drop local work without sending another end. */
+  relinquish() { if (this.auth) this.pausedAuth = this.auth; this.auth = null; this.invalidate(); this.emit({ phase: 'paused', hypothesis: null, reason: 'The Live session changed. Start Live preview again.' }); }
   interrupt() { if (this.auth) this.port.interrupt(this.auth); this.invalidate(false); this.emit({ phase: this.auth ? 'listening' : this.state.phase, reason: 'Outgoing speech stopped; pending articulation discarded.' }); }
-  stop() { if (this.auth) this.port.end(this.auth); this.auth = null; this.invalidate(); this.emit({ phase: 'inactive', hypothesis: null, reason: null }); }
+  stop() { if (this.auth) this.port.end(this.auth); else if (this.pausedAuth) this.port.end(this.pausedAuth); this.pausedAuth = null; this.auth = null; this.invalidate(); this.emit({ phase: 'inactive', hypothesis: null, reason: null }); }
   get active() { return this.auth !== null; }
+  get authorizationId() { return this.auth?.id ?? null; }
   get automaticSpeechAuthorized() { return this.auth?.mode === 'automatic'; }
   get pendingRetry() { return this.retained; }
   get metrics() { return { queueDepth: this.queued.length, overloads: this.overloads, heldBytes: this.inFlightBytes + this.queued.reduce((n, u) => n + utteranceBytes(u), 0) + (this.retained ? utteranceBytes(this.retained) : 0) }; }

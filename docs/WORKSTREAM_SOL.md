@@ -1,8 +1,66 @@
-> **Latest checkpoint: STABLE · 2026-11-14 09:55 UTC.** Sensor-agnostic, AirPods-first frontend + shared live/replay capture pipeline. All owned edits are yielded for Claude to review/commit; no more editing is in progress. 55 unit tests, typecheck/build, authenticated browser/axe, recorded camera, five replay scenarios, microphone/Whisper regression and actual offline VSR transport probe passed. The shared Live recognition contract is still unpublished; automatic transmission remains disabled. See the integration-ready milestone and stable checkpoint at the end. Earlier entries below are historical.
+> **Latest checkpoint: STABLE · 2026-11-14 ~11:55 UTC. Frontend scope frozen.** The web app is setup, calibration, typed fallback, and judge demonstration. It is not the everyday call interface. Display-only Live, readiness, and recovery are verified against 127.0.0.1:8790. Automatic transmission stays off. No further dashboard work. Yielded for Claude. Human steps are in `web/HUMAN_TEST.md`.
+
+## Demo readiness · 2026-11-14 ~11:55 UTC
+
+The page a person opens is one screen: last recognized words, Start / Pause / Stop, and a readiness list. Setup and Presenter stay behind those two controls. No new pages.
+
+### Readiness, from published fields only
+Ready, Needs setup, Experimental, Unavailable, or Unknown.
+
+Observed on the live backend: connection Ready, display-only recognition Ready, silent-speech reliability Experimental, automatic transmission Unavailable, BlackHole 16ch with `readers: []` is Needs setup, remote audibility Unknown. A ready device with zero readers is not described as a FaceTime connection. FaceTime is named only if `readers` contains `com.apple.FaceTime`. That still does not mean someone heard the audio.
+
+### Recovery fixed
+Chrome did not emit `ended` when a capture track was stopped (`readyState` became `ended`, event count 0). The camera stayed on “Preparing input”. The vision hook now also watches `readyState`. `npm run test:recovery` then passed: permission denial, camera end, background pause, stop, reconnect, no `speak_typed`, no `mode: 'automatic'`.
+
+### Verification this pass
+- typecheck passed. `npm test` **79/79** passed. production build passed.
+- `npm run test:recovery` passed. `npm run test:browser` passed, including the four axe states. `npm run test:vision` passed (123 frames, one window, 542 ms endpoint, preview only).
+- `test:live`, `test:microphone`, and `test:replay` were not repeated. The prior live run still stands for voiced-clip recognition. This pass did not change that transport.
+
+### Contract gaps for Claude
+- Calling-app selection is only `VoiceRouteStatus.readers` (`null` unknown, `[]` none, otherwise bundle ids). There is no separate “selected in FaceTime’s menu” field.
+- `SpeechDelivery.remoteAudibility` is the literal `unknown`. There is no message for a person’s confirmation.
+- Nothing in the protocol aggregates a demo-ready bit. The checklist is derived in the browser.
+
+### Human test and freeze
+Follow `web/HUMAN_TEST.md`: silent mouthing, typed speech with a second listener, then pause / stop / reopen. Do not record faces. Frontend feature work stops here.
 
 # TACIT frontend workstream · Codex
 
-Updated 2026-11-14. Ownership: `web/` and this file only. No Git commands or backend/shared edits.
+Updated 2026-11-14. Ownership: `web/` and this file only. No Git commands or backend/shared edits. The web surface is frozen as setup, calibration, accessibility fallback, and demonstration.
+
+## Connected backend · 2026-11-14 ~11:40 UTC
+
+Sol's uncommitted Live workspace was preserved and finished against the running backend. The backend process on 127.0.0.1:8790 was not restarted. Claude remains the only Git writer.
+
+### What changed
+- Vite's default proxy target is `http://127.0.0.1:8790` via the existing `TACIT_SERVER` override. The previous dev server had `TACIT_SERVER=http://localhost:8791` and nothing was listening there, so `/api/health` returned 502. That process was stopped and Vite was restarted with the canonical target. Authenticated `/api/health` through :5173 then returned 200, recognition reachable, `tacit-live-v1`, `automaticSpeechValidated: false`.
+- `LiveSocketPort` acknowledges `live_control` only when a later generation has the state and authorization that action produces. An unsolicited, stale, or competing `live_status` does not complete a different control. A replaced authorization drops local recognition instead of keeping the old id.
+- `SpeechOutputPort` accepts a `speech_delivery` only when `requestId`, `source: 'typed'`, `outputAuthorizationId`, and `generation` match the authorization this browser enabled. Recognized hypotheses are not copied into `speak_typed`.
+- Everyday status shows the virtual-microphone device, route state, and readers. Typed delivery uses `speech_delivery`, including `firstAudioAt` as "Speaking into \<device\>". Copy states that remote audibility is not verified. Browser-caller playback stays a separate "Caller playback" / "Browser caller" status.
+- A server Live status that no longer matches this browser pauses local capture without sending a second `end` over a session the server has already replaced.
+
+### Verification
+- `npm run typecheck`: passed.
+- `npm test`: **74/74 passed**.
+- `npm run build`: passed (Vite production build, repeated once after disk space was recovered).
+- `npm run test:browser`: passed. Authenticated workspace, four viewports, zero axe violations on the checked states, zero legacy confirm/select messages, zero uploads before Live.
+- `npm run test:microphone`: passed. Synthetic mic → AudioWorklet → server Whisper. Transcript was “Okay, it is Sam, are we still on for dinner tonight?” for the fixture “Hey, it is Sam. Are we still on for dinner tonight?” Zero unsolicited audio frames. No application exceptions.
+- `npm run test:live`: passed with no TACIT caller. Recorded **voiced** CREMA-D `1040_IEO_NEU_XX` through the browser camera path, real MediaPipe, timestamped JPEGs, and Auto-AVSR. This is not a silent-speech measurement. Raw results included `IT'S ELEVEN O'CLOCK` (`shown`, `transmitted: false`, `stable: false`, uncalibrated uncertainty). One in-flight pause came back `abstained` with the words cleared. Resume produced another `shown` result. Reconnect did not resume upload. Measured recognition times in that run: 992 ms, 559 ms, 383 ms, 238 ms (abstain), 389 ms.
+- `npm run test:vision`: passed. Recorded face, 122 frames, one motion window, 522 ms endpoint. Preview only.
+- `npm run test:replay`: passed. All five recorded scenarios.
+
+### Output route observed
+Authenticated health reported `voiceRoute.state: ready`, device **BlackHole 16ch**, `readers: []`, calibrated. The workspace shows that device as a local route and says remote audibility is not verified. No calling app was reading the device during these tests. Typed AAC was not spoken into the device in the browser runs; the delivery rules were checked with protocol fixtures, not a live TTS playback.
+
+### Still required
+- Human silent articulation on held-out prompts before any automatic transmission. `recognizedSpeechAllowed` and `autoTransmitAllowed` remain false.
+- A person at the far end confirming what they heard. Browser playback and virtual-mic render do not establish that.
+- A calling app actually selecting BlackHole, so `readers` is non-empty, before treating the route as in use.
+- The disk was at capacity during the last browser re-run (`ENOSPC`). Regenerable Vite cache, `web/dist`, and one orphaned Playwright profile were removed, then the build and the browser/microphone tests were run again successfully. `web/dist` is gitignored.
+
+### Yield
+Owned files are stable for Claude's atomic commit. Do not stage unrelated backend, shared, or native edits. Suggested subject: `feat(web): connect display-only Live recognition and virtual-mic status`.
 
 ## Implemented
 
@@ -289,3 +347,23 @@ Mobile pause stays in the sticky header with a text label and ≥44 px target; m
 **Stable files for an atomic Claude commit:** web/src/{SilentWorkspace.tsx,main.tsx}, web/src/silent/{capabilities.ts,capturePipeline.ts,captureTelemetry.ts,deadline.ts,RecordedReplay.tsx,replay.ts,frameBuffer.ts,port.ts,session.ts,useSilentCapture.ts,workspace.css}, web/src/vision/{features.ts,useVision.ts}, web/tests/{integration-ready.test.ts,replay-vision-browser.mjs,silent-browser.mjs,silent-vision-browser.mjs,silent.test.ts}, web/scripts/check-vsr-inputs.py, web/package.json, web/README.md, docs/WORKSTREAM_SOL.md. Suggested subject: `feat(web): add sensor-agnostic sessions and recorded-input evaluation`. Tests/docs belong with the cohesive feature; artifacts/recordings/builds must stay ignored. **Sol has finished editing and explicitly yields all listed files for review/staging by Claude.**
 
 **Remaining backend/human work, not frontend claims:** shared/protocol.ts and HANDOFF were rechecked at the end; no typed Live messages are published. Claude must decide/publish the transport and authorization/recognition/delivery contract, implement the backend decoder/service/remote cancellation, and then replace the unavailable local port. Frontend needs adapter wiring, not a new communication surface. Per-input real silent WER/abstention/incorrect transmission/non-speech gate measurements, physical iOS/background/native call routing, and human-confirmed remote audibility remain unmeasured. Automatic speech stays disabled. The physical procedure above is ready for that stage; no extra human recordings were requested merely to exercise code paths.
+
+### S0 — Live integration resumed · 2026-11-14
+
+Sol is actively editing frontend files again; previous yield is superseded until S5 below. Existing uncommitted web work is preserved. Published `tacit-live-v1` reconciled against shared/protocol.ts and server/src/live.ts: display-only needs no caller, `shown` is not accepted/transmitted, `stable:false`, uncertainty uncalibrated. No native output-route or typed AAC contract exists in the current shared types.
+
+**Claude coordination request:** the current :8790 process needs a coordinated restart to expose the published Live handler/capability. Sol will not restart it. For verification Sol may launch an isolated own backend/service on separate local ports and stop only those processes afterwards. Please copy milestone summaries to HANDOFF (Claude-owned); Sol updates this workstream only.
+
+**Exact additive native contract request (proposal for Claude, not a frontend wire assumption):** publish `services.outputRoute?: { kind:'none'|'browser-caller'|'macos-virtual-microphone'; installed:boolean|null; helperConnected:boolean; callingAppSelected:boolean|null; available:boolean; reason:string }` with explicit provenance for device selection; publish utterance-scoped output events containing authorizationId, generation, utteranceId, state (`queued`/`synthesizing`/`routed`/`interrupted`/`failed`), actual voice label and timestamps. Remote-audibility evidence must include a separately obtained human confirmation; playback ACK alone cannot establish it. Typed AAC additionally needs an explicit user-authored text command, output session authorization, cancellation and failure acknowledgments. Until published, UI will show native route not reported and typed output unavailable.
+
+### S1/S2 implementation checkpoint · in verification
+
+Added `LiveSocketPort` on useTacit's existing authenticated connection, shared `tacit-live-v1` event handling, FIFO acknowledged controls (wire protocol has no control request ID), generation+sequence-qualified utterance IDs with local correlation, atomic synchronous header/JPEG batch enqueue, pre-batch backpressure and protocol limits. Display-only session no longer depends on caller or automatic validation; `shown` stays raw/display-only with `stable:false`, `transmitted:false`. No text-to-TTS path exists. Pause→Stop retains enough authorization to end the paused remote session. Disconnect and lost capability invalidate work.
+
+Astra checkpoint 1 actually performed by `gpt-6-astra`: two P2 races reproduced (parallel submit during backpressure; capability loss while activation awaited), fixed with regression tests. 64 tests and typecheck/build passed at this checkpoint. Browser recognition verification ongoing; no recognition/UI completion claim yet. Separate own services: :8791 backend, :8767 recognizer, :5173 Vite proxy to :8791. Existing :8790 untouched. Files are still being edited; do not stage.
+
+### S3 reconciliation — native types arrived during verification
+
+Re-read shared/protocol.ts at 10:26 UTC: Claude has now added VoiceRouteStatus, SpeechOutputStatus, SpeechDelivery, output_control and speak_typed (server/src/route.ts and speech.ts also present). This supersedes the earlier missing-contract note for those fields. No output handler is wired in the inspected server/src/index.ts yet and current services predate those additions. Sol is implementing event/route/AAC consumers using only those exact published types; backend integration/restart still belongs to Claude. HANDOFF's Interface contract has not yet been updated with these additions; please announce and confirm wiring there before the physical demo. RecognizedSpeechAllowed and autoTransmitAllowed remain literal false. No model words will be copied to typed AAC.
+
+Follow-up precision request: SpeechDelivery currently has requestId but no output authorizationId/generation; frontend will correlate only locally issued unique request IDs on the current socket/authorized generation and discard after pause/reconnect. Please add those identity fields in a future additive contract if multi-controller/native status can outlive a connection. output_status is also unsolicited on queue/route changes, so an output control acknowledgment must be distinguished by a generation/state transition, not by consuming any status event.

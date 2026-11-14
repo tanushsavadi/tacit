@@ -7,6 +7,7 @@ export type VisionStatus = 'off' | 'loading' | 'searching' | 'tracking' | 'error
 export function useVision(enabled: boolean, replay: ReplayPlan | null = null) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [restart, setRestart] = useState(0);
   const [status, setStatus] = useState<VisionStatus>('off');
   const [error, setError] = useState<string | null>(null);
   const [frame, setFrame] = useState<VisionFrame>(emptyFrame);
@@ -17,12 +18,14 @@ export function useVision(enabled: boolean, replay: ReplayPlan | null = null) {
     let stopped = false, animation = 0, videoCallback = 0, busy = false, ready = false, lastVideo = -1;
     const clock = new SampleClock(1000 / 15);
     let stream: MediaStream | null = null;
+    let watch = 0;
     let worker: Worker | null = null;
     let firstResult = 0, count = 0;
     let sourceIndex = 0, dispatchMediaTime = 0;
     const replayOrigin = performance.now();
     const startupTimeout = setTimeout(() => fail(new Error('Startup timed out. Check browser camera permission and try again.')), 20000);
     const cleanup = () => {
+      clearInterval(watch);
       clearTimeout(startupTimeout);
       cancelAnimationFrame(animation);
       if (videoCallback) videoRef.current?.cancelVideoFrameCallback(videoCallback);
@@ -55,6 +58,9 @@ export function useVision(enabled: boolean, replay: ReplayPlan | null = null) {
             track.onended = () => fail(new Error('Camera stream ended.'));
             track.onmute = () => fail(new Error('Camera capture was interrupted. Return to TACIT and enable the camera again.'));
           });
+          watch = window.setInterval(() => {
+            if (stream?.getVideoTracks().some(track => track.readyState === 'ended')) fail(new Error('Camera stream ended.'));
+          }, 400);
           await video.play();
         }
         if (stopped) return;
@@ -111,6 +117,6 @@ export function useVision(enabled: boolean, replay: ReplayPlan | null = null) {
     const onVisibility = () => { setFrame(emptyFrame(performance.now())); if (document.hidden) { setStatus('searching'); setFps(null); } };
     document.addEventListener('visibilitychange', onVisibility);
     return () => { stopped = true; cleanup(); document.removeEventListener('visibilitychange', onVisibility); };
-  }, [enabled, replay]);
-  return { videoRef, canvasRef, status, error, frame, fps };
+  }, [enabled, replay, restart]);
+  return { videoRef, canvasRef, status, error, frame, fps, retry: () => { setError(null); setFrame(emptyFrame()); setRestart(n => n + 1); } };
 }

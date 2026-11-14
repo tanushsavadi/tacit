@@ -24,6 +24,9 @@ export interface RecognitionHypothesis {
   model: string; source: 'visual-model' | 'airpods-model' | 'combined-model';
   decision: 'abstained' | 'uncertain' | 'shown' | 'accepted'; reason: string | null;
   recognitionMs: number;
+  stages?: Record<string, number> | null;
+  gate?: Record<string, number | string | null> | null;
+  transmitted?: false;
 }
 /** Compatibility name for existing visual capture consumers. */
 export type VisualHypothesis = RecognitionHypothesis;
@@ -49,6 +52,6 @@ export function activationBlock(port: SilentSpeechPort, callId: string | null, i
   if (!a.recognitionReady) return a.reason;
   if (!a.supportedInputs.includes(input)) return 'The recognition service does not support this input source.';
   if (mode === 'automatic' && (!a.automaticSpeechValidated || !a.validationEvidence || !a.validatedInputs.includes(input))) return 'Automatic transmission is gated until silent-speech reliability is experimentally validated for this input.';
-  if (!callId) return 'Connect a caller before starting live speech.';
+  if (mode === 'automatic' && !callId) return 'Connect a caller before starting live speech.';
   return null;
 }

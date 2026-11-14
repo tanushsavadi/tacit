@@ -14,7 +14,9 @@
     "validate:human": "node tests/physical-validation.mjs",
     "open:local": "node scripts/open-local.mjs",
     "test:replay": "node tests/replay-vision-browser.mjs",
-    "test:vsr-inputs": "../recognition/.venv/bin/python scripts/check-vsr-inputs.py"
+    "test:vsr-inputs": "../recognition/.venv/bin/python scripts/check-vsr-inputs.py",
+    "test:live": "node tests/live-recognition-browser.mjs",
+    "test:recovery": "node tests/recovery-browser.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.2.3",

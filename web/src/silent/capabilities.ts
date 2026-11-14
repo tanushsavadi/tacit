@@ -20,7 +20,7 @@ export function inputCapabilities(airpods: AirpodsStatus | null, serverNow: numb
       detail: `Camera-free research. Motion streaming does not establish word recognition. Native helper: ${airpods?.helper.replaceAll('_', ' ') ?? 'not reported'}.` },
     { id: 'camera', label: 'Camera', device: camera.supported ? camera.connected ? 'yes' : 'unknown' : 'unavailable',
       streaming: camera.streaming ? 'yes' : 'no', articulation: camera.articulation ? 'yes' : 'no', recognition: 'unavailable', validated: 'no', automaticSpeech: 'no',
-      detail: 'Optional local visual check. Mouth movement is experimental; it may also be smiling or swallowing. Silent-word reliability needs separate validation.' },
+      detail: 'Camera-based visual recognition. Mouth-motion endpointing is experimental; it may also be smiling or swallowing. Silent-word reliability needs separate validation.' },
     { id: 'combined', label: 'Combined sensing', device: 'unavailable', streaming: 'unavailable', articulation: 'unavailable', recognition: 'unavailable', validated: 'no', automaticSpeech: 'no',
       detail: 'Future camera and AirPods fusion. No synchronized input service is published.' },
   ];

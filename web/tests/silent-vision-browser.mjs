@@ -20,7 +20,7 @@ try{
   window.referencePlayback=video;window.drawReference=setInterval(()=>ctx.drawImage(video,0,0),40);
   const banner=document.createElement('div');banner.textContent='RECORDED-FACE TEST · real MediaPipe · preview conversation · not live silent-speech recognition';banner.style.cssText='padding:15px;background:#463a22;color:#fff1cd;text-align:center;font:14px sans-serif';document.body.prepend(banner);
  });
- await page.getByLabel('Input source',{exact:true}).selectOption('camera');await page.getByRole('button',{name:'Set up camera',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.camera-state')?.textContent==='Face tracked',null,{timeout:25000});
+ await page.getByRole('button',{name:'Setup and settings',exact:true}).click();await page.getByLabel('Input source',{exact:true}).selectOption('camera');await page.getByRole('button',{name:'Set up camera',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.camera-state')?.textContent==='Face tracked',null,{timeout:25000});
  await page.getByRole('button',{name:'Diagnostics',exact:true}).click();
  await page.evaluate(async()=>{window.referencePlayback.loop=false;await window.referencePlayback.play();});
  await page.waitForFunction(()=>{const rows=[...document.querySelectorAll('dl>div')];return Number(rows.find(r=>r.querySelector('dt')?.textContent==='Captured frames in RAM')?.querySelector('dd')?.textContent)>8;},null,{timeout:15000});
@@ -28,7 +28,7 @@ try{
  const read=async name=>page.locator('dl>div').filter({has:page.locator('dt',{hasText:name})}).locator('dd').innerText();
  const evidence={source:'recorded face video through real MediaPipe and local JPEG buffering; preview conversation only',tracking:await page.locator('.camera-state').innerText(),bufferFrames:await read('Captured frames in RAM'),detectedWindows:await read('Detected windows'),endpointMs:await read('Last motion → endpoint'),automaticSpeech:'gated, no recognized words or audio',applicationExceptions:errors};
  await page.screenshot({path:fileURLToPath(new URL('recorded-camera-diagnostics.png',artifacts)),fullPage:true,animations:'disabled',mask:[page.locator('.camera-preview')],maskColor:'#1b221d'});
- assert.equal(await page.getByRole('button',{name:'Start live speech',exact:true}).isDisabled(),true);assert.equal(await page.locator('.recognized-words.placeholder').count(),1);assert.equal(await page.locator('audio').count(),0);
+ assert.equal(await page.getByRole('button',{name:'Start Live preview',exact:true}).isDisabled(),true);assert.equal(await page.locator('.recognized-words.placeholder').count(),1);assert.equal(await page.locator('audio').count(),0);
  await page.setViewportSize({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'camera-enabled mobile header must not overflow');
  await page.screenshot({path:fileURLToPath(new URL('recorded-camera-mobile.png',artifacts)),fullPage:true,animations:'disabled',mask:[page.locator('.camera-preview')],maskColor:'#1b221d'});
