@@ -40,6 +40,13 @@ def expand(s: str) -> str:
     return " ".join(CONTRACTIONS.get(w, w) for w in engine.normalize_text(s).split()).replace("'", "")
 
 
+def group_of(it: dict) -> str:
+    """Only clips explicitly recorded as silent count as silent; `--modes ""` clips were prompted "speak normally"."""
+    if it.get("mode") != "silent":
+        return "voiced"
+    return "silent_prompted" if it.get("prompted") else "silent_own"
+
+
 def items_for(session: Path | None):
     if session is None:
         for it in json.load(open(HERE / "cremad_manifest.json")):
@@ -47,8 +54,7 @@ def items_for(session: Path | None):
         return
     for l in open(session / "manifest.jsonl"):
         it = json.loads(l)
-        group = "voiced" if it["mode"] == "voiced" else ("silent_prompted" if it["prompted"] else "silent_own")
-        yield session / it["file"], it["ref"], group
+        yield session / it["file"], it["ref"], group_of(it)
 
 
 def main() -> None:
