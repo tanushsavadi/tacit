@@ -2,6 +2,8 @@
     .venv/bin/python record_webcam.py --name s1 [--modes silent,voiced] [--free 3] [--camera N]
     .venv/bin/python record_webcam.py --name t1 --modes none --free 5   only your own sentences, silent
     .venv/bin/python record_webcam.py --check      lighting/framing check only (records 2 s, keeps nothing)
+    .venv/bin/python record_webcam.py --name adapt1 --modes silent --prompts prompts/adapt_v1.txt --free 0 [--limit 50]
+    .venv/bin/python record_webcam.py --name ctrl1 --modes none --free 0 --nonspeech 2   smile/swallow/listen controls
 Each prompt is recorded once per mode (silent = articulate with no sound; voiced = speak normally — still no audio is
 captured; it is a control that separates "silent articulation" from "webcam domain"). Clips + manifest.jsonl go to
 recognition/data/webcam/<timestamp>-<name>/ (git-ignored; contains your face — keep private).
@@ -26,6 +28,17 @@ PROMPTS = [
 
 
 VALID_MODES = ("silent", "voiced")
+# Non-speech controls (mode "nonspeech", ref ""): the recogniser must NOT show text for these.
+NONSPEECH = {
+    "smile": "SMILE (no words): a natural smile, hold it, relax",
+    "swallow": "SWALLOW (no words), then rest your face",
+    "listen": "LISTEN (no words): nod or react as if someone is talking to you",
+}
+
+
+def read_prompts(path: str) -> list[str]:
+    """One prompt per line; blank lines and '#' comments ignored."""
+    return [l.strip() for l in open(path, encoding="utf8") if l.strip() and not l.lstrip().startswith("#")]
 
 
 def parse_modes(text: str) -> list[str]:
@@ -41,11 +54,12 @@ def parse_modes(text: str) -> list[str]:
     return list(dict.fromkeys(modes))
 
 
-def plan(modes: list[str], free: int, prompts: list[str] = PROMPTS) -> list[tuple[str, str]]:
-    """(prompt, mode) pairs for the predefined prompts (shuffled by the caller). Raises if nothing would be recorded."""
-    if free < 0:
-        raise ValueError("--free must be ≥ 0")
-    items = [(p, m) for p in prompts for m in modes]
+def plan(modes: list[str], free: int, prompts: list[str] = PROMPTS, nonspeech: int = 0) -> list[tuple[str, str]]:
+    """(prompt, mode) pairs for the predefined prompts plus `nonspeech` repetitions of each non-speech control
+    (prompt = control key, mode "nonspeech"); shuffled by the caller. Raises if nothing would be recorded."""
+    if free < 0 or nonspeech < 0:
+        raise ValueError("--free and --nonspeech must be ≥ 0")
+    items = [(p, m) for p in prompts for m in modes] + [(k, "nonspeech") for k in NONSPEECH for _ in range(nonspeech)]
     if not items and free == 0:
         raise ValueError("nothing to record: give --modes and/or --free N")
     return items
@@ -63,8 +77,11 @@ def camera_index(name_hint: str | None) -> str:
 
 
 def record(cam: str, path: Path, seconds: float, prompt: str, mode: str) -> None:
-    how = "ARTICULATE SILENTLY (no voice, no whisper)" if mode == "silent" else "SPEAK NORMALLY"
-    print(f"\n  >>> {how}:  \"{prompt}\"")
+    if mode == "nonspeech":
+        print(f"\n  >>> {prompt}")
+    else:
+        how = "ARTICULATE SILENTLY (no voice, no whisper)" if mode == "silent" else "SPEAK NORMALLY"
+        print(f"\n  >>> {how}:  \"{prompt}\"")
     input("      press Enter, wait for GO …")
     p = subprocess.Popen(["ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "avfoundation", "-pixel_format", "nv12", "-framerate", "30", "-video_size", "1280x720",
                           "-i", f"{cam}:none", "-t", str(seconds), "-c:v", "libx264", "-preset", "veryfast", "-crf", "16", "-pix_fmt", "yuv420p", "-an", "-y", str(path)])
@@ -132,14 +149,22 @@ def main() -> None:
     ap.add_argument("--camera", default=None, help="camera name substring (default: first non-screen device)")
     ap.add_argument("--check", action="store_true", help="lighting/framing check only")
     ap.add_argument("--skip-check", action="store_true", help="record even if the lighting check warns")
+    ap.add_argument("--prompts", default=None, help="prompt file (one sentence per line) instead of the 10 built-in prompts")
+    ap.add_argument("--limit", type=int, default=0, help="record a random subset of N prompts from --prompts")
+    ap.add_argument("--nonspeech", type=int, default=0, help="also record N repetitions of each non-speech control "
+                    f"({', '.join(NONSPEECH)})")
     a = ap.parse_args()
     if not a.check:  # validate before touching the camera or creating a session folder
         try:
             modes = parse_modes(a.modes)
-            items = plan(modes, a.free)
+            prompts = read_prompts(a.prompts) if a.prompts else PROMPTS
+            if a.limit:
+                prompts = random.sample(prompts, min(a.limit, len(prompts)))
+            items = plan(modes, a.free, prompts, a.nonspeech)
         except ValueError as e:
             raise SystemExit(f"error: {e}")
-        print(f"plan: {len(items)} predefined clips ({', '.join(modes) or 'none'}) + {a.free} of your own sentences (silent)")
+        print(f"plan: {len(items)} predefined clips ({', '.join(modes) or 'none'}{', non-speech controls' if a.nonspeech else ''}) "
+              f"+ {a.free} of your own sentences (silent)")
     cam = camera_index(a.camera)
     while not capture_check(cam):
         if a.check or a.skip_check:
@@ -155,8 +180,14 @@ def main() -> None:
     with open(out / "manifest.jsonl", "a") as man:
         for k, (prompt, mode) in enumerate(items, 1):
             f = out / f"clip{k:02d}-{mode}.mp4"
-            record(cam, f, a.seconds, prompt, mode)
-            man.write(json.dumps({"file": f.name, "ref": prompt, "mode": mode, "prompted": True}) + "\n"); man.flush()
+            if mode == "nonspeech":
+                record(cam, f, a.seconds, NONSPEECH[prompt], mode)
+                man.write(json.dumps({"file": f.name, "ref": "", "mode": "nonspeech", "kind": prompt, "prompted": True}) + "\n")
+            else:
+                record(cam, f, a.seconds, prompt, mode)
+                man.write(json.dumps({"file": f.name, "ref": prompt, "mode": mode, "prompted": True,
+                                      **({"prompts": Path(a.prompts).name} if a.prompts else {})}) + "\n")
+            man.flush()
         for k in range(a.free):
             text = input(f"\nYour own sentence #{k + 1} (type it, Enter; you will then articulate it silently): ").strip()
             if not text:

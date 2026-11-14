@@ -42,6 +42,8 @@ def expand(s: str) -> str:
 
 def group_of(it: dict) -> str:
     """Only clips explicitly recorded as silent count as silent; `--modes ""` clips were prompted "speak normally"."""
+    if it.get("mode") == "nonspeech":
+        return "nonspeech"
     if it.get("mode") != "silent":
         return "voiced"
     return "silent_prompted" if it.get("prompted") else "silent_own"

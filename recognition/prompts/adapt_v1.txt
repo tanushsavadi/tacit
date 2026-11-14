@@ -1,0 +1,104 @@
+# Personal-adaptation sentences (TRAINING side). Record silently with:
+#   .venv/bin/python record_webcam.py --name adapt1 --modes silent --prompts prompts/adapt_v1.txt --free 0
+# Never use these for held-out evaluation. eval/dataset.py refuses splits where a test sentence appears here.
+my back hurts a little
+can you pass me the remote
+I would like a cup of tea
+please charge my phone
+the room is too warm
+could you lower the bed
+I need my blanket
+what day is it today
+my mouth is very dry
+please bring me a straw
+I want to sit up
+can you scratch my nose
+please call the nurse
+I feel a bit dizzy
+turn the light down please
+I am ready for lunch
+the food is too hot
+I would like some juice
+can I have a pillow
+please put on my socks
+my feet are cold
+I want to watch the news
+please open the curtains
+who is coming today
+I miss my family
+can you read me the mail
+please slow down
+I need to rest now
+that sounds like a good plan
+I agree with you
+let me think about it
+not right now thank you
+maybe later today
+I changed my mind
+that was very kind of you
+please tell my sister
+I want to go home
+when is my next visit
+how long will it take
+is the doctor here yet
+please check my phone
+I can not hear the television
+make it a little louder
+make it a little quieter
+I would like to brush my teeth
+please help me stand up
+I need my glasses cleaned
+where did you put my book
+can you find my wallet
+I dropped my pen
+please hand me the cup
+the water is too cold
+I would like more soup
+no sugar please
+just a little bit
+that is enough thank you
+I am full
+I did not sleep well
+I slept very well
+my arm feels numb
+please move my leg
+it hurts when I breathe
+I need to cough
+please wipe my face
+can you fix my hair
+I want to wear the blue shirt
+it is time for my pills
+did I take my medicine
+please write that down
+say it one more time
+I did not catch that
+what did the doctor say
+I have a question
+please ask my husband
+please ask my wife
+tell them I said hello
+happy birthday to you
+congratulations on the new job
+I am proud of you
+see you next week
+have a safe trip
+drive carefully
+call me when you get there
+I am so happy to see you
+thank you for visiting
+please stay a little longer
+I hope you feel better
+let us play cards
+put on some music please
+I like this song
+change the channel please
+what is the weather like
+is it raining outside
+I would like some fresh air
+can we go for a walk
+please push my chair
+stop here for a moment
+go a little faster
+I am getting tired
+take me back inside
+good afternoon everyone

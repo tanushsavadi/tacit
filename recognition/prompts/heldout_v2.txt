@@ -1,0 +1,64 @@
+# HELD-OUT evaluation sentences (never rehearse, never adapt on, never tune on). Record ONCE, silently:
+#   .venv/bin/python record_webcam.py --name heldout1 --modes silent --prompts prompts/heldout_v2.txt --free 0
+# Disjoint from adapt_v1.txt, the phrase list, record_webcam PROMPTS, CREMA-D, live:test v1/v2 and every sentence
+# in recognition/data/webcam so far (checked by `.venv/bin/python -m eval.dataset prompts-check`).
+I left my keys on the table
+the bus was late again
+we need more milk and bread
+my brother lives in boston
+please water the plants
+the meeting starts at noon
+I lost my umbrella yesterday
+she is coming over for dinner
+the car needs new tires
+let us meet at the library
+I forgot to send the email
+the store closes early on sunday
+my shoes are by the door
+he plays the guitar every night
+we painted the kitchen yellow
+the baby is finally asleep
+I would rather stay home tonight
+the train leaves in ten minutes
+can you feed the cat
+my favorite color is green
+the soup needs more salt
+they moved to a new house
+I am reading a good book
+the printer is out of paper
+we went to the beach last summer
+please lock the back door
+the movie was too long
+my phone screen is cracked
+I need a new toothbrush
+the garden looks beautiful
+our neighbors have a big dog
+the coffee is already cold
+I will be there in an hour
+he fixed the broken chair
+the tickets are on my desk
+we should leave before traffic
+my hands are shaking today
+the window is stuck again
+she bought a red bicycle
+I want pancakes for breakfast
+the elevator is not working
+please return the library books
+my glasses are on the shelf
+the kids are playing outside
+I paid the electric bill
+the oven is still on
+we are out of dish soap
+his flight lands at six
+I need to renew my passport
+the river is very high
+please sign this form
+the bread is in the freezer
+my sister just had a baby
+the parking lot is full
+I prefer the window seat
+the roof is leaking again
+we watched the game last night
+the cat knocked over the vase
+I will call the plumber
+the package arrived this morning
