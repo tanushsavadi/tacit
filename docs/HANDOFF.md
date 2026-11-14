@@ -70,7 +70,8 @@ recordings exist.
   AGENTS.md table, and ALL Git-write authority. Claude does not edit companion files while Sol implements the notch.
 - **Sol does not commit or push.** Claude commits Sol's files only at a checkpoint Sol records as stable.
 - Backend/shared interface changes are Claude's; Claude announces them in "Interface contract" below before Sol
-  depends on them. Next announcement: the `speak_reviewed` contract (in progress, see Hand-off priority 1).
+  depends on them. Next announcement: the `speak_reviewed` contract (NOT started; the user deferred it to a new
+  session — see Hand-off priority 1).
 - Root `THIRD_PARTY_NOTICES.md` stays Claude-owned: Sol keeps companion-local notices for any MIT adaptation and asks
   Claude to add root entries.
 - Sol's open companion notes (to fix after transfer): paused results accepted, nil-authorization equality, stale
