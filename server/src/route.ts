@@ -2,7 +2,7 @@
 // (BlackHole), which calling apps use as their microphone. Local observations only — "rendered" never means heard.
 import { spawn as nodeSpawn, execFile, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -72,6 +72,9 @@ export class RouteHelper extends EventEmitter implements OutputRoute {
   private st: VoiceRouteStatus;
   private restarts = 0;
   private closed = false;
+  /** Gave up restarting; the server replaces this helper on its next periodic check. */
+  exhausted = false;
+  static STOP_ACK_MS = 750;
 
   constructor(private bin: string, private device: RouteDevice, private gain: { gainDb: number; calibrated: boolean },
               private spawnFn: Spawn = (b, a) => nodeSpawn(b, a, { stdio: ['pipe', 'pipe', 'pipe'] })) {
@@ -94,14 +97,16 @@ export class RouteHelper extends EventEmitter implements OutputRoute {
     this.child = child;
     createInterface({ input: child.stdout! }).on('line', (l) => this.onLine(l));
     child.stderr?.on('data', () => { /* helper never prints content; ignore */ });
-    child.on('error', (e) => this.set({ state: 'error', reason: `route helper failed to start: ${e.message}` }));
+    // A write to a helper that just died raises EPIPE on stdin; unhandled, it would crash the whole server.
+    child.stdin?.on('error', () => { if (this.child === child) this.child = null; this.failAll('route helper pipe closed'); });
+    child.on('error', (e) => { this.exhausted = true; this.set({ state: 'error', reason: `route helper failed to start: ${e.message}` }); });
     child.on('exit', (code) => {
       if (this.child === child) this.child = null;
       this.failAll('route helper exited');
       if (this.closed) return;
       this.set({ state: 'error', reason: `route helper exited (${code}); restarting` });
       if (++this.restarts <= 5) setTimeout(() => !this.closed && this.launch(), 500 * this.restarts).unref();
-      else this.set({ reason: 'route helper keeps exiting; restart TACIT' });
+      else { this.exhausted = true; this.set({ reason: 'route helper keeps exiting; TACIT will retry in 15 s' }); }
     });
   }
 
@@ -189,15 +194,39 @@ export class RouteHelper extends EventEmitter implements OutputRoute {
 
   stop(reason: string): void {
     this.stopEpoch++;
-    if (!this.send({ op: 'stop', reason })) this.failAll(reason);
+    if (!this.send({ op: 'stop', reason })) return this.failAll(reason);
+    // Enforce the stop: if the helper does not answer for what it holds, kill it (audio ends with the process).
+    const held = [...this.open.keys()];
+    if (!held.length) return;
+    const child = this.child;
+    setTimeout(() => {
+      if (!held.some((id) => this.open.has(id))) return;
+      console.warn('[route] helper did not acknowledge stop; killing it');
+      child?.kill('SIGKILL');
+      this.failAll(`${reason} (route helper unresponsive; stopped by force)`);
+    }, RouteHelper.STOP_ACK_MS).unref();
   }
 
   close(): void {
     this.closed = true;
     this.send({ op: 'quit' });
     this.child?.stdin?.end();
+    for (const o of this.open.values()) rmSync(o.dir, { recursive: true, force: true }); // sync: process may exit next
     this.failAll('server shutting down');
   }
+}
+
+/** Remove staged speech audio left by a previous run that exited abruptly (older than a minute). */
+export function sweepStaleAudio(dir = tmpdir()): number {
+  let n = 0;
+  try {
+    for (const f of readdirSync(dir)) {
+      if (!f.startsWith('tacit-route-')) continue;
+      const p = join(dir, f);
+      if (Date.now() - statSync(p).mtimeMs > 60_000) { rmSync(p, { recursive: true, force: true }); n++; }
+    }
+  } catch { /* best effort */ }
+  return n;
 }
 
 /** Status to report when no helper could be started (binary missing, no BlackHole, not macOS). */

@@ -23,7 +23,7 @@ import { TwilioCall, twiml, validTwilioSignature } from './twilio.ts';
 import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig } from './auth.ts';
 import { TurnLog } from './turnlog.ts';
 import { LIVE_CAPABILITY, LiveSession, httpRecognizer } from './live.ts';
-import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, unconfiguredRoute } from './route.ts';
+import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, sweepStaleAudio, unconfiguredRoute } from './route.ts';
 import { SpeechOutput } from './speech.ts';
 import type { VoiceRouteStatus } from '../../shared/protocol.ts';
 import { spawn } from 'node:child_process';
@@ -239,8 +239,13 @@ async function setupRoute(): Promise<void> {
     speech.emit('status', speech.status());
   }
 }
+const swept = sweepStaleAudio();
+if (swept) console.log(`[route] removed ${swept} stale staged-audio folder(s) from an earlier run`);
 void setupRoute();
-setInterval(() => { if (route) route.refresh(); else void setupRoute(); }, 15_000).unref();
+setInterval(() => {
+  if (route?.exhausted) { route.close(); route = null; console.log('[route] replacing a helper that kept failing'); } // fresh restart budget
+  if (route) route.refresh(); else void setupRoute();
+}, 15_000).unref();
 for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => route?.close());
 process.on('exit', () => route?.close());
 

@@ -89,6 +89,30 @@ describe('RouteHelper (tacit-route supervisor)', () => {
     helper.close();
   });
 
+  it('stop is enforced: a helper that does not acknowledge is killed and plays end interrupted', async () => {
+    RouteHelper.STOP_ACK_MS = 30;
+    const { helper, cur } = setup();
+    cur().emit({ event: 'ready', sampleRate: 48000 }); await tick();
+    let killed = '';
+    (cur().child as unknown as { kill: (s: string) => void }).kill = (s: string) => { killed = s; };
+    const p = helper.play('hung', Buffer.from('RIFF'), 'audio/wav');
+    await tick(20);
+    helper.stop('Paused.');
+    expect(await p).toMatchObject({ state: 'interrupted', reason: expect.stringContaining('stopped by force') });
+    expect(killed).toBe('SIGKILL');
+    helper.close();
+  });
+
+  it('an EPIPE on the helper stdin interrupts open plays instead of crashing', async () => {
+    const { helper, cur } = setup();
+    cur().emit({ event: 'ready', sampleRate: 48000 }); await tick();
+    const p = helper.play('x', Buffer.from('RIFF'), 'audio/wav');
+    await tick(20);
+    (cur().child.stdin as unknown as EventEmitter).emit('error', Object.assign(new Error('write EPIPE'), { code: 'EPIPE' }));
+    expect(await p).toMatchObject({ state: 'interrupted', reason: 'route helper pipe closed' });
+    helper.close();
+  });
+
   it('stop forwards to the helper; picks BlackHole 2ch over 16ch and never a non-BlackHole device by default', async () => {
     const { helper, cur } = setup();
     cur().emit({ event: 'ready', sampleRate: 48000 }); await tick();
