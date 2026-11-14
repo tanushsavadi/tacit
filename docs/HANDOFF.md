@@ -1,12 +1,43 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~07:50 UTC
-**Last working agent/model:** Claude Code, Opus 5.5 (backend + integration). Frontend: GPT-6 Sol / Codex → `docs/WORKSTREAM_SOL.md`.
-**Current objective:** backend ready for a reliable human-to-human demo (browser caller now; Twilio PSTN after authorization).
-**Product direction (user, 2026-11-14 ~07:30 UTC): TACIT is Mode 2 only — silent speech → the user's voice, NOT an AI-reply
-selector.** The Gemini candidate/selection loop stays as working infrastructure; new sensing work targets recognizing
-what the user silently mouths. Explicit confirmation before remote playback remains mandatory.
-**Ownership:** `AGENTS.md` → "Current two-agent ownership". Claude = `server/`, `shared/`, `voice/`, root docs. Sol = `web/` + `docs/WORKSTREAM_SOL.md`.
+**Last updated:** 2026-11-14 ~08:30 UTC
+**Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: GPT-6 Sol → `docs/WORKSTREAM_SOL.md`.
+**Product:** Mode 2 only — silent speech → the user's voice (AGENTS.md top). Live Silent Speech is enabled once per
+session with pause/mute/stop; no per-utterance confirmation; **automatic transmission stays disabled until the
+recognition reliability gate is measured on real silent recordings.**
+**Current objective:** visual speech recognition (VSR) on genuinely silent webcam speech + a measured reliability gate,
+then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
+
+## Repository
+- `https://github.com/tanushsavadi/tacit` — PRIVATE, branch `main`. Git owner: **Claude** (AGENTS.md → Git).
+- CI: `.github/workflows/ci.yml` — server typecheck+tests, web typecheck+tests+build (no secrets, no devices, no models).
+- Not in Git by design: `.env`/secrets, `*/data/` (faces, motion, logs), weights/models, `third_party/`, `web/evidence/`,
+  `web/artifacts/`, builds. Recognition has no CI job (needs the 1 GB Auto-AVSR checkpoint).
+
+## Visual speech recognition (Mode 2) — evidence so far
+- Model: Auto-AVSR visual-only conformer `LRS3_V_WER19.1` (mpc001 weights, research/non-commercial licence; code Apache-2.0)
+  via `recognition/tacit_vsr` (MediaPipe FaceMesh mouth ROI → encoder → beam search, unigram5000). Audio is never read.
+  Hushkey / SilentFlow not evaluated: this checkpoint was already local and working.
+- **Offline, real video, open vocabulary:** 24 CREMA-D clips (12 sentences × 2 unseen speakers, frontal studio, VOICED
+  speech): WER 3/134 = 2.2%, 22/24 sentences exact (errors: "TO MORROW", "SLICK"→"SELECTED"). Caveat: voiced actors,
+  short common sentences — says nothing yet about silent articulation or webcam conditions.
+- Latency (M3 Pro, ~2.3 s clips): CPU total median 839 ms (landmarks+crop 123, encoder 348, beam 330). MPS needs
+  `PYTORCH_ENABLE_MPS_FALLBACK=1` (max_pool3d missing on MPS); encoder 191 ms vs 455 ms CPU, identical outputs.
+- Gate features emitted per utterance (att/ctc log-prob per token, n-best margin, runner-up, frames/token): on the one
+  error vs a correct clip, att −0.31 vs −0.11, margin 0.07 vs 0.37 — promising, not yet calibrated.
+- **Next (needs the user):** `cd recognition && .venv/bin/python record_webcam.py --name s1` (10 prompts × silent/voiced
+  + 3 own sentences, video only), then `.venv/bin/python -m tacit_vsr.eval_session <dir>`. Silent vs voiced WER on the
+  same prompts separates "silent articulation" from "webcam domain".
+
+## Interface contract proposal — Live Silent Speech (NOT yet in shared/protocol.ts; Sol: comment in WORKSTREAM_SOL.md)
+- Client → server (authenticated user WS): `live_set {enabled}` / `live_pause` / `live_stop`; per utterance after the
+  client's mouth-motion endpoint: `vsr_clip_start {utteranceId, mime:'video/webm', startedAt}` + binary webm chunk(s) +
+  `vsr_clip_end {utteranceId}` (full-frame video; the server does landmarks/ROI so recognition provenance is server-side).
+- Server → client: `recognition {utteranceId, text, gate:{...features}, decision:'shown'|'transmitted'|'abstained',
+  reason, model, ms:{decode,landmarks,encode,beam,total}}`. `decision:'transmitted'` is impossible until a calibrated gate
+  exists; client-supplied text is never treated as recognition. Pause/stop invalidates queued utterances and cancels playback.
+- Server side: Python VSR sidecar (persistent model, MPS) called by `server/`; voice/call path reuses `VoiceRouter`
+  and the existing transports.
 
 ## AirPods silent speech — CONCLUDED: NO-GO for word recognition (details: docs/research/AIRPODS_SILENT_SPEECH.md)
 - Gate 1 (deliberate jaw opening) detectable; Gate 2 five words, strict w1-tuned → w2 held-out: with the w1-chosen
@@ -146,4 +177,4 @@ cd server && npm run voice:policy-check   # live: no unapproved voice substituti
 2. Real Twilio call once authorized. 3. If keys arrive: `voice:check`, then repeat smoke/twilio:sim with the personal voice.
 
 ## Git
-See AGENTS.md → Git (atomic commits + private remote authorized; Claude sole writer; web/ only at Sol checkpoints).
+AGENTS.md → Git. Claude is the sole writer; Sol's `web/` is committed at Sol's recorded checkpoints.
