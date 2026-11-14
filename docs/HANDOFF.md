@@ -6,6 +6,17 @@
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
 
+## adaptA recording audit (2026-11-14, read-only, finished 23:42 UTC)
+`data/webcam/20261114T232916Z-adaptA`: 50/50 silent clips = exactly `adapt_v1_a.txt` (0 missing/duplicate/unlisted; 0
+overlap with adapt_v1_b, adapt_val_v1, heldout_v2, diagnostic_v1, dev PROMPTS or any other recorded clip). All decode:
+1280x720, 6.0 s, 180 frames (clip03: 179, one 67 ms gap), 150 model frames. Mouth-ROI brightness 149–157 (p50 153; diag1
+silent re-measured 133–136 with the same code), clipping ≤ 0.2 %, side-light asymmetry 42–54 (diag1 41–44). FaceMesh
+100 % of frames in every clip, IOD 139–146 px, jitter ≤ 0.006 IOD. Every clip starts and ends with the mouth closed
+(articulation ends ≤ 4.6 s; no truncation). Minor: clips 09/22/36 open with 3 black frames (camera warm-up, before
+articulation); clips 08/11/43 low aperture range (0.08–0.10 vs p50 0.21) but articulated. Verdict: READY FOR TRAINING,
+no retakes. Keep the same seat/light for adaptB/adaptVal (brightness now ~153). Audit scripts lived in the session
+scratchpad (not committed). Two empty aborted dirs (232345Z, 232615Z-adaptA) are ignored by `resolve_session`.
+
 ## Hand-off — adaptation pre-run review (2026-11-14 23:20–23:27 UTC)
 **While the user records adaptA/adaptB/adaptVal** (adaptA started 23:23 UTC; webcam, MPS, server untouched by Claude).
 Independent review of `recognition/adapt/` — recipe sound: scope = frontend+embed+block0 only (others, CTC head,
