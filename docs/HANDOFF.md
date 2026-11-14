@@ -1,10 +1,26 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 22:35 UTC (clock-checked)
+**Last updated:** 2026-11-14 23:40 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "accuracy + pipeline".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
+
+## Hand-off — adaptation pre-run review (2026-11-14 23:20–23:40 UTC)
+**While the user records adaptA/adaptB/adaptVal** (adaptA started 23:23 UTC; webcam, MPS, server untouched by Claude).
+Independent review of `recognition/adapt/` — recipe sound: scope = frontend+embed+block0 only (others, CTC head,
+decoder frozen; grads flow through the frozen decoder); every `_BatchNorm` in eval, dropout on; AdamW over trainable
+tensors only (wd 1e-4 negligible at lr 1e-4); loss = (0.1 CTC_sum + 0.9 label-smoothed att_sum)/tokens (espnet
+`LabelSmoothingLoss(..., normalize_length=False)` → sum for batch 1, verified in third_party source); validation
+decoder = production beam on the same device as bench (MPS). Fixed in `aec4d75` (pushed): overlays from unfinished runs
+were loadable (now need run.json); end-of-run base hash came from the mtime cache (now byte re-hash); a tracking
+failure burned the run name (crop before mkdir); ROI cache key path-only (now + size/mtime); missing clips silently
+dropped (now warned); sessions resolvable by name (`--train adaptA`, `--session adaptVal`). Known, documented: the
+trainer's per-epoch val WER has no abstention gate and selects the epoch → optimistic; report bench numbers only.
+DEMO_READINESS E.5 now has the commands, report format and a decision checklist (Phase-C entry criterion: val silent
+WER ≥ 5 pt better etc. — a PROPOSAL written before results; the user may veto before training). Tests 37/37.
+Codex's `docs/demo-preflight-codex.mjs`, `docs/demo-review-races-codex.mts` (untracked) and Sol's files untouched.
+**Next:** when the three sessions exist → `adapt.finetune --name silent1 --train adaptA --train adaptB --val adaptVal --dry-run`.
 
 ## Hand-off — personal adaptation pipeline (2026-11-14 22:10–22:35 UTC)
 **State:** pipeline READY, waiting for the user's recordings (DEMO_READINESS E.5 has the exact commands). Nothing trained
