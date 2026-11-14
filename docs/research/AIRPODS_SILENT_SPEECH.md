@@ -41,22 +41,22 @@ NO-GO for AirPods word recognition as a Mode 2 input (and a fortiori for open-vo
 narrow reuse (unbuilt, unvalidated): a coarse "user is articulating" activity cue alongside the webcam. Not integrated
 into TACIT; no frontend/protocol change. Reproduce: `npm run airpods:gate2 -- select <w1>` then `evaluate <w1> <w2>`.
 
-## Follow-up (reopened 2026-11-14): deliberate articulation, w3 → w4 — pending data
-Pre-registered in `server/scripts/airpods-heldout.ts` (criteria stored in `airpods/data/heldout-w3-config.json` at
-freeze time): GO = primary forced-choice p<0.05 vs 20%, ≥15 points above every baseline, McNemar p<0.05 vs strongest
-baseline, AND accepted precision ≥80% at ≥30% coverage with ≤2/20 control false accepts. Results will be appended here.
-
-## Hardware / API inventory (2026-11-14, macOS 27.0 SDK headers on this Mac + recorded data)
-| Signal | In AirPods Pro 2 | Public macOS API | In our recorder | Useful for silent articulation |
-|---|---|---|---|---|
-| Fused head motion: user accel, rotation rate, attitude (quaternion/Euler), gravity | yes (IMU) | `CMHeadphoneMotionManager` (macOS 14+) | yes, all fields, ~50 Hz, 3–5% BT gaps | jaw opening: yes (SNR 11–16×); word identity: not beyond rhythm (w1→w2) |
-| Which bud supplies motion | yes | `CMDeviceMotion.sensorLocation` (Default/Left/Right) | yes (`loc`; always R so far) | one stream at a time; no API for simultaneous L+R |
-| Magnetometer / heading on headphones | unknown | `magneticField` exists on CMDeviceMotion, accuracy uncalibrated for headphones | recorded? no | not tested |
-| Headphone activity (walking/running…) | yes | `CMHeadphoneActivityManager` (macOS 15+) | no | no (coarse activity classes) |
-| Speech-detecting (voice) accelerometer | yes (Apple marketing) | **none** — no symbol in CoreMotion/AVFAudio/AVFoundation/CoreAudio/AudioToolbox headers | no | not accessible |
-| Inward-facing (ANC/feedback) mic | yes | **none** | no | not accessible → ReHEarSSE/EarCommand/EarSSR-style in-ear acoustic sensing impossible |
-| Outward beamformed mic | yes | CoreAudio input device (Bluetooth HFP, processed) | `--protocol mic` (Gate 3) | not yet measured (needs session m1) |
-| "AirPods high-quality recording" | yes | `AVAudioSessionCategoryOptionBluetoothHighQualityRecording` / `AVCaptureSession.configures…HighQualityRecording`: **iOS 26 only, API_UNAVAILABLE(macos)** | n/a | n/a on Mac |
-Code availability (GitHub search by name, 2026-11-14): no public repos for EarCommand, EarSSR or ReHEarSSE;
-OpenEarable firmware is MIT but targets different hardware. Subvox (MIT) and ROCKET (paper; reimplemented, sktime BSD
-reference) are the reusable pieces already in use.
+## Follow-up: deliberate articulation, w3 → w4 (pre-registered) — RESULT: NO-GO
+Frozen config `docs/research/preregistration/airpods-w3-w4-config.json`, pushed in commit 43b1913 at 09:01:19Z;
+w4 recording started 09:08:09Z (after the freeze). Full output: `docs/research/preregistration/airpods-w4-heldout-report.txt`.
+- Data: w3 84 trials (12/class), 47.9 Hz, gaps 4.9% of time, **left** bud. w4 70 trials (10/class), 48.3 Hz, gaps 4.1%,
+  **right** bud. Median word rotation RMS: w1 0.034, w3 0.087, w4 0.058 rad/s (neutral 0.013 / 0.022 / 0.009).
+- w3 LOO (selection only, optimistic): primary ROCKET/cue/attitude 73%; baselines rhythm 43–55%, duration 27%.
+- **w4 held-out, primary forced choice: 13/50 = 26%** (chance 20%, binomial p=0.19). Per word: yes 4, no 1, hello 0,
+  water 8, help 0 /10; 31/50 predictions were "water" or "yes".
+- Baselines on w4: **rhythm-ROCKET 42%** (strongest), rhythm-DTW 26%, duration 22%, timing bundle 20%, energy 16%.
+  Primary vs rhythm-ROCKET: McNemar p=0.096 in the baseline's favour (5 vs 13 discordant). Secondary DTW/cue/rot 20%.
+- Frozen threshold: 1/50 words accepted (correct), 24 abstained, 25 rejected as none; control false accepts 2/20
+  (small nod 1/3, smile 1/2; swallow 0/3, still 0/10, look-away 0/2).
+- Pre-registered decision: statistical FAIL, practical FAIL → **NO-GO**.
+- Demonstrated: deliberate articulation produces ~2.5× (w3) / ~1.7× (w4) more motion than w1, and high within-session
+  separability (w3 LOO 70–73%). It did **not** generalize across sessions with the frozen models.
+- Hypotheses (NOT tested; would require new data, not w4 reuse): (1) the left→right bud switch mirrors/rotates the
+  sensor frame, breaking axis-dependent features while the axis-free rhythm baseline survived (42%); (2) articulation
+  was weaker in w4; (3) the 73% within-session figure is inflated by session-specific posture. A follow-up would need a
+  fixed bud (or explicit frame normalisation) declared before collecting two NEW sessions.
