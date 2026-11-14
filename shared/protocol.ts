@@ -294,6 +294,9 @@ export interface SpeechOutputStatus {
 export type SpeechSource = 'typed' | 'recognized';
 export interface SpeechDelivery {
   requestId: string;
+  /** The voice-output authorization and generation this request was accepted under (null/current for refusals). */
+  outputAuthorizationId: string | null;
+  generation: number;
   source: SpeechSource;
   text: string;
   /**

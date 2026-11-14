@@ -114,7 +114,7 @@ export class SpeechOutput extends EventEmitter {
   }
 
   private newDelivery(requestId: string, source: SpeechSource, text: string): SpeechDelivery {
-    return { requestId, source, text, state: 'queued', reason: null, voice: null, remoteAudibility: 'unknown', timings: { requestedAt: this.now() } };
+    return { requestId, outputAuthorizationId: this.st.authorizationId, generation: this.st.generation, source, text, state: 'queued', reason: null, voice: null, remoteAudibility: 'unknown', timings: { requestedAt: this.now() } };
   }
 
   private enqueue(d: SpeechDelivery): void {

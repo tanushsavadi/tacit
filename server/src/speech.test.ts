@@ -50,6 +50,7 @@ describe('SpeechOutput — typed AAC fallback', () => {
     expect(terminal('r1')).toHaveLength(1);
     expect(terminal('r1')[0]).toMatchObject({ remoteAudibility: 'unknown', voice: expect.stringContaining('system voice') });
     expect(terminal('r1')[0]!.timings.renderedAt).toBe(2);
+    expect(terminal('r1')[0]).toMatchObject({ outputAuthorizationId: out.status().authorizationId, generation: out.status().generation });
   });
 
   it('rejects stale authorization, duplicates, empty and over-long text', async () => {
