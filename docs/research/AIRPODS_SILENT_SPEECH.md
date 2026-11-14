@@ -7,6 +7,7 @@ Method: port of Subvox (MIT, Joe Blau) — per-frame accel/rotation/attitude fea
 ## Access (what the public API gives)
 - Processed head motion only: user acceleration, rotation rate, attitude, gravity; one bud (`R`) reported.
   Nominal 50 Hz (dt 20 ms); Bluetooth gaps >100 ms cost 3–5% of recording time (39/70 word trials had ≥1 gap).
+  Correction (2026-11-14): w1/w2 streamed from the LEFT bud (an earlier note said "always R"; only g1 was R).
 - Not available: speech-detecting accelerometer, inward/ANC mic, raw IMU. macOS mic = outward HFP stream (no
   ultrasonic band) → ReHEarSSE/EarCommand-style active acoustic sensing is not possible on this hardware. Not attempted.
 - Permission: a CLI child of a terminal is never prompted (TCC attributes to the terminal); fixed by bundling
@@ -60,3 +61,36 @@ w4 recording started 09:08:09Z (after the freeze). Full output: `docs/research/p
   sensor frame, breaking axis-dependent features while the axis-free rhythm baseline survived (42%); (2) articulation
   was weaker in w4; (3) the 73% within-session figure is inflated by session-specific posture. A follow-up would need a
   fixed bud (or explicit frame normalisation) declared before collecting two NEW sessions.
+
+## Earbud-source diagnosis after the w4 NO-GO (diagnostic; the pre-registered NO-GO stands unchanged)
+- **Frame conventions (all 7 sessions, both buds):** still-trial gravity ≈ (0.0–0.2, −0.1–−0.3, −0.96–−1.0) → z vertical;
+  nod rotation axis ≈ +x (ear-to-ear) with 90–99% of nod rotation energy; a nod's first move is −rx and look-left is +rz
+  in every session; corr(rx, d pitch/dt) +0.53…+0.96. → macOS reports both buds in a **common head-aligned frame**; no
+  axis mirroring, so naive axis negation would be wrong for head motion. Residual: R-bud nod axis tilted ~11° (y ≈ +0.2).
+- **Articulation motion is mirror-symmetric between buds.** Correlation of per-word class-mean rotation-rate waveforms
+  (rx, ry, rz): same-bud pairs positive (R→R 0.63/0.38/0.77; L→L 0.37/0.18/0.28 and 0.10/0.21/0.37); every L→R pair has
+  **negative ry/rz** (w3→w4 0.58/−0.32/−0.42; w1→w4 0.09/−0.02/−0.39; w3→oldR 0.53/−0.37/−0.53), turning positive under
+  the sagittal reflection (ωx, ωy, ωz) → (ωx, −ωy, −ωz). Physically plausible: jaw/ear-canal deformation moves each bud
+  mirror-wise while whole-head motion is common-mode. → the L→R switch is a real domain shift for articulation features.
+- **Exploratory same-bud cross-session checks (NOT pre-registered; pair chosen after seeing w4; re-seating between the
+  07:54 and 08:01 sessions unknown):** same pipeline as the w3→w4 preregistration.
+  R→R (07:54 → 08:01, default style): primary 35/50 = 70%, strongest baseline rhythm-ROCKET 42%, McNemar p=0.004;
+  frozen-rule threshold accepted 13/50 (9 correct, 69% precision), 0/20 control false accepts.
+  L→L (w1 → w2, subtle style): 26/50 = 52%; rhythm-ROCKET 44%; not ≥15 points above baselines.
+  These motivate, but do not establish, the hypothesis that a fixed earbud restores cross-session word information.
+- **Engineering response (committed):** recorder `--require-bud L|R` (preflight abort if another bud streams; mid-session
+  abort + invalid flag on any wrong-bud sample) and `--protocol budcheck` (15 s source log); held-out script stores the
+  training bud in new preregistrations and refuses cross-bud evaluation; `--exploratory` runs are labelled and use a
+  separate `--config`. The frozen w3→w4 evaluation reproduces identically with the updated script.
+- Alternative (not adopted): canonicalise R-bud data by the sagittal reflection. Rejected for the final experiment
+  because it flips genuine head yaw/roll; controlling the source is cleaner.
+
+## Proposed final AirPods-only experiment (w5 → w6, LEFT bud only) — awaiting the budcheck result
+0. Source check (≈1 min): only the LEFT AirPod in the ear, right one in the case:
+   `npm run airpods:record -- --protocol budcheck --name b1 --require-bud L` → must report L only. If macOS will not
+   stream reliably from L, stop: the experiment cannot be controlled.
+1. w5 (training/selection, 12 reps, deliberate): `--protocol words --name w5 --reps 12 --style deliberate --require-bud L`
+2. `npm run airpods:heldout -- prereg <w5> --config ../airpods/data/heldout-w5-config.json` (stores bud=L) → commit/push.
+3. Remove and re-seat the left AirPod; w6 (held-out, 10 reps): same flags with `--name w6`.
+4. `evaluate <w5> <w6> --config …w5-config.json` once. Same candidates, threshold rule and GO criteria as w3→w4.
+Even a GO is a five-word, single-user, closed-set result; larger vocabulary and continuous articulation are separate tests.
