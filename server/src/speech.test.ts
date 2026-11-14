@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events';
 import { describe, expect, it } from 'vitest';
 import type { LiveStatus, RecognitionHypothesis, SpeechDelivery, VoiceRouteStatus } from '../../shared/protocol.ts';
 import type { OutputRoute, PlayOutcome } from './route.ts';
-import { MAX_PENDING, SpeechOutput, UNVALIDATED_GATE, type ReliabilityGate } from './speech.ts';
+import { createHash } from 'node:crypto';
+import { MAX_PENDING, SpeechOutput, UNVALIDATED_GATE, speakableCase, type ReliabilityGate } from './speech.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const ready: VoiceRouteStatus = { state: 'ready', deviceName: 'BlackHole 2ch', deviceUid: 'bh', sampleRate: 48000, gainDb: 0, calibrated: true, readers: [], warnings: [], reason: null };
@@ -191,5 +192,140 @@ describe('SpeechOutput — recognised speech gate', () => {
     await tick();
     expect(terminal('rec:L1:u1')[0]).toMatchObject({ state: 'interrupted' });
     expect(out.status()).toMatchObject({ state: 'off', authorizationId: null });
+  });
+});
+
+describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
+  const NOW = 5_000_000;
+  const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
+  const live: LiveStatus = { authorizationId: 'L1', generation: 4, state: 'active', mode: 'display-only', autoTransmitAllowed: false, reason: '' };
+  const cands = ['I NEED HELP WITH THE', 'I NEED HELP WITH THIS'];
+  const target = (over: Partial<RecognitionHypothesis> = {}): RecognitionHypothesis => ({
+    utteranceId: 'u1', authorizationId: 'L1', rawText: cands[0]!, final: true, stable: false, uncertainty: null, model: 'm',
+    source: 'visual-model', decision: 'shown', reason: null, recognitionMs: 700, stages: null, gate: null, transmitted: false,
+    generation: 4, alternatives: [cands[1]!], reviewExpiresAt: NOW + 60_000,
+    reviewCandidates: [
+      { kind: 'raw', index: 0, text: cands[0]!, textHash: sha(cands[0]!) },
+      { kind: 'alternative', index: 1, text: cands[1]!, textHash: sha(cands[1]!) },
+      { kind: 'phrase', index: 2, text: 'CALL THE DOCTOR', textHash: sha('CALL THE DOCTOR') },
+    ], ...over });
+  function rig() {
+    const s = setup();
+    let t = NOW;
+    (s.out as unknown as { now: () => number }).now = () => t;
+    s.out.control('enable');
+    const req = (over: Record<string, unknown> = {}) => ({ requestId: `r${Math.random()}`, outputAuthorizationId: s.out.status().authorizationId,
+      outputGeneration: s.out.status().generation, liveAuthorizationId: 'L1', liveGeneration: 4, utteranceId: 'u1',
+      candidate: 'alternative', index: 1, text: cands[1]!, textHash: sha(cands[1]!), ...over });
+    return { ...s, req, advance: (ms: number) => { t += ms; } };
+  }
+  const last = (d: SpeechDelivery[]) => d.at(-1)!;
+
+  it('speaks the exact picked candidate once, labelled reviewed-recognition, with review provenance; TTS gets sentence case', async () => {
+    const { out, route, deliveries, synthCalls, req } = rig();
+    const m = req({ requestId: 'ok' });
+    out.speakReviewed(m, live, target());
+    await tick();
+    route.finishAll(); await tick();
+    expect(last(deliveries)).toMatchObject({ requestId: 'ok', state: 'rendered', source: 'reviewed-recognition', text: 'I NEED HELP WITH THIS',
+      review: { utteranceId: 'u1', liveAuthorizationId: 'L1', candidate: 'alternative', index: 1 } });
+    expect(synthCalls).toEqual(['I need help with this']);
+    expect(out.status().recognizedSpeechAllowed).toBe(false);
+  });
+
+  it('refuses every stale, mismatched or unauthorized request — nothing reaches TTS', async () => {
+    const { out, deliveries, synthCalls, req } = rig();
+    const cases: [Record<string, unknown>, LiveStatus, RecognitionHypothesis | null, RegExp][] = [
+      [{ requestId: '' }, live, target(), /requestId/],
+      [{ outputAuthorizationId: 'old' }, live, target(), /voice-output authorization/],
+      [{ outputGeneration: undefined }, live, target(), /generation/],
+      [{ outputGeneration: 999 }, live, target(), /paused or interrupted/],
+      [{}, { ...live, state: 'paused' }, target(), /Live is paused/],
+      [{}, { ...live, state: 'off', authorizationId: null }, null, /Live is off/],
+      [{ liveAuthorizationId: 'L0' }, live, target(), /Live authorization/],
+      [{ liveGeneration: 3 }, live, target(), /Live was paused/],
+      [{}, { ...live, generation: 5 }, target(), /Live was paused/],
+      [{}, live, target({ utteranceId: 'u2' }), /newer utterance/],
+      [{}, live, null, /No recognised utterance/],
+      [{ index: 7 }, live, target(), /candidate/],
+      [{ candidate: 'raw' }, live, target(), /candidate/],
+      [{ candidate: 'phrase', index: 2, text: 'CALL THE DOCTOR', textHash: sha('CALL THE DOCTOR'), utteranceId: 'u1' }, live, target({ reviewCandidates: target().reviewCandidates!.slice(0, 2) }), /candidate/],
+      [{ text: 'I NEED HELP WITH THIS ' }, live, target(), /text/],
+      [{ textHash: sha('something else') }, live, target(), /hash/],
+      [{ candidate: 'whatever' }, live, target(), /candidate/],
+    ];
+    for (const [over, l, tg, why] of cases) {
+      out.speakReviewed(req(over), l, tg);
+      expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(why) });
+    }
+    await tick();
+    expect(synthCalls).toEqual([]);
+  });
+
+  it('expired after reviewExpiresAt; paused output refused', () => {
+    const { out, deliveries, req, advance } = rig();
+    advance(60_001);
+    out.speakReviewed(req(), live, target());
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/expired/) });
+    out.control('pause');
+    out.speakReviewed(req(), live, target({ reviewExpiresAt: NOW + 120_000 }));
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/paused/) });
+  });
+
+  it('at most ONE speech per utterance (any candidate or correction); a duplicate requestId is refused', async () => {
+    const { out, deliveries, synthCalls, req } = rig();
+    out.speakReviewed(req({ requestId: 'a' }), live, target());
+    out.speakReviewed(req({ requestId: 'a' }), live, target());
+    expect(last(deliveries)).toMatchObject({ requestId: 'a', state: 'refused', reason: expect.stringMatching(/Duplicate requestId/) });
+    out.speakReviewed(req({ requestId: 'b', candidate: 'raw', index: 0, text: cands[0], textHash: sha(cands[0]!) }), live, target());
+    expect(last(deliveries)).toMatchObject({ requestId: 'b', state: 'refused', reason: expect.stringMatching(/already spoken/) });
+    out.speakReviewed(req({ requestId: 'c', candidate: 'edited', index: 0, text: 'Help me', textHash: sha('Help me') }), live, target());
+    expect(last(deliveries)).toMatchObject({ requestId: 'c', state: 'refused', reason: expect.stringMatching(/already spoken/) });
+    await tick();
+    expect(synthCalls).toEqual(['I need help with this']);
+  });
+
+  it('a refusal by the route does not consume the utterance: the user can press Speak again', async () => {
+    const { out, route, deliveries, synthCalls, req } = rig();
+    route.st = { ...ready, state: 'unavailable', reason: 'device removed' };
+    out.speakReviewed(req({ requestId: 'x1' }), live, target());
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/not ready/) });
+    route.st = { ...ready };
+    out.speakReviewed(req({ requestId: 'x2' }), live, target());
+    await tick();
+    expect(synthCalls).toHaveLength(1);
+  });
+
+  it("'edited' = user-corrected text: free text with its own hash, bound to the current utterance, labelled user-corrected and spoken verbatim", async () => {
+    const { out, deliveries, synthCalls, req } = rig();
+    out.speakReviewed(req({ requestId: 'e0', candidate: 'edited', index: 9, text: 'Help me', textHash: sha('Help me') }), live, target());
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/basis/) });
+    out.speakReviewed(req({ requestId: 'e1', candidate: 'edited', index: 0, text: 'x'.repeat(501), textHash: sha('x'.repeat(501)) }), live, target());
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/Longer/) });
+    out.speakReviewed(req({ requestId: 'e2', candidate: 'edited', index: 0, text: '  ', textHash: sha('  ') }), live, target());
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/Nothing/) });
+    out.speakReviewed(req({ requestId: 'e3', candidate: 'edited', index: 0, text: 'I need help with this, please', textHash: sha('wrong') }), live, target());
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/hash/) });
+    out.speakReviewed(req({ requestId: 'e4', candidate: 'edited', index: 0, text: 'I need help with this, please', textHash: sha('I need help with this, please') }), live, target());
+    await tick();
+    expect(deliveries.find((d) => d.requestId === 'e4' && d.state === 'synthesizing')).toMatchObject({ source: 'user-corrected',
+      text: 'I need help with this, please', review: { candidate: 'edited', index: 0, utteranceId: 'u1' } });
+    expect(synthCalls).toEqual(['I need help with this, please']);
+  });
+
+  it('pause and stop cut a reviewed request like any other delivery', async () => {
+    const { out, route, terminal, req } = rig();
+    out.speakReviewed(req({ requestId: 'p' }), live, target());
+    await tick();
+    expect(route.plays).toHaveLength(1);
+    out.control('pause');
+    await tick();
+    expect(terminal('p')).toEqual([expect.objectContaining({ state: 'interrupted', source: 'reviewed-recognition' })]);
+  });
+
+  it('speakableCase only re-cases ALL-CAPS model output; user casing is untouched', () => {
+    expect(speakableCase("I'M TIRED AND I WANT TO GO")).toBe("I'm tired and I want to go");
+    expect(speakableCase("IT'S ELEVEN O'CLOCK")).toBe("It's eleven o'clock");
+    expect(speakableCase('Call NASA now')).toBe('Call NASA now');
   });
 });

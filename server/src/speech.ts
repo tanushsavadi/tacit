@@ -3,9 +3,12 @@
 //   'typed'      user-authored AAC text, spoken after an explicit send while output is enabled;
 //   'recognized' visual-model output, spoken only if the ReliabilityGate is validated — it is NOT today
 //                (UNVALIDATED_GATE), so production never speaks recognised words.
+// Reviewed speech (`speakReviewed`) is NOT automatic: the user picked one exact displayed candidate of the latest shown
+// utterance and pressed Speak ('reviewed-recognition'), or edited it first ('user-corrected', user-authored text).
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import type { LiveStatus, RecognitionHypothesis, SpeechDelivery, SpeechOutputStatus, SpeechSource, VoiceRouteStatus } from '../../shared/protocol.ts';
+import type { LiveStatus, RecognitionHypothesis, ReviewChoice, SpeechDelivery, SpeechOutputStatus, SpeechSource, VoiceRouteStatus } from '../../shared/protocol.ts';
+import { sha256Hex } from './live.ts';
 import type { OutputRoute } from './route.ts';
 import type { TtsResult } from './tts.ts';
 
@@ -24,7 +27,19 @@ export const MAX_TYPED_CHARS = 500;
 export const MAX_PENDING = 4;
 
 interface Synth { synth(text: string, format?: 'file', signal?: AbortSignal): Promise<TtsResult>; label: string }
-interface Req { d: SpeechDelivery; generation: number; abort: AbortController; routed: boolean }
+interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean }
+const REVIEW_CHOICES: readonly ReviewChoice[] = ['raw', 'alternative', 'phrase', 'edited'];
+
+/**
+ * Model output is ALL CAPS ("I'M TIRED"), which some voices read as shouting or spell out. For synthesis only, such
+ * text is put in sentence case; the words are unchanged and the delivery reports the exact text. Mixed-case (user) text
+ * is never touched.
+ */
+export function speakableCase(text: string): string {
+  if (/[a-z]/.test(text)) return text;
+  const lower = text.toLowerCase().replace(/\bi\b/g, 'I');
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
 
 export class SpeechOutput extends EventEmitter {
   private st: { authorizationId: string | null; generation: number; state: 'off' | 'ready' | 'paused'; reason: string } =
@@ -111,6 +126,56 @@ export class SpeechOutput extends EventEmitter {
     return null;
   }
 
+  /**
+   * Reviewed speech: one exact candidate of the latest shown utterance (or the user's correction of it), after an
+   * explicit Speak. `target` = LiveSession.reviewTarget(). Every refusal is emitted as a 'refused' delivery.
+   */
+  speakReviewed(msg: Record<string, unknown>, live: LiveStatus, target: RecognitionHypothesis | null): void {
+    const id = typeof msg.requestId === 'string' && msg.requestId.length <= 100 ? msg.requestId : '';
+    const choice = REVIEW_CHOICES.includes(msg.candidate as ReviewChoice) ? msg.candidate as ReviewChoice : null;
+    const index = Number.isInteger(msg.index) ? msg.index as number : -1;
+    const sent = typeof msg.text === 'string' ? msg.text : '';
+    const utteranceId = typeof msg.utteranceId === 'string' && msg.utteranceId.length <= 200 ? msg.utteranceId : '';
+    const d = this.newDelivery(id || `invalid-${randomUUID()}`, choice === 'edited' ? 'user-corrected' : 'reviewed-recognition', sent.trim().slice(0, MAX_TYPED_CHARS));
+    if (choice && utteranceId && live.authorizationId) d.review = { utteranceId, liveAuthorizationId: live.authorizationId, candidate: choice, index };
+    const refuse = (reason: string) => { d.state = 'refused'; d.reason = reason; d.timings.endedAt = this.now(); this.deliver(d); };
+    if (!id) return refuse('Missing requestId.');
+    if (this.seen.has(id)) return refuse('Duplicate requestId.');
+    this.remember(id);
+    if (this.st.state !== 'ready') return refuse(this.st.state === 'paused' ? 'Voice output is paused.' : 'Voice output is off: enable it first.');
+    if (msg.outputAuthorizationId !== this.st.authorizationId) return refuse('Stale voice-output authorization.');
+    if (typeof msg.outputGeneration !== 'number') return refuse('Missing output generation.');
+    if (msg.outputGeneration !== this.st.generation) return refuse('Voice output was paused or interrupted after this was shown; press Speak again if you still want it spoken.');
+    if (live.state !== 'active') return refuse(`Live is ${live.state}: reviewed speech needs an active Live session.`);
+    if (msg.liveAuthorizationId !== live.authorizationId) return refuse('Stale Live authorization.');
+    const restarted = 'Live was paused, interrupted or restarted after this utterance; mouth it again.';
+    if (msg.liveGeneration !== live.generation) return refuse(restarted);
+    if (!target || target.decision !== 'shown' || target.authorizationId !== live.authorizationId) return refuse('No recognised utterance to speak.');
+    if (target.generation !== live.generation) return refuse(restarted);
+    if (target.utteranceId !== utteranceId) return refuse('A newer utterance was recognised: only the latest one can be spoken.');
+    if (typeof target.reviewExpiresAt !== 'number' || this.now() > target.reviewExpiresAt) return refuse('Review window expired: mouth it again.');
+    const once = `rev:${live.authorizationId}:${utteranceId}`;
+    if (this.seen.has(once)) return refuse('This utterance was already spoken.');
+    if (!choice) return refuse('Unknown candidate kind.');
+    const shown = target.reviewCandidates ?? [];
+    const c = shown[index];
+    let say: string;
+    if (choice === 'edited') {
+      if (!c) return refuse('Unknown basis candidate for the correction.');
+      if (!sent.trim()) return refuse('Nothing to say.');
+      if (sent.trim().length > MAX_TYPED_CHARS) return refuse(`Longer than ${MAX_TYPED_CHARS} characters.`);
+      if (msg.textHash !== sha256Hex(sent)) return refuse('Text hash mismatch.');
+      say = sent.trim(); // user-authored: spoken verbatim
+    } else {
+      if (!c || c.index !== index || c.kind !== choice) return refuse('Unknown candidate: not one that was shown for this utterance.');
+      if (sent !== c.text) return refuse('Candidate text does not match what was shown.');
+      if (msg.textHash !== c.textHash || c.textHash !== sha256Hex(c.text)) return refuse('Text hash mismatch.');
+      say = speakableCase(c.text);
+    }
+    this.enqueue(d, say);
+    if (d.state !== 'refused') this.remember(once); // a route/queue refusal leaves the utterance speakable
+  }
+
   private remember(id: string): void {
     if (this.seen.size >= 1024) this.seen.delete(this.seen.values().next().value!);
     this.seen.add(id);
@@ -120,7 +185,7 @@ export class SpeechOutput extends EventEmitter {
     return { requestId, outputAuthorizationId: this.st.authorizationId, generation: this.st.generation, source, text, state: 'queued', reason: null, voice: null, remoteAudibility: 'unknown', timings: { requestedAt: this.now() } };
   }
 
-  private enqueue(d: SpeechDelivery): void {
+  private enqueue(d: SpeechDelivery, say = d.text): void {
     const route = this.route();
     if (!route || route.status().state !== 'ready') {
       d.state = 'refused'; d.reason = `Virtual microphone not ready: ${this.routeStatus().reason ?? this.routeStatus().state}.`; d.timings.endedAt = this.now();
@@ -130,7 +195,7 @@ export class SpeechOutput extends EventEmitter {
       d.state = 'refused'; d.reason = `Too many messages waiting (${MAX_PENDING}); wait or stop.`; d.timings.endedAt = this.now();
       return this.deliver(d);
     }
-    this.waiting.push({ d, generation: this.st.generation, abort: new AbortController(), routed: false });
+    this.waiting.push({ d, say, generation: this.st.generation, abort: new AbortController(), routed: false });
     this.deliver(d);
     this.announce();
     void this.work();
@@ -145,7 +210,7 @@ export class SpeechOutput extends EventEmitter {
         this.active.add(r);
         r.d.state = 'synthesizing'; r.d.timings.synthStartAt = this.now(); this.deliver(r.d);
         let audio: TtsResult;
-        try { audio = await this.tts.synth(r.d.text, 'file', r.abort.signal); } catch (e) {
+        try { audio = await this.tts.synth(r.say, 'file', r.abort.signal); } catch (e) {
           if (this.active.has(r)) this.finish(r, 'failed', `Speech synthesis failed: ${e instanceof Error ? e.message : String(e)}. Nothing was sent.`);
           continue;
         }

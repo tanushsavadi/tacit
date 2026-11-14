@@ -79,6 +79,8 @@ def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.
     out["ms"]["total"] = round((time.perf_counter() - t0) * 1000)
     out["text"] = texts[0][0] if texts else ""
     out["n_tokens"] = len(texts[0][1]) if texts else 0
+    # Other N-best decodes of the same video, raw and in beam order: display-only review candidates (never rewritten).
+    out["alternatives"] = [t for t, _, _ in texts[1:]]
     # Reliability-gate features (calibrated later on real silent recordings; not a gate yet).
     out["gate"] = {**(best or {}), "nbest_margin_per_token": alt, "runner_up": texts[1][0] if len(texts) > 1 else None,
                    "frames_per_token": round(len(clip.frames) / max(out["n_tokens"], 1), 2),

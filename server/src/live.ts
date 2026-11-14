@@ -3,8 +3,8 @@
 // status; partially received utterances are tracked per sending connection. Recognised text is only ever SHOWN to the
 // user: this module has no path to TTS or the call, and
 // `autoTransmitAllowed` is the literal type `false` until a reliability gate is validated on real silent recordings.
-import { randomUUID } from 'node:crypto';
-import type { ClientMessage, LiveRecognitionCapability, LiveStatus, PhraseMatch, RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
+import { createHash, randomUUID } from 'node:crypto';
+import type { ClientMessage, LiveRecognitionCapability, LiveStatus, PhraseMatch, RecognitionHypothesis, ReviewCandidate, ServerMessage } from '../../shared/protocol.ts';
 
 export const LIVE_CAPABILITY: LiveRecognitionCapability = {
   protocol: 'tacit-live-v1', supportedInputs: ['camera'], automaticSpeechValidated: false, validationEvidence: null,
@@ -13,11 +13,33 @@ export const LIVE_CAPABILITY: LiveRecognitionCapability = {
 /** Recognitions running or queued at the recogniser per connection; more are answered 'busy' rather than queued. */
 export const MAX_INFLIGHT = 2;
 const MAX_SEEN_IDS = 512;
+/** How long a shown utterance stays speakable through `speak_reviewed` (review + optional correction). */
+export const REVIEW_TTL_MS = 120_000;
+const MAX_ALTERNATIVES = 4;
+export const sha256Hex = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 export const AUTOMATIC_GATED = 'Automatic transmission is gated until silent-speech reliability is validated on real silent recordings.';
 
 export interface RecognizerResult {
   text: string | null; error?: string; model?: string; n_tokens?: number; face_fraction?: number;
-  ms?: Record<string, number>; gate?: Record<string, number | string | null>; phrase?: unknown;
+  ms?: Record<string, number>; gate?: Record<string, number | string | null>; phrase?: unknown; alternatives?: unknown;
+}
+
+/** Other N-best texts from the sidecar: strings only, trimmed, non-empty, ≤ 200 chars, distinct, never the raw text. */
+export function alternatives(x: unknown, raw: string): string[] {
+  if (!Array.isArray(x)) return [];
+  const out: string[] = [];
+  for (const v of x) {
+    const t = typeof v === 'string' ? v.trim() : '';
+    if (t && t.length <= 200 && t !== raw && !out.includes(t)) out.push(t);
+  }
+  return out.slice(0, MAX_ALTERNATIVES);
+}
+
+/** The exact texts a user may pick for reviewed speech: raw, alternatives, then the phrase only if ACCEPTED. */
+function reviewCandidates(raw: string, alts: string[], phrase: PhraseMatch | null): ReviewCandidate[] {
+  const list: Omit<ReviewCandidate, 'index' | 'textHash'>[] = [{ kind: 'raw', text: raw }, ...alts.map((text) => ({ kind: 'alternative' as const, text }))];
+  if (phrase?.accepted && !list.some((c) => c.text === phrase.phrase)) list.push({ kind: 'phrase', text: phrase.phrase });
+  return list.map((c, index) => ({ ...c, index, textHash: sha256Hex(c.text) }));
 }
 
 /** The sidecar is local, but its JSON is still validated field by field before it reaches clients. */
@@ -42,11 +64,18 @@ export class LiveSession {
   private inflight = new Set<AbortController>();
   /** utteranceIds already answered under the current authorization (exactly one recognition per id). */
   private seen = new Set<string>();
+  /** Latest SHOWN hypothesis of the current authorization: the only utterance `speak_reviewed` may speak from. */
+  private latestShown: RecognitionHypothesis | null = null;
   droppedBinary = 0;
 
   constructor(private recognize: Recognizer, private send: (m: ServerMessage) => void, private now = () => Date.now()) {}
 
   get current(): LiveStatus { return { ...this.status }; }
+  /** Latest shown utterance of the current authorization (callers still check generation, expiry and Live state). */
+  reviewTarget(): RecognitionHypothesis | null {
+    const h = this.latestShown;
+    return h && h.authorizationId === this.status.authorizationId ? h : null;
+  }
   announce(): void { this.send({ type: 'live_status', status: this.current }); }
 
   control(msg: Extract<ClientMessage, { type: 'live_control' }>): void {
@@ -61,12 +90,13 @@ export class LiveSession {
         if ((msg.mode ?? 'display-only') === 'automatic') { this.status = { ...s, reason: AUTOMATIC_GATED }; break; }
         if (msg.inputSource && msg.inputSource !== 'camera') { this.status = { ...s, reason: 'Only camera input is supported by this recogniser.' }; break; }
         this.seen.clear();
+        this.latestShown = null;
         bump({ authorizationId: randomUUID(), state: 'active', mode: 'display-only', reason: 'Live (display only): recognised words are shown to you, not spoken.' });
         break;
       case 'pause': if (s.state === 'active') bump({ state: 'paused', reason: 'Paused.' }); break;
       case 'resume': if (s.state === 'paused') bump({ state: 'active', reason: 'Live (display only).' }); break;
       case 'interrupt': bump({ reason: s.state === 'off' ? s.reason : 'Interrupted: pending utterances dropped.' }); break;
-      case 'end': bump({ authorizationId: null, state: 'off', reason: 'Live ended.' }); break;
+      case 'end': this.latestShown = null; bump({ authorizationId: null, state: 'off', reason: 'Live ended.' }); break;
     }
     for (const conn of [...this.pending.keys()]) this.abandonPending(conn, 'Incomplete: Live control changed before all frames arrived.');
     this.announce();
@@ -133,21 +163,26 @@ export class LiveSession {
     // motion → endpoint decision, browser clock, from the header) and the upload of the frames to this server.
     const endpointWait = p.msg.endpointMs - p.msg.endMs;
     const extra = { ...(Number.isFinite(endpointWait) && endpointWait >= 0 ? { endpoint_wait: Math.round(endpointWait) } : {}), upload: Math.round(received - p.headerAt), ...windowStats(p.msg) };
-    this.result(p.msg, r, err, this.now() - received, extra);
+    this.result(p.msg, r, err, this.now() - received, extra, p.generation);
   }
 
-  private result(msg: Utterance, r: RecognizerResult | null, err: string | null, ms: number, extra: Record<string, number> = {}): void {
+  private result(msg: Utterance, r: RecognizerResult | null, err: string | null, ms: number, extra: Record<string, number> = {}, generation?: number): void {
     const text = (r?.text ?? '').trim();
     const reason = err ?? (r?.error ? r.error : !text ? 'No words decoded.' : null);
     const margin = r?.gate?.nbest_margin_per_token;
+    const phrase = reason ? null : phraseMatch(r?.phrase);
+    const alts = reason ? [] : alternatives(r?.alternatives, text);
     const h: RecognitionHypothesis = {
       utteranceId: msg.utteranceId, authorizationId: msg.authorizationId, rawText: reason ? '' : text,
       final: true, stable: false,
       uncertainty: typeof margin === 'number' ? { value: margin, kind: 'nbest-margin-per-token', calibrated: false } : null,
       model: r?.model ?? 'unavailable', source: 'visual-model', decision: reason ? 'abstained' : 'shown', reason,
       recognitionMs: ms, stages: r?.ms || Object.keys(extra).length ? { ...(r?.ms ?? {}), ...extra } : null, gate: r?.gate ?? null, transmitted: false,
-      phraseMatch: reason ? null : phraseMatch(r?.phrase),
+      phraseMatch: phrase,
+      ...(generation !== undefined ? { generation } : {}),
+      ...(reason ? {} : { alternatives: alts, reviewCandidates: reviewCandidates(text, alts, phrase), reviewExpiresAt: this.now() + REVIEW_TTL_MS }),
     };
+    if (!reason && generation === this.status.generation && msg.authorizationId === this.status.authorizationId) this.latestShown = h;
     this.send({ type: 'recognition_hypothesis', hypothesis: h });
   }
 }

@@ -261,6 +261,27 @@ export interface RecognitionHypothesis {
    * the utterance abstained or the recogniser did not compute it.
    */
   phraseMatch?: PhraseMatch | null;
+  /** Live generation this utterance was recognised under (additive). A `speak_reviewed` must echo it. */
+  generation?: number;
+  /** Other N-best decodes of the same video (raw model output, display-only, additive). Excludes `rawText`. */
+  alternatives?: string[];
+  /**
+   * Reviewed speech (additive): the EXACT texts the server will accept in `speak_reviewed` for this utterance — raw
+   * text (index 0), N-best alternatives, and the phrase match only if accepted. Present only when decision 'shown'.
+   */
+  reviewCandidates?: ReviewCandidate[];
+  /** Server clock (ms since epoch): after this, `speak_reviewed` for this utterance is refused as expired. */
+  reviewExpiresAt?: number;
+}
+
+export type ReviewCandidateKind = 'raw' | 'alternative' | 'phrase';
+export interface ReviewCandidate {
+  kind: ReviewCandidateKind;
+  /** Position in `reviewCandidates` (0 = raw). */
+  index: number;
+  text: string;
+  /** Lowercase hex SHA-256 of the UTF-8 bytes of `text`. */
+  textHash: string;
 }
 
 export interface PhraseMatch {
@@ -310,8 +331,14 @@ export interface SpeechOutputStatus {
   recognizedSpeechAllowed: false;
   reason: string;
 }
-/** 'typed' = user-authored AAC text (explicit send). 'recognized' = visual model output (gated; never sent today). */
-export type SpeechSource = 'typed' | 'recognized';
+/**
+ * 'typed' = user-authored AAC text (explicit send). 'recognized' = visual model output spoken AUTOMATICALLY (gated;
+ * never sent today). 'reviewed-recognition' = one exact displayed recognition candidate the user picked and pressed
+ * Speak on (`speak_reviewed`). 'user-corrected' = text the user edited from a recognition candidate before pressing
+ * Speak — user-authored, NOT model output.
+ */
+export type SpeechSource = 'typed' | 'recognized' | 'reviewed-recognition' | 'user-corrected';
+export type ReviewChoice = ReviewCandidateKind | 'edited';
 export interface SpeechDelivery {
   requestId: string;
   /** The voice-output authorization and generation this request was accepted under (null/current for refusals). */
@@ -327,6 +354,8 @@ export interface SpeechDelivery {
   reason: string | null;
   voice: string | null;
   remoteAudibility: 'unknown';
+  /** Reviewed/corrected speech only: which utterance and candidate it came from (for 'edited': the edit's basis). */
+  review?: { utteranceId: string; liveAuthorizationId: string; candidate: ReviewChoice; index: number };
   /** Server clock (ms since epoch). */
   timings: { requestedAt: number; synthStartAt?: number; synthEndAt?: number; firstAudioAt?: number; renderedAt?: number; endedAt?: number };
 }
@@ -409,7 +438,17 @@ export type ClientMessage =
    */
   | { type: 'speak_typed'; requestId: string; outputAuthorizationId: string; text: string;
       /** Recommended: the output_status.generation the user saw when sending. A mismatch (pause/interrupt since) is refused. */
-      outputGeneration?: number };
+      outputGeneration?: number }
+  /**
+   * Reviewed recognised speech: the user explicitly picked candidate `index` of the LATEST shown utterance and pressed
+   * Speak. Echo `reviewCandidates[index]` exactly (kind, text, textHash) plus the output and Live authorizations and
+   * generations the user saw. Spoken at most once per utterance; refused when paused, stale, expired, superseded by a
+   * newer shown utterance, or on any mismatch. candidate 'edited' = user-corrected text based on `index`: `text` is
+   * free (≤ 500 chars), `textHash` = SHA-256 of `text`, spoken with source 'user-corrected'.
+   */
+  | { type: 'speak_reviewed'; requestId: string; outputAuthorizationId: string; outputGeneration: number;
+      liveAuthorizationId: string; liveGeneration: number; utteranceId: string;
+      candidate: ReviewChoice; index: number; text: string; textHash: string };
 
 export type ServerMessage =
   | { type: 'snapshot'; snapshot: Snapshot }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
-import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, MAX_INFLIGHT, phraseMatch, windowStats, type Recognizer } from './live.ts';
+import { createHash } from 'node:crypto';
+import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, MAX_INFLIGHT, REVIEW_TTL_MS, phraseMatch, windowStats, type Recognizer } from './live.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 function setup(recognize?: Recognizer) {
@@ -16,6 +17,61 @@ const send = (live: LiveSession, auth: string, id: string, n = 3) => {
   live.utterance({ type: 'visual_utterance', utteranceId: id, authorizationId: auth, startMs: 0, endMs: 100, endpointMs: 120, frameTimesMs: Array.from({ length: n }, (_, i) => 1000 + i * 33) });
   for (let i = 0; i < n; i++) live.frame(Buffer.from([0xff, 0xd8, i]));
 };
+
+const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
+
+describe('LiveSession — reviewed-speech candidates', () => {
+  const phrase = { rule: 'phrase-rule-v1', phrase: 'I NEED HELP WITH THIS', runnerUp: 'CAN YOU HELP ME', accepted: true, reason: null, margin: 0.4, garbageGap: 0.2, listSize: 30 };
+
+  it('a shown utterance lists exactly raw, distinct N-best alternatives and the ACCEPTED phrase, each with its SHA-256', async () => {
+    const { live, hyps, status } = setup(async () => ({ text: 'I NEED HELP WITH THE', model: 'm',
+      alternatives: ['I NEED HELP WITH THIS', 'I NEED HELP WITH THE', '', 'x'.repeat(201), 7], phrase }));
+    live.control({ type: 'live_control', action: 'activate', mode: 'display-only', inputSource: 'camera' });
+    send(live, status().authorizationId!, 'u1');
+    await tick();
+    const h = hyps()[0]!;
+    expect(h.generation).toBe(status().generation);
+    expect(h.alternatives).toEqual(['I NEED HELP WITH THIS']);
+    // the accepted phrase equals an alternative: listed once
+    expect(h.reviewCandidates).toEqual([
+      { kind: 'raw', index: 0, text: 'I NEED HELP WITH THE', textHash: sha('I NEED HELP WITH THE') },
+      { kind: 'alternative', index: 1, text: 'I NEED HELP WITH THIS', textHash: sha('I NEED HELP WITH THIS') },
+    ]);
+    expect(h.transmitted).toBe(false);
+  });
+
+  it('a REJECTED phrase is never a candidate; an accepted distinct phrase is; abstentions carry none', async () => {
+    const results = [
+      { text: 'GOOD MORNING', model: 'm', phrase: { ...phrase, accepted: false, reason: 'ambiguous between phrases' } },
+      { text: 'THE GOOD MORNING', model: 'm', phrase: { ...phrase, phrase: 'GOOD MORNING' } },
+      { text: null, error: 'no lip movement' },
+    ];
+    let i = 0;
+    const { live, hyps, status } = setup(async () => results[i++]!);
+    live.control({ type: 'live_control', action: 'activate', mode: 'display-only', inputSource: 'camera' });
+    for (const id of ['a', 'b', 'c']) { send(live, status().authorizationId!, id); await tick(); }
+    expect(hyps()[0]!.reviewCandidates!.map((c) => c.kind)).toEqual(['raw']);
+    expect(hyps()[1]!.reviewCandidates!.map((c) => [c.kind, c.text])).toEqual([['raw', 'THE GOOD MORNING'], ['phrase', 'GOOD MORNING']]);
+    expect(hyps()[2]!.reviewCandidates).toBeUndefined();
+  });
+
+  it('reviewTarget() = latest SHOWN utterance of the current authorization (abstentions do not replace it); expiry stamped', async () => {
+    let t = 1_000_000;
+    const results = [{ text: 'FIRST', model: 'm' }, { text: 'SECOND', model: 'm' }, { text: null, error: 'no lip movement' }];
+    let i = 0;
+    const out: ServerMessage[] = [];
+    const live = new LiveSession(async () => results[i++]!, (m) => out.push(m), () => t);
+    expect(live.reviewTarget()).toBeNull();
+    live.control({ type: 'live_control', action: 'activate', mode: 'display-only', inputSource: 'camera' });
+    const auth = live.current.authorizationId!;
+    send(live, auth, 'u1'); await tick();
+    send(live, auth, 'u2'); await tick();
+    send(live, auth, 'u3'); await tick();
+    expect(live.reviewTarget()).toMatchObject({ utteranceId: 'u2', rawText: 'SECOND', reviewExpiresAt: t + REVIEW_TTL_MS });
+    live.control({ type: 'live_control', action: 'end' });
+    expect(live.reviewTarget()).toBeNull();
+  });
+});
 
 describe('LiveSession (tacit-live-v1)', () => {
   it('passes a validated phrase match through as display-only; drops malformed ones and any on abstention', async () => {

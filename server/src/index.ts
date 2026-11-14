@@ -312,6 +312,8 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
       return speech.control(msg.action);
     case 'speak_typed':
       return speech.speakTyped(msg);
+    case 'speak_reviewed': // explicit user pick (or correction) of the latest shown utterance; checks in SpeechOutput
+      return speech.speakReviewed(msg, live.current, live.reviewTarget());
     case 'delete_turn_logs':
       await turnLog.deleteAll();
       console.log('[turns] all stored turns deleted by the user');
