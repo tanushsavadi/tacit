@@ -1,13 +1,14 @@
-export interface CapturedVisualFrame { t: number; jpeg: Blob; width: number; height: number }
+export interface CapturedVisualFrame { t: number; jpeg: Blob; width: number; height: number; mediaTimeMs?: number; deliveredAtMs?: number }
 /** Bounded RAM only; timestamps are monotonic performance.now(), never fabricated frame rates. */
 export class VisualFrameBuffer {
   private frames: CapturedVisualFrame[] = [];
   private bytes = 0;
   constructor(readonly maxMs = 10000, readonly maxBytes = 12 * 1024 * 1024, readonly maxFrames = 300) {}
   push(frame: CapturedVisualFrame) {
-    if (!Number.isFinite(frame.t) || frame.jpeg.size > this.maxBytes || frame.t <= (this.frames.at(-1)?.t ?? -Infinity)) return;
+    if (!Number.isFinite(frame.t) || frame.width <= 0 || frame.height <= 0 || !frame.jpeg.size || frame.jpeg.size > this.maxBytes || frame.t <= (this.frames.at(-1)?.t ?? -Infinity)) return false;
     this.frames.push(frame); this.bytes += frame.jpeg.size;
     while (this.frames.length && (this.frames.length > this.maxFrames || this.bytes > this.maxBytes || frame.t - this.frames[0]!.t > this.maxMs)) this.bytes -= this.frames.shift()!.jpeg.size;
+    return true;
   }
   window(startMs: number, endMs: number) { return this.frames.filter(f => f.t >= startMs && f.t <= endMs); }
   clear() { this.frames = []; this.bytes = 0; }

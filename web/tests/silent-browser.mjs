@@ -22,19 +22,46 @@ try{
   await page.setViewportSize({width,height});await capture(`workspace-${name}.png`);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`${name} overflow`);
  }
+ await axe('mobile AirPods input without a camera');
+ assert.equal(await page.getByLabel('Input source',{exact:true}).inputValue(),'airpods');
+ assert.equal(await page.getByRole('button',{name:'Set up camera',exact:true}).count(),0);
  await page.setViewportSize({width:1440,height:900});
  await page.getByRole('button',{name:'Diagnostics',exact:true}).click();await capture('diagnostics-desktop.png');await axe('authenticated inactive workspace and diagnostics');
  await page.getByRole('button',{name:'Close diagnostics',exact:true}).click();
  await page.keyboard.press('Tab');assert.ok(await page.evaluate(()=>document.activeElement!==document.body));
  await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.evaluate(()=>matchMedia('(prefers-reduced-motion: reduce)').matches),true);
  await page.addInitScript(()=>{navigator.mediaDevices.getUserMedia=async()=>{throw new DOMException('Permission denied','NotAllowedError');};});
- await page.reload();await page.getByText('System connected',{exact:true}).waitFor();await page.getByRole('button',{name:'Set up camera',exact:true}).click();
+ await page.reload();await page.getByText('System connected',{exact:true}).waitFor();await page.getByLabel('Input source',{exact:true}).selectOption('camera');await page.getByRole('button',{name:'Set up camera',exact:true}).click();
  await page.getByRole('alert').filter({hasText:'Camera access was denied'}).waitFor();await capture('camera-denied.png');
  await page.getByRole('button',{name:'Turn camera off',exact:true}).click();
  await page.keyboard.press('Escape');await page.getByText('Live speech paused. No articulation is being transmitted.',{exact:true}).waitFor();
  const preview=await context.newPage();await preview.goto(`${base}/?preview=1&content=long`);await preview.setViewportSize({width:390,height:844});
  await preview.getByRole('heading',{name:'Live Silent Speech',exact:true}).waitFor();assert.equal(await preview.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await preview.screenshot({path:fileURLToPath(new URL('mobile-long-preview.png',artifacts)),fullPage:true,animations:'disabled'});await preview.close();
+ const delayed=await context.newPage();
+ await delayed.addInitScript(()=>{
+   navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>{window.resolveDelayedCamera=()=>{
+     const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;const stream=canvas.captureStream(25);window.delayedTrack=stream.getVideoTracks()[0];resolve(stream);
+   };});
+ });
+ await delayed.goto(`${base}/?preview=1`);await delayed.getByLabel('Input source',{exact:true}).selectOption('camera');
+ await delayed.getByRole('button',{name:'Set up camera',exact:true}).click();
+ await delayed.waitForFunction(()=>typeof window.resolveDelayedCamera==='function');
+ await delayed.getByRole('button',{name:'Pause live speech and stop audio',exact:true}).click();
+ await delayed.getByText('Input paused. Nothing is being transmitted.',{exact:true}).waitFor();
+ await delayed.evaluate(()=>window.resolveDelayedCamera());
+ await delayed.waitForFunction(()=>window.delayedTrack?.readyState==='ended');
+ assert.equal(await delayed.locator('video').evaluate(v=>v.srcObject===null),true);
+ await delayed.close();
+ const unsupported=await context.newPage();
+ await unsupported.addInitScript(()=>Object.defineProperty(navigator,'mediaDevices',{value:undefined,configurable:true}));
+ await unsupported.goto(`${base}/?preview=1`);
+ assert.equal(await unsupported.getByLabel('Input source',{exact:true}).inputValue(),'airpods');
+ await unsupported.getByLabel('Input source',{exact:true}).selectOption('camera');
+ await unsupported.getByRole('button',{name:'Set up camera',exact:true}).click();
+ await unsupported.getByRole('alert').filter({hasText:'Use localhost or HTTPS'}).waitFor();
+ await unsupported.getByLabel('Input source',{exact:true}).selectOption('airpods');
+ assert.equal(await unsupported.locator('.recognized-words.placeholder').count(),1);await unsupported.close();
  for(const path of ['/server/data/secrets.json','/server/.env','/server/src/index.ts']){const response=await page.request.get(`${base}/@fs${fileURLToPath(new URL('../..',import.meta.url))}${path}`);assert.equal(response.status(),403);}
  const forbidden=['tap_select','confirm','mouth_gesture_select','request_alternatives','candidates_displayed'];assert.equal(messages.some(t=>forbidden.includes(t)),false);
  assert.ok(audits.every(a=>a.violations.length===0),JSON.stringify(audits));assert.deepEqual(errors,[]);

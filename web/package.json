@@ -12,7 +12,9 @@
     "test:microphone": "node tests/silent-microphone-smoke.mjs",
     "test:vision": "node tests/silent-vision-browser.mjs",
     "validate:human": "node tests/physical-validation.mjs",
-    "open:local": "node scripts/open-local.mjs"
+    "open:local": "node scripts/open-local.mjs",
+    "test:replay": "node tests/replay-vision-browser.mjs",
+    "test:vsr-inputs": "../recognition/.venv/bin/python scripts/check-vsr-inputs.py"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "1.2.3",

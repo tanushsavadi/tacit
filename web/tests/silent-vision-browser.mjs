@@ -15,12 +15,12 @@ try{
   await new Promise((resolve,reject)=>{video.onloadeddata=resolve;video.onerror=reject;video.load();});
   const canvas=document.createElement('canvas');canvas.width=video.videoWidth;canvas.height=video.videoHeight;const ctx=canvas.getContext('2d');
   await new Promise(resolve=>{video.onseeked=resolve;video.currentTime=.1;});ctx.drawImage(video,0,0);
-  const stream=canvas.captureStream(25);const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-  navigator.mediaDevices.getUserMedia=async c=>c.video?stream:original(c);
+  const original=navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+  navigator.mediaDevices.getUserMedia=async c=>c.video?canvas.captureStream(25):original(c);
   window.referencePlayback=video;window.drawReference=setInterval(()=>ctx.drawImage(video,0,0),40);
   const banner=document.createElement('div');banner.textContent='RECORDED-FACE TEST · real MediaPipe · preview conversation · not live silent-speech recognition';banner.style.cssText='padding:15px;background:#463a22;color:#fff1cd;text-align:center;font:14px sans-serif';document.body.prepend(banner);
  });
- await page.getByRole('button',{name:'Set up camera',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.camera-state')?.textContent==='Face tracked',null,{timeout:25000});
+ await page.getByLabel('Input source',{exact:true}).selectOption('camera');await page.getByRole('button',{name:'Set up camera',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.camera-state')?.textContent==='Face tracked',null,{timeout:25000});
  await page.getByRole('button',{name:'Diagnostics',exact:true}).click();
  await page.evaluate(async()=>{window.referencePlayback.loop=false;await window.referencePlayback.play();});
  await page.waitForFunction(()=>{const rows=[...document.querySelectorAll('dl>div')];return Number(rows.find(r=>r.querySelector('dt')?.textContent==='Captured frames in RAM')?.querySelector('dd')?.textContent)>8;},null,{timeout:15000});

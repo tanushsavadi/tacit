@@ -4,6 +4,8 @@ export interface VisionFrame {
   t: number; tracked: boolean; jaw: number; smile: number; pucker: number;
   mouthAspect: number; yaw: number; pitch: number; inferenceMs: number;
   faceCount?: number;
+  /** Present only for explicitly recorded-input evaluation; source PTS, not delivery time. */
+  mediaTimeMs?: number;
 }
 export const emptyFrame = (t = 0): VisionFrame => ({ t, tracked: false, jaw: 0, smile: 0, pucker: 0, mouthAspect: 0, yaw: 0, pitch: 0, inferenceMs: 0 });
 

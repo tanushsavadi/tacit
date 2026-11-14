@@ -9,7 +9,7 @@ const makeSession=(port:SilentSpeechPort,changed:ConstructorParameters<typeof Li
 const frame=(t:number,jaw=0):VisionFrame=>({...emptyFrame(t),tracked:true,faceCount:1,jaw,mouthAspect:jaw*0.5});
 const utterance=(id='u1'):VisualUtterance=>({id,startMs:0,endMs:800,detectedAtMs:1300,endpointMs:500,trackedFrames:15,frames:Array.from({length:20},(_,i)=>({t:i*50,jpeg:new Blob(['pixels']),width:640,height:480}))});
 const result=(id='u1'):VisualHypothesis=>({utteranceId:id,authorizationId:'auth',rawText:'my own words',final:true,stable:true,uncertainty:null,model:'TEST ONLY',source:'visual-model',decision:'accepted',reason:null,recognitionMs:20});
-const makePort=():SilentSpeechPort=>({availability:{connected:true,visualModelReady:true,automaticSpeechValidated:true,validationEvidence:'TEST FIXTURE ONLY',model:'TEST ONLY',reason:''},activate:async(callId)=>({id:'auth',callId,generation:'g1'}),submit:async(_auth,u)=>result(u.id),pause(){},interrupt(){},end(){}});
+const makePort=():SilentSpeechPort=>({availability:{connected:true,recognitionReady:true,supportedInputs:['camera'],validatedInputs:['camera'],automaticSpeechValidated:true,validationEvidence:'TEST FIXTURE ONLY',model:'TEST ONLY',reason:''},activate:async(callId)=>({id:'auth',callId,generation:'g1',mode:'automatic'}),submit:async(_auth,u)=>result(u.id),pause(){},interrupt(){},end(){}});
 
 test('motion endpointing emits actual timing for repeated movement then quiet, not words',()=>{
  const segmenter=new ArticulationSegmenter(); let found=null;
@@ -56,9 +56,9 @@ test('pause cancels in-flight recognition and prevents late hypotheses',async()=
  assert.equal(session.active,false);assert.equal(session.state.phase,'paused');assert.equal(session.state.hypothesis,null);assert.equal(paused,1);
 });
 test('disconnect/end during activation invalidates and releases late authorization',async()=>{
- const port=makePort();let resolve!:(r:{id:string;callId:string;generation:string})=>void;let ended=0;
+ const port=makePort();let resolve!:(r:{id:string;callId:string;generation:string;mode:'automatic'})=>void;let ended=0;
  port.activate=()=>new Promise(r=>resolve=r);port.end=()=>ended++;
- const session=makeSession(port,()=>{});const pending=session.start('call');session.stop();resolve({id:'auth',callId:'call',generation:'g1'});
+ const session=makeSession(port,()=>{});const pending=session.start('call');session.stop();resolve({id:'auth',callId:'call',generation:'g1',mode:'automatic'});
  assert.equal(await pending,false);assert.equal(session.active,false);assert.equal(ended,1);
 });
 test('unstable or mismatched accepted output is rejected; uncertain raw words remain available for recovery',async()=>{

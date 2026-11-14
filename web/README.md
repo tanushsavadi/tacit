@@ -37,3 +37,25 @@ Camera failure: use localhost/HTTPS, check Chrome camera permission, close other
 Before automatic transmission can be enabled: evaluate previously unseen genuinely silent human utterances with references; report WER, abstentions, incorrect transmissions, non-speech false triggers and measured endpoint/recognition/delivery/turn-taking latency. A human remote listener must confirm actual received words and audibility.
 
 MediaPipe is pinned to 1.2.3 with matching local WASM/model assets. Fonts are self-hosted, SIL OFL 1.1; sources/licenses in public/ASSETS.md. Existing esbuild/fsevents lifecycle warnings were inspected: installed functionality works without script approval; no security settings were weakened.
+
+## Recorded-input evaluation (no recognition or speech)
+
+Open `http://localhost:5173/?replay=1`, choose an existing local video, then **Replay from start**. This isolated route uses the production MediaPipe worker and bounded JPEG/segmentation pipeline without connecting to TACIT, using a microphone, uploading frames or producing model predictions/audio. Pause (or Escape/page backgrounding) releases playback and capture. Replay starts from the beginning after a pause. Use 0.5×/1×/2× delivery, dropped capture/worker samples, or the labeled 1.0–1.6 s tracking interruption. Source timestamps stay in recording time; delivery fps is measured separately. When requestVideoFrameCallback is supported, timestamps come from presented-frame mediaTime; older-browser fallback uses video.currentTime and is less precise.
+
+Optional labels are a JSON array with ordered non-overlapping intervals:
+
+```json
+[
+  {"startMs": 900, "endMs": 2500, "kind": "silent", "text": "the actual reference words"},
+  {"startMs": 3000, "endMs": 4500, "kind": "non-speech"},
+  {"startMs": 5000, "endMs": 6800, "kind": "voiced", "text": "a separate voiced control"}
+]
+```
+
+Reference labels are evaluation metadata only; they are never model input or recognized text. Boundary matching reports overlap, onset/offset error, endpoint delay, misses, unmatched windows, and windows overlapping non-speech. No quality threshold or WER is inferred from boundary overlap. Append real neutral footage after the last utterance to measure its quiet endpoint: the runner does not invent trailing frames or speech boundaries after EOF. Export is an explicit local action; reports contain supplied reference labels and aggregate metrics, never images. Keep reports/recordings private under ignored `artifacts/` or `data/` and do not commit them.
+
+`npm run test:replay` uses an existing local CREMA-D **voiced** recording, repeats it with frozen lead/trail pixels, runs the genuine vision pipeline at three speeds plus capture/worker drop and tracking faults, checks pause/restart/pagehide and no application WebSocket/POST/API upload, and runs axe. Requires ffmpeg/ffprobe and headed Chrome (the local MediaPipe CPU worker still needs a working WebGL context). No unsafe GPU flags. The source actor video is not committed or downloaded by the test; the temporary conversion is removed afterward. It is a code/segmentation regression, never silent-speech accuracy evidence. Set `TACIT_REPLAY_VIDEO=/absolute/path.mp4` and optionally `TACIT_REPLAY_LABELS=/absolute/path.json` to reuse your own held-out recordings; there is no minimum number of motion windows asserted for user recordings.
+
+`npm run test:vision` retains the camera-stream recorded-input regression. `npm test` includes synthetic feature/state fixtures labeled TEST ONLY; those cover transport cancellation/backpressure and cannot establish model accuracy. The live recognition adapter stays unavailable until the backend publishes its typed contract.
+
+`npm run test:vsr-inputs` is an optional offline feasibility probe using the existing `recognition/.venv` and real Auto-AVSR weights. It compares original FLV, complete H.264 MP4, complete VP8 WebM, and a probe-only OpenCV JPEG80→RGB sequence through the actual cropper/model. It writes only an aggregate report under ignored `artifacts/transport/` and removes temporary conversions. This is one voiced-clip feasibility check, not browser encoder latency, silent accuracy, or a production JPEG decoder. It is deliberately outside unit tests/CI so ordinary frontend development does not require model weights.
