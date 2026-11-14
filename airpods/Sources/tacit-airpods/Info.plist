@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>edu.hackumass.tacit-airpods</string>
+  <key>CFBundleName</key><string>tacit-airpods</string>
+  <key>NSMotionUsageDescription</key><string>TACIT reads AirPods motion to test camera-free selection.</string>
+</dict>
+</plist>
