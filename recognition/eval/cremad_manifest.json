@@ -1,0 +1,770 @@
+[
+ {
+  "file": "clips/cremad/1040_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1040",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1025_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1025",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1033_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1033",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1008_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1008",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1073_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1073",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1046_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1046",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1034_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1034",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1002_IEO_NEU_XX.flv",
+  "text": "it's eleven o'clock",
+  "speaker": "1002",
+  "sentence": "IEO",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1080_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1080",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1051_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1051",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1074_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1074",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1043_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1043",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1035_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1035",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1060_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1060",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1086_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1086",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1089_TIE_NEU_XX.flv",
+  "text": "that is exactly what happened",
+  "speaker": "1089",
+  "sentence": "TIE",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1043_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1043",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1036_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1036",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1026_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1026",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1025_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1025",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1010_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1010",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1073_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1073",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1076_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1076",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1038_IOM_NEU_XX.flv",
+  "text": "i'm on my way to the meeting",
+  "speaker": "1038",
+  "sentence": "IOM",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1013_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1013",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1032_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1032",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1059_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1059",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1089_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1089",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1011_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1011",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1052_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1052",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1001_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1001",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1006_IWW_NEU_XX.flv",
+  "text": "i wonder what this is about",
+  "speaker": "1006",
+  "sentence": "IWW",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1024_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1024",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1051_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1051",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1044_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1044",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1009_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1009",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1055_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1055",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1025_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1025",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1035_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1035",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1038_TAI_NEU_XX.flv",
+  "text": "the airplane is almost full",
+  "speaker": "1038",
+  "sentence": "TAI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1090_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1090",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1005_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1005",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1086_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1086",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1047_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1047",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1039_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1039",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1053_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1053",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1076_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1076",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1007_MTI_NEU_XX.flv",
+  "text": "maybe tomorrow it will be cold",
+  "speaker": "1007",
+  "sentence": "MTI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1069_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1069",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1011_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1011",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1006_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1006",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1022_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1022",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1054_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1054",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1087_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1087",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1004_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1004",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1005_IWL_NEU_XX.flv",
+  "text": "i would like a new alarm clock",
+  "speaker": "1005",
+  "sentence": "IWL",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1071_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1071",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1076_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1076",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1053_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1053",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1073_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1073",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1058_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1058",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1004_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1004",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1084_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1084",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1029_ITH_NEU_XX.flv",
+  "text": "i think i have a doctor's appointment",
+  "speaker": "1029",
+  "sentence": "ITH",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1016_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1016",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1076_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1076",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1035_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1035",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1065_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1065",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1013_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1013",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1062_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1062",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1033_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1033",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1042_DFA_NEU_XX.flv",
+  "text": "don't forget a jacket",
+  "speaker": "1042",
+  "sentence": "DFA",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1018_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1018",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1065_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1065",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1010_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1010",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1078_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1078",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1003_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1003",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1026_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1026",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1046_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1046",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1030_ITS_NEU_XX.flv",
+  "text": "i think i've seen this before",
+  "speaker": "1030",
+  "sentence": "ITS",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1029_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1029",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1087_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1087",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1015_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1015",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1035_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1035",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1041_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1041",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1020_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1020",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1072_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1072",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1067_TSI_NEU_XX.flv",
+  "text": "the surface is slick",
+  "speaker": "1067",
+  "sentence": "TSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1017_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1017",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1038_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1038",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1073_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1073",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1047_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1047",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1039_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1039",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1078_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1078",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1035_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1035",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ },
+ {
+  "file": "clips/cremad/1024_WSI_NEU_XX.flv",
+  "text": "we'll stop in a couple of minutes",
+  "speaker": "1024",
+  "sentence": "WSI",
+  "source": "CREMA-D",
+  "license": "ODbL-1.0 / DbCL-1.0"
+ }
+]
