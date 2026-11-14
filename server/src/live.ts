@@ -1,5 +1,7 @@
-// Live Silent Speech session (protocol 'tacit-live-v1', shared/protocol.ts). One instance per authenticated user
-// connection. Recognised text is only ever SHOWN to the user: this module has no path to TTS or the call, and
+// Live Silent Speech session (protocol 'tacit-live-v1', shared/protocol.ts). ONE server-wide instance shared by every
+// authenticated user client (browser workspace, menu-bar companion): any client can pause/stop it and all see the same
+// status; partially received utterances are tracked per sending connection. Recognised text is only ever SHOWN to the
+// user: this module has no path to TTS or the call, and
 // `autoTransmitAllowed` is the literal type `false` until a reliability gate is validated on real silent recordings.
 import { randomUUID } from 'node:crypto';
 import type { ClientMessage, LiveRecognitionCapability, LiveStatus, RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
@@ -24,7 +26,8 @@ interface Pending { msg: Utterance; frames: Buffer[]; bytes: number; generation:
 
 export class LiveSession {
   private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, reason: 'Live is off.' };
-  private pending: Pending | null = null;
+  /** Utterance being received, per connection (frames follow their header on the same socket). */
+  private pending = new Map<unknown, Pending>();
   private inflight = new Set<AbortController>();
   /** utteranceIds already answered under the current authorization (exactly one recognition per id). */
   private seen = new Set<string>();
@@ -54,20 +57,23 @@ export class LiveSession {
       case 'interrupt': bump({ reason: s.state === 'off' ? s.reason : 'Interrupted: pending utterances dropped.' }); break;
       case 'end': bump({ authorizationId: null, state: 'off', reason: 'Live ended.' }); break;
     }
-    this.abandonPending('Incomplete: Live control changed before all frames arrived.');
+    for (const conn of [...this.pending.keys()]) this.abandonPending(conn, 'Incomplete: Live control changed before all frames arrived.');
     this.announce();
   }
 
-  private abandonPending(reason: string): void {
-    const p = this.pending;
-    this.pending = null;
+  private abandonPending(conn: unknown, reason: string): void {
+    const p = this.pending.get(conn);
+    this.pending.delete(conn);
     if (p && !p.answered) this.result(p.msg, null, reason, 0);
   }
 
+  /** A client socket closed: drop only its partially received utterance. */
+  disconnect(conn: unknown): void { this.abandonPending(conn, 'Incomplete: the sending client disconnected.'); }
+
   /** Header for one utterance; the next frameTimesMs.length binary messages are its JPEG frames. */
-  utterance(msg: Utterance): void {
+  utterance(msg: Utterance, conn: unknown = null): void {
     const t = msg.frameTimesMs, L = LIVE_CAPABILITY;
-    this.abandonPending('Incomplete: a new utterance header arrived before all frames of this one.');
+    this.abandonPending(conn, 'Incomplete: a new utterance header arrived before all frames of this one.');
     let reject: string | null = null;
     if (this.status.state !== 'active') reject = `Live is ${this.status.state}.`;
     else if (msg.authorizationId !== this.status.authorizationId) reject = 'Stale authorization.';
@@ -80,21 +86,22 @@ export class LiveSession {
       if (this.seen.size >= MAX_SEEN_IDS) this.seen.delete(this.seen.values().next().value!);
       this.seen.add(msg.utteranceId);
     }
-    this.pending = { msg, frames: [], bytes: 0, generation: this.status.generation, reject, answered: false };
+    const p: Pending = { msg, frames: [], bytes: 0, generation: this.status.generation, reject, answered: false };
+    this.pending.set(conn, p);
     if (reject) { // answer now; keep `pending` so this utterance's frames are swallowed
-      this.pending.answered = true;
+      p.answered = true;
       this.result(msg, null, reject, 0);
-      if (!Array.isArray(t) || !t.length) this.pending = null;
+      if (!Array.isArray(t) || !t.length) this.pending.delete(conn);
     }
   }
 
-  frame(buf: Buffer): void {
-    const p = this.pending;
+  frame(buf: Buffer, conn: unknown = null): void {
+    const p = this.pending.get(conn);
     if (!p) { this.droppedBinary++; return; }
     p.frames.push(buf); p.bytes += buf.length;
     if (!p.reject && p.bytes > LIVE_CAPABILITY.maxBytes) p.reject = `Utterance larger than ${LIVE_CAPABILITY.maxBytes} bytes.`;
     if (p.frames.length < p.msg.frameTimesMs.length) return;
-    this.pending = null;
+    this.pending.delete(conn);
     if (!p.reject && this.inflight.size >= MAX_INFLIGHT) p.reject = 'Recogniser busy: earlier utterances are still being recognised; this one was dropped, not queued.';
     if (p.reject) { if (!p.answered) this.result(p.msg, null, p.reject, 0); return; }
     void this.run(p);

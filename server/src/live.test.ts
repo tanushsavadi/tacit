@@ -113,6 +113,20 @@ describe('LiveSession (tacit-live-v1)', () => {
     expect(hyps().filter((h) => h.decision === 'shown')).toHaveLength(MAX_INFLIGHT);
   });
 
+  it('is shared across connections: frames are matched to their own sender; a disconnect drops only that utterance', async () => {
+    const { live, calls, hyps, status } = setup();
+    live.control({ type: 'live_control', action: 'activate' });
+    const auth = status().authorizationId!;
+    const A = {}, B = {};
+    live.utterance({ type: 'visual_utterance', utteranceId: 'a', authorizationId: auth, startMs: 0, endMs: 1, endpointMs: 1, frameTimesMs: [1, 2] }, A);
+    live.utterance({ type: 'visual_utterance', utteranceId: 'b', authorizationId: auth, startMs: 0, endMs: 1, endpointMs: 1, frameTimesMs: [1, 2] }, B);
+    live.frame(Buffer.from([1]), A); live.frame(Buffer.from([2]), B); live.frame(Buffer.from([3]), A);
+    live.disconnect(B);
+    await tick();
+    expect(calls.map((c) => c.frames.map((f) => f[0]))).toEqual([[1, 3]]);
+    expect(hyps().map((h) => [h.utteranceId, h.decision])).toEqual([['b', 'abstained'], ['a', 'shown']]);
+  });
+
   it('ending Live clears authorization; frames without a header are ignored', () => {
     const { live, status } = setup();
     live.control({ type: 'live_control', action: 'activate' });

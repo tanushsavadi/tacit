@@ -23,6 +23,9 @@ import { TwilioCall, twiml, validTwilioSignature } from './twilio.ts';
 import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig } from './auth.ts';
 import { TurnLog } from './turnlog.ts';
 import { LIVE_CAPABILITY, LiveSession, httpRecognizer } from './live.ts';
+import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, unconfiguredRoute } from './route.ts';
+import { SpeechOutput } from './speech.ts';
+import type { VoiceRouteStatus } from '../../shared/protocol.ts';
 import { spawn } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -180,6 +183,58 @@ function broadcast(msg: ServerMessage): void {
 controller.on('change', (snapshot) => broadcast({ type: 'snapshot', snapshot }));
 controller.on('cue', (cue) => broadcast({ type: 'cue', cue }));
 
+// ───────────────────────────── Live Silent Speech + voice output ─────────────────────────────
+// One Live session and one speech-output session for the whole server (one user, one virtual mic per Mac): the
+// browser workspace and the menu-bar companion see and control the same state.
+
+let route: RouteHelper | null = null;
+let routeFallback: VoiceRouteStatus = unconfiguredRoute('Checking for the virtual microphone…');
+const speech = new SpeechOutput(tts, () => route, () => routeFallback);
+speech.on('status', (status) => { broadcast({ type: 'output_status', status }); controller.setServices({ voiceRoute: status.route }); });
+speech.on('delivery', (delivery) => {
+  broadcast({ type: 'speech_delivery', delivery });
+  if (['rendered', 'refused', 'interrupted', 'failed'].includes(delivery.state)) {
+    const t = delivery.timings;
+    console.log(`[speech] ${delivery.source} ${delivery.state}${delivery.reason ? ` (${delivery.reason})` : ''}` +
+      (t.synthEndAt && t.synthStartAt ? ` tts=${t.synthEndAt - t.synthStartAt}ms` : '') +
+      (t.firstAudioAt ? ` request→audio=${t.firstAudioAt - t.requestedAt}ms` : ''));
+  }
+});
+const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m) => {
+  broadcast(m);
+  // Unreachable today: Live refuses 'automatic' and the speech gate is UNVALIDATED_GATE. Kept so the only path from
+  // recognition to voice is the policy-checked one.
+  if (m.type === 'recognition_hypothesis' && live.current.mode === 'automatic') speech.speakRecognized(m.hypothesis, live.current);
+});
+
+async function setupRoute(): Promise<void> {
+  if (route) return;
+  if (process.env.TACIT_ROUTE === 'off') { routeFallback = unconfiguredRoute('Virtual microphone disabled (TACIT_ROUTE=off).'); return; }
+  if (process.platform !== 'darwin') { routeFallback = unconfiguredRoute('Virtual microphone output needs macOS.'); return; }
+  const bin = routeBinary();
+  if (!bin) { routeFallback = unconfiguredRoute('tacit-route is not built: run ./scripts/tacit.sh build'); return; }
+  try {
+    const { devices } = await listDevices(bin);
+    const dev = pickDevice(devices);
+    if (!dev) {
+      routeFallback = unconfiguredRoute(process.env.TACIT_ROUTE_DEVICE_UID
+        ? `Configured TACIT_ROUTE_DEVICE_UID not found.` : 'No BlackHole virtual audio device installed (brew install blackhole-2ch).');
+      return;
+    }
+    route = new RouteHelper(bin, dev, routeGain(dev.uid));
+    route.on('status', () => speech.emit('status', speech.status()));
+    console.log(`[route] virtual microphone: ${dev.name} (gain ${route.status().gainDb} dB${route.status().calibrated ? '' : ', UNCALIBRATED'})`);
+  } catch (e) {
+    routeFallback = unconfiguredRoute(`tacit-route failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    speech.emit('status', speech.status());
+  }
+}
+void setupRoute();
+setInterval(() => { if (route) route.refresh(); else void setupRoute(); }, 15_000).unref();
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => route?.close());
+process.on('exit', () => route?.close());
+
 let simCall: SimCall | null = null;
 
 async function handleClient(msg: ClientMessage): Promise<unknown> {
@@ -237,6 +292,12 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
       console.log(`[tts] voice policy set by the user: ${JSON.stringify(tts.policy)}`);
       return controller.setServices({ voicePolicy: tts.status() });
     }
+    case 'output_control':
+      if (!['enable', 'pause', 'resume', 'stop'].includes(msg.action)) return;
+      console.log(`[speech] voice output ${msg.action} by the user`);
+      return speech.control(msg.action);
+    case 'speak_typed':
+      return speech.speakTyped(msg);
     case 'delete_turn_logs':
       await turnLog.deleteAll();
       console.log('[turns] all stored turns deleted by the user');
@@ -379,21 +440,33 @@ uiWss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'snapshot', snapshot: controller.snapshot() } satisfies ServerMessage));
   ws.send(JSON.stringify({ type: 'session_info', callerInvitePath: `/?invite=${auth.secrets.callerToken}#caller`, authRequired: !auth.disabled } satisfies ServerMessage));
   ws.binaryType = 'nodebuffer';
-  const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m) => { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m)); });
-  live.announce();
+  ws.send(JSON.stringify({ type: 'live_status', status: live.current } satisfies ServerMessage));
+  ws.send(JSON.stringify({ type: 'output_status', status: speech.status() } satisfies ServerMessage));
   ws.on('message', async (data, isBinary) => {
     try {
-      if (isBinary) return live.frame(data as Buffer); // JPEG frames of the current visual_utterance
+      if (isBinary) return live.frame(data as Buffer, ws); // JPEG frames of this socket's current visual_utterance
       const msg = JSON.parse(String(data)) as ClientMessage;
-      if (msg.type === 'live_control') return live.control(msg);
-      if (msg.type === 'visual_utterance') return live.utterance(msg);
+      if (msg.type === 'live_control') {
+        live.control(msg);
+        // Pausing/stopping Live also silences anything TACIT has not finished saying.
+        if (msg.action === 'pause' || msg.action === 'interrupt' || msg.action === 'end') speech.interrupt(`Live ${msg.action === 'end' ? 'ended' : msg.action === 'pause' ? 'paused' : 'interrupted'}.`);
+        return;
+      }
+      if (msg.type === 'visual_utterance') return live.utterance(msg, ws);
       const verdict = (await handleClient(msg)) as { accepted?: boolean; reason?: string } | undefined;
       if (verdict?.accepted === false) console.log(`[ui] ${msg.type} rejected: ${verdict.reason}`);
     } catch (e) {
       console.error('[ui] bad message', e instanceof Error ? e.message : e);
     }
   });
-  ws.on('close', () => { uiClients.delete(ws); live.close(); });
+  ws.on('close', () => {
+    uiClients.delete(ws);
+    live.disconnect(ws);
+    if (uiClients.size === 0) { // nobody left who could see or pause TACIT: fail safe
+      live.close();
+      if (speech.status().state !== 'off') speech.control('stop');
+    }
+  });
 });
 
 callerWss.on('connection', (ws) => {
