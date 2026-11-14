@@ -1,12 +1,34 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 ~09:20 UTC
-**Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: GPT-6 Sol → `docs/WORKSTREAM_SOL.md`.
-**Product:** Mode 2 only — silent speech → the user's voice (AGENTS.md top). Live Silent Speech is enabled once per
-session with pause/mute/stop; no per-utterance confirmation; **automatic transmission stays disabled until the
-recognition reliability gate is measured on real silent recordings.**
-**Current objective:** visual speech recognition (VSR) on genuinely silent webcam speech + a measured reliability gate,
-then the backend recognition/Live contract for Sol's `web/src/silent/port.ts`.
+**Last updated:** 2026-11-14 ~13:10 UTC
+**Last working agent/model:** Claude Code, Opus 5.5 (backend, native, recognition, Git owner). Frontend: Sol (Cursor/Codex) → `docs/WORKSTREAM_SOL.md`, frozen at its ~11:55 UTC checkpoint (committed `80a36ac`).
+**Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
+recognised words stays DISABLED until a silent-speech reliability gate is measured.
+**Start here:** `docs/DEMO_READINESS.md` (status, verified commands, latency, human checklist).
+
+## Restartable checkpoint (state at hand-off)
+- Working tree clean except nothing pending; `main` pushed; CI green through `9511ee1` (later commits: docs + `10fd8fb`).
+- Running locally: `./scripts/tacit.sh start` server on 127.0.0.1:8790 (+ VSR sidecar :8765, whisper :8766, tacit-route
+  helper); `TACIT.app` companion open. Sol's Vite on :5173 and recogniser on :8767 are Sol's processes.
+- **Disk is nearly full (0.2–0.4 GB free)** — first thing to fix; preflight FAILs until ≥ 2 GB (Swift builds hit ENOSPC).
+- Built artefacts (git-ignored): `macos/TacitRoute/.build/release/tacit-route` (rebuilt with swiftc after the watchdog
+  fix; SwiftPM intermediates deleted for space), `macos/TacitCompanion/.build/TACIT.app`, `web/dist` (from `80a36ac`).
+  Rebuild everything: `./scripts/tacit.sh build` (needs disk).
+- Done this session: Live exactly-once/backpressure/shared session/owner rule/heartbeat; tacit-route (BlackHole) with
+  loopback verify, calibration, stop measurement; speech output session + typed AAC; launcher + preflight; companion;
+  fast decoder (SilentFlow, MIT) 4× faster at equal WER; warm-up; Sol's frontend committed; 3 Fable reviews, all P0/P1
+  findings fixed with tests; `live:check`, `live:stress`, `route:check`, `speech:check`, `ui:check` scripts.
+- **Next (human):** FaceTime Audio call with a second listener (DEMO_READINESS C/E.2); `s1` silent recording (E.3).
+- **Next (engineering, after those):** if the call works → AirPods-assisted endpointing experiment (user request,
+  deferred until FaceTime is verified); faster TTS (native AVSpeechSynthesizer streaming in tacit-route — `say` is the
+  largest measured delay, 0.8–1.75 s); ask Sol to send `outputGeneration` with `speak_typed`.
+
+## Requests for Sol (frontend)
+1. Send `outputGeneration: output_status.generation` with every `speak_typed` (additive, `d974748`): the server then
+   refuses a message written before a pause/interrupt instead of speaking it later. The companion already does.
+2. Live is now ended by the server when the socket that sent `activate` closes; other clients (companion) can only
+   pause/resume/end. UI clients that miss a 10 s WebSocket ping are terminated (browsers answer pings automatically).
+3. `speech_delivery` may now end `failed` with reason "audio rendered as silence".
 
 ## Repository
 - `https://github.com/tanushsavadi/tacit` — PRIVATE, branch `main`. Git owner: **Claude** (AGENTS.md → Git).
