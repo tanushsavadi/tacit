@@ -50,6 +50,18 @@ def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.
     if track.roi is None:
         out.update(text=None, error="no face tracked")
         return out
+    # Pre-decode abstention with the thresholds committed in config.py (6dcc82b) before any webcam data. Without it the
+    # model hallucinates fluent text on a still face ("WE'RE GOING TO BE TALKING ABOUT THE": 29/29 resting segments).
+    if len(clip.frames) < config.MIN_FRAMES:
+        out.update(text=None, error="utterance too short")
+        return out
+    if track.face_fraction < config.MIN_FACE_FRACTION:
+        out.update(text=None, error="face not tracked in enough frames")
+        return out
+    if (track.aperture_range is not None and track.width_range is not None
+            and track.aperture_range < config.MIN_APERTURE_RANGE and track.width_range < config.MIN_WIDTH_RANGE):
+        out.update(text=None, error="no lip movement")
+        return out
     x = video.roi_to_tensor(track.roi)
     enc, ms_enc = engine.timed(eng.encode, x)
     hyps, ms_dec = engine.timed(eng.nbest, enc, 3)
@@ -69,7 +81,8 @@ def recognize_clip(eng: engine.VSREngine, crop: video.MouthCropper, clip: video.
     out["n_tokens"] = len(texts[0][1]) if texts else 0
     # Reliability-gate features (calibrated later on real silent recordings; not a gate yet).
     out["gate"] = {**(best or {}), "nbest_margin_per_token": alt, "runner_up": texts[1][0] if len(texts) > 1 else None,
-                   "frames_per_token": round(len(clip.frames) / max(out["n_tokens"], 1), 2)}
+                   "frames_per_token": round(len(clip.frames) / max(out["n_tokens"], 1), 2),
+                   "mouth_brightness": track.roi_brightness, "aperture_range": track.aperture_range}
     return out
 
 

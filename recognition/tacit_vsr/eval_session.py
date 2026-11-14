@@ -43,7 +43,8 @@ def main() -> None:
     for mode in sorted({r["mode"] for r in rows}):
         R = [r for r in rows if r["mode"] == mode]
         E, N = sum(r["errors"] for r in R), sum(r["words"] for r in R)
-        print(f"{mode}: WER {E}/{N} = {E / max(N, 1):.3f}; exact {sum(r['errors'] == 0 for r in R)}/{len(R)}; no face {sum(r.get('text') is None for r in R)}")
+        print(f"{mode or '(no mode)'}: WER {E}/{N} = {E / max(N, 1):.3f}; exact {sum(r['errors'] == 0 for r in R)}/{len(R)}; "
+              f"abstained {sum(r.get('text') is None for r in R)} ({', '.join(sorted({r.get('error') or '' for r in R if r.get('text') is None})) or '-'})")
     B = [r["capture"]["roi_brightness"] for r in rows if (r.get("capture") or {}).get("roi_brightness") is not None]
     if B:
         print(f"capture: mouth brightness median {st.median(B):.0f} (CREMA-D reference 130-160; < 90 = underexposed, expect poor WER)")
