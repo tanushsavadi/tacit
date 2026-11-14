@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RecognitionHypothesis, ServerMessage } from '../../shared/protocol.ts';
-import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, MAX_INFLIGHT, phraseMatch, type Recognizer } from './live.ts';
+import { AUTOMATIC_GATED, LIVE_CAPABILITY, LiveSession, MAX_INFLIGHT, phraseMatch, windowStats, type Recognizer } from './live.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 function setup(recognize?: Recognizer) {
@@ -33,6 +33,17 @@ describe('LiveSession (tacit-live-v1)', () => {
     expect(hyps().map((h) => h.phraseMatch ?? null)).toEqual([good, null, null, null]);
     expect(hyps().every((h) => h.transmitted === false)).toBe(true);
     expect(phraseMatch({ ...good, phrase: 'x'.repeat(201) })).toBeNull();
+  });
+
+  it('reports segmentation diagnostics (win_*) from the header; nothing for malformed headers', async () => {
+    const { live, hyps, status } = setup();
+    live.control({ type: 'live_control', action: 'activate', mode: 'display-only', inputSource: 'camera' });
+    live.utterance({ type: 'visual_utterance', utteranceId: 'w1', authorizationId: status().authorizationId!, startMs: 980, endMs: 1100, endpointMs: 1580, frameTimesMs: [1000, 1040, 1200] });
+    for (let i = 0; i < 3; i++) live.frame(Buffer.from([0xff, 0xd8, i]));
+    await tick();
+    expect(hyps()[0]!.stages).toMatchObject({ win_start: 980, win_end: 1100, win_ms: 200, win_frames: 3, win_max_gap: 160, endpoint_wait: 480 });
+    expect(windowStats({ startMs: Number.NaN, endMs: 1, frameTimesMs: [1] })).toEqual({});
+    expect(windowStats({ startMs: 0, endMs: 1, frameTimesMs: [] })).toEqual({});
   });
 
   it('refuses automatic mode; display-only activation recognises and shows, never transmits', async () => {

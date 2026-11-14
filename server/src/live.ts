@@ -132,7 +132,7 @@ export class LiveSession {
     // Observable conversation latency (additive keys in `stages`): the browser's own endpoint wait (last detected lip
     // motion → endpoint decision, browser clock, from the header) and the upload of the frames to this server.
     const endpointWait = p.msg.endpointMs - p.msg.endMs;
-    const extra = { ...(Number.isFinite(endpointWait) && endpointWait >= 0 ? { endpoint_wait: Math.round(endpointWait) } : {}), upload: Math.round(received - p.headerAt) };
+    const extra = { ...(Number.isFinite(endpointWait) && endpointWait >= 0 ? { endpoint_wait: Math.round(endpointWait) } : {}), upload: Math.round(received - p.headerAt), ...windowStats(p.msg) };
     this.result(p.msg, r, err, this.now() - received, extra);
   }
 
@@ -150,6 +150,19 @@ export class LiveSession {
     };
     this.send({ type: 'recognition_hypothesis', hypothesis: h });
   }
+}
+
+/**
+ * Segmentation diagnostics from the browser's own header (browser clock, ms), added to `stages` under `win_*` keys:
+ * window start/end (last motion) as sent, captured duration, frame count and the largest gap between frames. They let
+ * a test reconstruct the timeline of consecutive windows (e.g. repeated phrases) without storing any image.
+ */
+export function windowStats(msg: Pick<Utterance, 'startMs' | 'endMs' | 'frameTimesMs'>): Record<string, number> {
+  const t = Array.isArray(msg.frameTimesMs) ? msg.frameTimesMs : [];
+  if (!t.length || !Number.isFinite(msg.startMs) || !Number.isFinite(msg.endMs)) return {};
+  let gap = 0;
+  for (let i = 1; i < t.length; i++) gap = Math.max(gap, t[i]! - t[i - 1]!);
+  return { win_start: Math.round(msg.startMs), win_end: Math.round(msg.endMs), win_ms: Math.round(t.at(-1)! - t[0]!), win_frames: t.length, win_max_gap: Math.round(gap) };
 }
 
 /** HTTP client for recognition/tacit_vsr/service.py (127.0.0.1 only). */
