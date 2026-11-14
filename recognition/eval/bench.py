@@ -16,6 +16,7 @@ CTC 0.1, N-best 10).
     .venv/bin/python -m eval.bench --compare base tempo_1.2
     .venv/bin/python -m eval.bench --union base tempo_1.1          # review coverage of pooled N-best lists
     .venv/bin/python -m eval.bench --session data/webcam/<held-out> --tag heldout1 --variant base --variant tempo_1.1
+    .venv/bin/python -m eval.bench --session data/webcam/<held-out> --tag heldout1 --overlay data/adapt/<name>
 Results: data/eval/bench/<variant>.jsonl (per clip, private transcripts) + one summary row in data/eval/bench/summary.jsonl.
 
 Frozen baseline (`base`, production settings, run 2026-11-14 ~21:13 UTC): silent 44/99 = 44.4% WER, 6/20 exact, reference in
@@ -498,6 +499,8 @@ def main() -> None:
     ap.add_argument("--sets", default="silent,voiced,cremad,rest,nonspeech")
     ap.add_argument("--session", action="append", default=[],
                     help="evaluate these session dirs INSTEAD of the development sessions + CREMA-D (held-out runs)")
+    ap.add_argument("--overlay", default=None, help="apply a personal-adaptation overlay (data/adapt/<name>) to the model "
+                    "before running; result files get '+<name>' in the variant name. Production never loads overlays.")
     ap.add_argument("--tag", default="", help="suffix for result files (keeps held-out results apart from dev runs)")
     ap.add_argument("--compare", nargs=2)
     ap.add_argument("--union", nargs="+", help="review coverage of interleaved saved N-best lists (first = raw)")
@@ -519,6 +522,10 @@ def main() -> None:
             raise SystemExit("--session needs --tag (e.g. heldout1) so results never overwrite the development runs")
     OUT.mkdir(parents=True, exist_ok=True)
     eng, crop = engine.VSREngine(a.device), video.MouthCropper()
+    if a.overlay:
+        from adapt.overlay import load_overlay
+        m = load_overlay(eng.model, Path(a.overlay))
+        print(f"overlay {Path(a.overlay).name}: epoch {m.get('selected_epoch')}, {m['n_params']} params, base {m['base_sha256'][:12]}")
     bn = BNStats(eng)
     sets = set(a.sets.split(","))
     for name in a.variant or ["base"]:
@@ -526,7 +533,7 @@ def main() -> None:
         t = time.perf_counter()
         rows = run_variant(v, sets, eng, crop, bn)
         bn.restore()
-        fname = f"{name}{'@' + a.tag if a.tag else ''}"
+        fname = f"{name}{'+' + Path(a.overlay).name if a.overlay else ''}{'@' + a.tag if a.tag else ''}"
         with open(OUT / f"{fname}.jsonl", "w") as f:
             for r in rows:
                 f.write(json.dumps(r) + "\n")
