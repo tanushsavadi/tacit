@@ -214,6 +214,8 @@ const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m) => {
   if (m.type === 'recognition_hypothesis' && live.current.mode === 'automatic') speech.speakRecognized(m.hypothesis, live.current);
 });
 
+let liveOwner: WebSocket | null = null;
+
 async function setupRoute(): Promise<void> {
   if (route) return;
   if (process.env.TACIT_ROUTE === 'off') { routeFallback = unconfiguredRoute('Virtual microphone disabled (TACIT_ROUTE=off).'); return; }
@@ -454,7 +456,11 @@ uiWss.on('connection', (ws) => {
       if (isBinary) return live.frame(data as Buffer, ws); // JPEG frames of this socket's current visual_utterance
       const msg = JSON.parse(String(data)) as ClientMessage;
       if (msg.type === 'live_control') {
+        const before = live.current.authorizationId;
         live.control(msg);
+        // The client that activated Live (the one with the camera) owns it: when that socket goes away, Live ends.
+        if (msg.action === 'activate' && live.current.authorizationId !== before && live.current.state === 'active') liveOwner = ws;
+        if (msg.action === 'end') liveOwner = null;
         // Pausing/stopping Live also silences anything TACIT has not finished saying.
         if (msg.action === 'pause' || msg.action === 'interrupt' || msg.action === 'end') speech.interrupt(`Live ${msg.action === 'end' ? 'ended' : msg.action === 'pause' ? 'paused' : 'interrupted'}.`);
         return;
@@ -466,9 +472,21 @@ uiWss.on('connection', (ws) => {
       console.error('[ui] bad message', e instanceof Error ? e.message : e);
     }
   });
+  // Heartbeat: a hung or suspended client must not count as "someone who can pause TACIT".
+  let alive = true;
+  ws.on('pong', () => { alive = true; });
+  const beat = setInterval(() => {
+    if (!alive) { console.log('[ui] client missed heartbeat; closing'); return ws.terminate(); }
+    alive = false; ws.ping();
+  }, 10_000);
   ws.on('close', () => {
+    clearInterval(beat);
     uiClients.delete(ws);
     live.disconnect(ws);
+    if (liveOwner === ws) { // the capturing client left: nobody is supplying camera input any more
+      liveOwner = null;
+      if (live.current.state !== 'off') { live.close(); speech.interrupt('Live ended: the capturing client disconnected.'); }
+    }
     if (uiClients.size === 0) { // nobody left who could see or pause TACIT: fail safe
       live.close();
       if (speech.status().state !== 'off') speech.control('stop');

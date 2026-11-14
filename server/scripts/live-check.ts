@@ -44,7 +44,23 @@ ws.on('message', (data) => {
     if (h.transmitted !== false) fail('transmitted must be false');
     if (h.decision !== 'shown') fail(`expected shown, got ${h.decision}: ${h.reason}`);
     ws.send(JSON.stringify({ type: 'live_control', action: 'end' }));
-    console.log('LIVE CHECK OK'); setTimeout(() => process.exit(0), 200);
+    void ownerCheck().then(() => { console.log('LIVE CHECK OK'); setTimeout(() => process.exit(0), 200); });
   }
 });
 ws.on('error', (e) => fail(e.message));
+
+/** A second client (e.g. the menu-bar companion) sees Live end when the client that activated it disconnects. */
+async function ownerCheck(): Promise<void> {
+  const open = (u: string) => new Promise<WebSocket>((res, rej) => { const w = new WebSocket(u); w.once('open', () => res(w)); w.once('error', rej); });
+  const url = `${base}/ws?token=${secrets.userToken}`;
+  const watcher = await open(url), owner = await open(url);
+  const states: string[] = [];
+  watcher.on('message', (d) => { const m = JSON.parse(String(d)) as ServerMessage; if (m.type === 'live_status') states.push(m.status.state); });
+  owner.send(JSON.stringify({ type: 'live_control', action: 'activate', mode: 'display-only', inputSource: 'camera' }));
+  await new Promise((r) => setTimeout(r, 300));
+  owner.close();
+  await new Promise((r) => setTimeout(r, 300));
+  watcher.close();
+  if (states.at(-1) !== 'off' || !states.includes('active')) fail(`owner disconnect did not end Live (watcher saw ${states.join(' → ')})`);
+  console.log(`owner disconnect: watcher saw Live ${states.join(' → ')}`);
+}
