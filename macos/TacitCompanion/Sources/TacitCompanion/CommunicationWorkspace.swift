@@ -35,7 +35,7 @@ struct CommunicationWorkspace: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Previous correction").font(.system(size: 13, weight: .semibold))
                         ScrollView { Text(client.preservedCorrection ?? "No previous correction.").font(.system(size: 18)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
-                        Text("Kept for reference only. Select current recognized words to write a new correction. This old review cannot be sent.")
+                        Text("Kept for reference only. If delivery was unconfirmed, some or all may have played. Nothing is retried automatically. Select current recognized words and explicitly press Speak for any new correction.")
                             .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
                     }
                 }
@@ -104,10 +104,6 @@ struct CommunicationWorkspace: View {
                     .fixedSize(horizontal: false, vertical: true).lineLimit(3)
                 Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).lineLimit(3)
                 Spacer(minLength: 0)
-                if client.preservedCorrection != nil {
-                    Button("View previous correction") { session.surface = .recovery }
-                        .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(.mint)
-                }
                 HStack(spacing: 10) {
                     if client.conn != .connected {
                         IslandAction("Reconnect", symbol: "arrow.clockwise") { client.connect() }
@@ -123,6 +119,10 @@ struct CommunicationWorkspace: View {
                     }
                 }
             }
+        }
+        if client.preservedCorrection != nil {
+            Button("View previous correction") { session.surface = .recovery }
+                .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(.mint)
         }
     }
     private var headline: String {

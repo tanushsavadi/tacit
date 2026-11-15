@@ -80,6 +80,13 @@ final class TacitClient: ObservableObject {
     private var serverClockOffset: Double = 0
     private var reviewExpiryWork: DispatchWorkItem?
     private var pendingReviewedRequest: String?
+    private struct AuthoredApproval: Equatable {
+        let authorizationId: String
+        let generation: Int
+        let textHash: String
+    }
+    /// One pending operation per exact message and authorization, even if My Voice changes meanwhile.
+    private var pendingAuthored: [String: AuthoredApproval] = [:]
     @Published private(set) var reviewExpired = false
 
     let repoRoot: String?
@@ -156,6 +163,7 @@ final class TacitClient: ObservableObject {
         lastHypothesis = nil; lastDelivery = nil; reviewDraft = ReviewDraft(); reviewSubmittedID = nil
         seenHypotheses.removeAll(); hypothesisOrder.removeAll()
         pendingLiveGeneration = nil; pendingOutputGeneration = nil
+        pendingAuthored.removeAll()
         reviewExpiryWork?.cancel(); reviewExpired = false; pendingReviewedRequest = nil
         myVoice = nil; voicePreview = nil; voiceNotice = nil; pendingVoiceSelect = nil
     }
@@ -214,7 +222,7 @@ final class TacitClient: ObservableObject {
                 let generation = st["generation"] as? Int ?? 0
                 if generation != output?.generation { notice = nil }
                 if auth != output?.authorizationId || generation != output?.generation || st["state"] as? String != "ready" {
-                    lastDelivery = nil; reviewDraft = ReviewDraft()
+                    lastDelivery = nil; reviewDraft = ReviewDraft(); pendingAuthored.removeAll()
                 }
                 if let pending = pendingOutputGeneration, generation > pending { pendingOutputGeneration = nil }
                 output = Output(state: st["state"] as? String ?? "?", authorizationId: st["authorizationId"] as? String,
@@ -286,6 +294,11 @@ final class TacitClient: ObservableObject {
                   dl["outputAuthorizationId"] as? String == auth, dl["generation"] as? Int == output?.generation,
                   output?.state == "ready", pendingOutputGeneration == nil,
                   ["typed", "reviewed-recognition", "user-corrected"].contains(dl["source"] as? String ?? "") else { return }
+            // The guard above already rejects revoked authorization/generation and untrusted sources.
+            if dl["source"] as? String == "typed", let id = dl["requestId"] as? String,
+               ["rendered", "failed", "refused", "interrupted"].contains(dl["state"] as? String ?? "") {
+                pendingAuthored.removeValue(forKey: id)
+            }
             lastDelivery = Delivery(requestId: dl["requestId"] as? String ?? "", text: dl["text"] as? String ?? "",
                                     state: dl["state"] as? String ?? "?", reason: dl["reason"] as? String, at: Date(),
                                     firstAudioAt: (dl["timings"] as? [String: Any])?["firstAudioAt"] as? Double,
@@ -435,9 +448,17 @@ final class TacitClient: ObservableObject {
             notice = t.utf16.count > 500 ? "Keep typed speech within 500 characters." : "The virtual microphone is not ready."
             return false
         }
+        let approval = AuthoredApproval(authorizationId: auth, generation: output?.generation ?? -1,
+            textHash: Self.textHash(t))
+        guard !pendingAuthored.values.contains(approval) else {
+            notice = "That message is already pending. Check its delivery before repeating it."
+            return false
+        }
+        let requestID = UUID().uuidString
+        pendingAuthored[requestID] = approval // set before send, including synchronous fixture acknowledgments
         notice = nil
         // outputGeneration: if output was paused/interrupted after this was written, the server refuses it.
-        var request: [String: Any] = ["type": "speak_typed", "requestId": UUID().uuidString, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1]
+        var request: [String: Any] = ["type": "speak_typed", "requestId": requestID, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1]
         // voiceRevision: spoken only in the voice the user saw; a voice change in between is refused, never substituted.
         if let revision = myVoice?.revision { request["voiceRevision"] = revision }
         send(request)
@@ -488,6 +509,7 @@ final class TacitClient: ObservableObject {
             "candidate":reviewDraft.editing ? "edited" : candidate.kind, "index":candidate.index,
             "text":text, "textHash":reviewDraft.editing ? Self.textHash(text) : candidate.textHash]
         if let revision = myVoice?.revision { request["voiceRevision"] = revision }
+        if reviewDraft.editing { preservedCorrection = text } // RAM-only reference, never a new speech authorization
         pendingReviewedRequest = requestID; reviewSubmittedID = h.id; reviewDraft = ReviewDraft()
         send(request)
         return true

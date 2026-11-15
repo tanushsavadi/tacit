@@ -45,7 +45,7 @@ struct TypedComposer: View {
                 Text("Typed by you · \(client.typedDraft.utf16.count)/500").font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
                 if client.output?.state == "ready" {
-                    Button("Speak") { if client.speakTyped(client.typedDraft) { client.typedDraft = "" } }
+                    Button("Speak") { _ = client.speakTyped(client.typedDraft) }
                         .keyboardShortcut(.return, modifiers: .command)
                         .disabled(client.typedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || client.typedDraft.utf16.count > 500 || client.route?.state != "ready")
                 } else {
