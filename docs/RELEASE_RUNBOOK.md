@@ -1,5 +1,40 @@
 # TACIT — release gate and demo runbook
 
+## EXPERIMENTAL personal demo profile (2026-11-15 ~18:00 UTC) — local, single speaker, Review First only
+
+Status: **EXPERIMENTAL** — manually selected by the user for a local demo; NOT validated. `silent2_251` failed the
+pre-registered general-release gate (NO-GO stands, `docs/research/TACIT_PERSONAL_ADAPTATION_V2.md`); its accuracy on
+fresh takes of the demo phrases is **UNVERIFIED** (no fresh recording). Real-time (unreviewed) mode is refused by the
+server while this profile runs; nothing is spoken until the user presses Speak.
+
+```
+./scripts/tacit.sh profile status          # selected + RUNNING profile, Live state (verify before presenting)
+./scripts/tacit.sh profile personal-demo   # experimental overlay (refuses while Live is on or a call is active)
+./scripts/tacit.sh profile base            # ROLLBACK to the unchanged model (~10 s, server keeps running)
+```
+The notch's Model line ends in "+ EXPERIMENTAL personal overlay silent2_251 (review required)" while it is active. If
+the profile cannot be applied (hash mismatch, load error) the recognizer starts the base model and `profile status`
+shows the error. Emergency, any state: `./scripts/tacit.sh profile base --force` (restarts only the recognizer).
+
+**Demo phrases (mouth exactly these; ranked from existing evidence, all were training phrases):**
+1. hello everyone · 2. welcome to our demo · 3. thanks for having me · 4. let me show you how it works ·
+5. no microphone is used at all · 6. thank you so much for listening · 7. I'm really excited to be here ·
+8. let me try that one again (recovery line). Backup: my words are spoken in my own voice · I hope you enjoyed the demo.
+These eight were also read correctly by the BASE model on their recorded take, so the base fallback is strong on them.
+**Do not mouth** your name, "TACIT" or "HackUMass" (wrong even on training clips) — type the introduction instead.
+
+**Flow:** Start communicating (display-only) → mouth one phrase → silence → check the words → pick the right
+candidate or correct it → Speak → Pause before talking aloud. Stop (⌃⇧⌘.) cancels playing/queued audio.
+
+**Prerecorded fallback (say "this is a recorded clip"):** with Live started in the notch,
+`cd server && npx tsx scripts/replay-clip.ts <clip.mp4>` → the result appears in the notch for review/Speak.
+Display-only full replay: `./scripts/demo-replay.sh` (clips listed in git-ignored `recognition/data/demo_replay.txt`).
+
+**Verified (recorded clips as input, voice into BlackHole with no app reading it — no remote listener):** profile
+switch both ways; real-time refused with the Review First reason; shown-not-spoken; Speak rendered once; correction
+spoken verbatim (user-corrected); Stop interrupted playback; Speak after Stop refused (`server/scripts/review-flow-check.ts`
+6/6 on base and on personal-demo). **Not verified:** live camera with the presenter, Google Meet listener hearing it.
+
 ## CURRENT RELEASE — Living Notch + Help Me Respond (`ae5fb91` deployed 05:37–05:45 UTC; notch-band layout `cbb1612` relaunched 05:51 UTC)
 
 **The notch:** sits IN the notch band at the top of the screen — **tacit** in the dark wing left of the camera cutout,
