@@ -5,7 +5,7 @@ struct ConversationView: View {
     @ObservedObject var client: TacitClient
     @ObservedObject var island: IslandController
     var body: some View {
-        CommunicationWorkspace(client: client, island: island, session: island.communication)
+        CommunicationWorkspace(client: client, island: island, session: island.communication, live: island.live)
     }
 }
 

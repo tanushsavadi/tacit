@@ -38,6 +38,8 @@ final class IslandController: ObservableObject {
     @Published private(set) var displayName = ""
     @Published private(set) var reveal = false
     let communication: CommunicationSession
+    /// Native camera + Live for "Start communicating".
+    let live: LiveCoordinator
     private let client: TacitClient
     private var panel: IslandPanel?
     private let frameAnimator = IslandFrameAnimator()
@@ -58,6 +60,7 @@ final class IslandController: ObservableObject {
 
     init(client: TacitClient, communication: CommunicationSession? = nil, registerHotKey: Bool = true) {
         self.client = client
+        self.live = LiveCoordinator(client: client)
         self.communication = communication ?? CommunicationSession()
         let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
         geometry = IslandGeometry(screen: screen)

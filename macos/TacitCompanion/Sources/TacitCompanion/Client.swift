@@ -102,6 +102,18 @@ final class TacitClient: ObservableObject {
     private var pendingLiveGeneration: Int?
     private var pendingOutputGeneration: Int?
     private var hotKey: HotKey?
+
+    // Native Live (camera in this app, NativeCamera). The app owns Live only for the authorization it activated itself.
+    /// Authorization minted by this app's own `activate`; nil when Live is off or another client (browser) took over.
+    @Published private(set) var ownedLiveAuthorization: String?
+    private var awaitingOwnActivation: Int?
+    /// Utterance uploaded by this app whose result has not arrived yet ("Interpreting your words").
+    @Published private(set) var processingUtteranceID: String?
+    private var processingTimeout: DispatchWorkItem?
+    /// Every recognition result for the current authorization (evidence tools; never feeds speech).
+    var onHypothesis: ((_ id: String, _ decision: String, _ text: String, _ reason: String?) -> Void)?
+    var liveActivationPending: Bool { awaitingOwnActivation != nil }
+    var ownsLive: Bool { ownedLiveAuthorization != nil && live?.state == "active" && live?.authorizationId == ownedLiveAuthorization }
     @Published private(set) var hotKeyRegistered = false
 
     /// Dependency injection for offline tests/lab. This transport never opens a socket or reads credentials.
@@ -164,6 +176,7 @@ final class TacitClient: ObservableObject {
         seenHypotheses.removeAll(); hypothesisOrder.removeAll()
         pendingLiveGeneration = nil; pendingOutputGeneration = nil
         pendingAuthored.removeAll()
+        ownedLiveAuthorization = nil; awaitingOwnActivation = nil; clearProcessing()
         reviewExpiryWork?.cancel(); reviewExpired = false; pendingReviewedRequest = nil
         myVoice = nil; voicePreview = nil; voiceNotice = nil; pendingVoiceSelect = nil
     }
@@ -213,6 +226,12 @@ final class TacitClient: ObservableObject {
                     lastHypothesis = nil; reviewDraft = ReviewDraft(); reviewSubmittedID = nil
                 }
                 if let pending = pendingLiveGeneration, generation > pending { pendingLiveGeneration = nil }
+                let auth = st["authorizationId"] as? String, state = st["state"] as? String
+                if let awaiting = awaitingOwnActivation, generation > awaiting {
+                    awaitingOwnActivation = nil
+                    if state == "active", let auth { ownedLiveAuthorization = auth }
+                } else if auth != ownedLiveAuthorization { ownedLiveAuthorization = nil }
+                if state != "active" || generation != live?.generation { clearProcessing() }
                 live = Live(state: st["state"] as? String ?? "?", authorizationId: st["authorizationId"] as? String,
                             generation: st["generation"] as? Int ?? 0, reason: st["reason"] as? String ?? "")
             }
@@ -244,6 +263,8 @@ final class TacitClient: ObservableObject {
             guard let h = m["hypothesis"] as? [String: Any],
                   let auth = live?.authorizationId, !auth.isEmpty, h["authorizationId"] as? String == auth,
                   let id = h["utteranceId"] as? String, !id.isEmpty, !seenHypotheses.contains(id) else { return }
+            if id == processingUtteranceID { clearProcessing() }
+            onHypothesis?(id, h["decision"] as? String ?? "?", h["rawText"] as? String ?? "", h["reason"] as? String)
             seenHypotheses.insert(id); hypothesisOrder.append(id)
             if hypothesisOrder.count > 512 { seenHypotheses.remove(hypothesisOrder.removeFirst()) }
             guard live?.state == "active", pendingLiveGeneration == nil else { return }
@@ -413,6 +434,47 @@ final class TacitClient: ObservableObject {
         if conn == .connected { pendingLiveGeneration = live?.generation; lastHypothesis = nil; lastDelivery = nil; reviewDraft = ReviewDraft() }
         send(["type": "live_control", "action": action])
     }
+    /// Native camera only (NativeCamera owns the frames): mint a display-only Live authorization for this app.
+    /// Explicit user action ("Start communicating"); recognised words are still only shown, never spoken automatically.
+    func activateLive() {
+        guard conn == .connected else { notice = "Not connected to TACIT."; return }
+        awaitingOwnActivation = live?.generation ?? 0
+        pendingLiveGeneration = live?.generation; lastHypothesis = nil; reviewDraft = ReviewDraft()
+        send(["type": "live_control", "action": "activate", "mode": "display-only", "inputSource": "camera"])
+    }
+
+    /// Uploads one endpointed camera window: the JSON header, then exactly one binary message per JPEG, in order.
+    /// Returns the utteranceId, or nil (with a notice) when Live is not owned by this app.
+    @discardableResult
+    func sendVisualUtterance(_ w: CapturedWindow) -> String? {
+        guard ownsLive, pendingLiveGeneration == nil, let auth = ownedLiveAuthorization else { return nil }
+        guard w.valid else { notice = "That capture was incomplete and was discarded."; return nil }
+        let id = UUID().uuidString
+        processingUtteranceID = id
+        let header: [String: Any] = ["type": "visual_utterance", "utteranceId": id, "authorizationId": auth,
+            "startMs": w.startMs, "endMs": w.endMs, "endpointMs": w.endpointMs, "frameTimesMs": w.frames.map(\.t)]
+        if let isolatedTransport {
+            isolatedTransport.send(header)
+            for f in w.frames { isolatedTransport.send(["binaryFrameBytes": f.jpeg.count]) }
+        } else {
+            guard conn == .connected, let t = task, let d = try? JSONSerialization.data(withJSONObject: header),
+                  let s = String(data: d, encoding: .utf8) else { notice = "Not connected to TACIT."; return nil }
+            // Chained so the frames follow their header strictly in order on this socket.
+            FrameUploader(task: t, frames: w.frames.map(\.jpeg)) { [weak self] in
+                Task { @MainActor in self?.notice = "The capture could not be uploaded. Mouth it again."; self?.clearProcessing() }
+            }.start(header: s)
+        }
+        processingTimeout?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.processingUtteranceID == id else { return }
+            self.processingUtteranceID = nil; self.notice = "No result for that sentence. Mouth it again, or type it."
+        }
+        processingTimeout = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: work)
+        return id
+    }
+    private func clearProcessing() { processingTimeout?.cancel(); processingTimeout = nil; processingUtteranceID = nil }
+
     func output(_ action: String) {
         guard ["enable", "pause", "resume", "stop"].contains(action) else { return }
         if conn == .connected { pendingOutputGeneration = output?.generation; lastDelivery = nil; reviewDraft = ReviewDraft() }
@@ -561,5 +623,19 @@ final class TacitClient: ObservableObject {
         guard let tok = cachedToken, var c = URLComponents(string: "http://127.0.0.1:\(port)/") else { notice = "No access token found."; return }
         c.queryItems = [URLQueryItem(name: "token", value: tok)]
         if let u = c.url { NSWorkspace.shared.open(u) }
+    }
+}
+
+/// Sends one header then its frames, each only after the previous write completed (strict order on one socket).
+private final class FrameUploader: @unchecked Sendable {
+    private let task: URLSessionWebSocketTask
+    private var frames: [Data]
+    private let failed: @Sendable () -> Void
+    init(task: URLSessionWebSocketTask, frames: [Data], failed: @escaping @Sendable () -> Void) { self.task = task; self.frames = frames; self.failed = failed }
+    func start(header: String) { task.send(.string(header)) { self.step($0) } }
+    private func step(_ error: Error?) {
+        if error != nil { failed(); return }
+        guard !frames.isEmpty else { return }
+        task.send(.data(frames.removeFirst())) { self.step($0) }
     }
 }

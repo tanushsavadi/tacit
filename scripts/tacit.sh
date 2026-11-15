@@ -1,5 +1,7 @@
 #!/bin/bash
 # TACIT launcher — one entry point for the local runtime.
+#   ./scripts/tacit.sh demo [--browser]  ONE command for a demo: starts only what is missing, opens the TACIT app,
+#                                   prints a readiness report (--browser also opens the optional browser workspace)
 #   ./scripts/tacit.sh build        install deps if missing, build tacit-route (Swift) and the web UI
 #   ./scripts/tacit.sh start [--lan] start the server (spawns + supervises the Auto-AVSR sidecar and whisper-server)
 #                                   bound to 127.0.0.1 (--lan: all interfaces, for a phone browser caller)
@@ -67,7 +69,7 @@ start() {
   for i in $(seq 1 60); do grep -q '\[recognition\] listening' "$LOG" && break; sleep 0.5; done
   grep -q '\[recognition\] listening' "$LOG" && say "recognition: ready" || say "recognition: NOT ready yet (see ./scripts/tacit.sh preflight)"
   grep -E '^\[route\]' "$LOG" | tail -1 || true
-  say "next: ./scripts/tacit.sh preflight   then   ./scripts/tacit.sh open"
+  [ -n "${TACIT_DEMO:-}" ] || say "next: ./scripts/tacit.sh preflight   then   ./scripts/tacit.sh open"
 }
 
 stop() {
@@ -89,7 +91,51 @@ status() {
   if is_tacit; then (cd "$SERVER" && npx tsx scripts/preflight.ts --brief); else say "TACIT not running on :$PORT"; fi
 }
 
+APP="$ROOT/macos/TacitCompanion/.build/TACIT.app"
+companion_pids() { pgrep -f '/TACIT.app/Contents/MacOS/TacitCompanion' 2>/dev/null || true; }
+
+# One entry point for a demo. Idempotent: healthy services are never restarted, so an active call is not disturbed.
+demo() {
+  export TACIT_DEMO=1
+  [ -d /Applications/Xcode.app ] && export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
+  say "TACIT — getting ready"
+  # 1. Build only what is missing (first run on this Mac).
+  if [ ! -d "$SERVER/node_modules" ] || [ ! -d "$ROOT/web/node_modules" ] || [ ! -f "$ROOT/web/dist/index.html" ] \
+     || [ ! -x "$ROOT/macos/TacitRoute/.build/release/tacit-route" ] || [ ! -x "$ROOT/macos/TacitVoice/.build/release/tacit-voice" ] || [ ! -d "$APP" ]; then
+    say "· first run: building TACIT (a few minutes)…"; build
+  fi
+  # 2. Server (+ recognizer + voice helper): start only if not already healthy.
+  if is_tacit; then say "✓ TACIT server already running (pid $(listener_pid "$PORT")) — left as is"
+  else start | sed 's/^/  /'; is_tacit || { say "✗ TACIT server did not start — see ./scripts/tacit.sh logs"; exit 1; }; fi
+  # 3. Exactly one TACIT app. Opening a running app only brings its notch forward (it never starts the camera).
+  local pids n
+  pids="$(companion_pids)"; n=$(printf '%s' "$pids" | grep -c . || true)
+  if [ "$n" -gt 1 ]; then say "! $n TACIT apps are running — quitting all but this checkout's"; fi
+  for p in $pids; do
+    case "$(ps -o command= -p "$p")" in "$APP/Contents/MacOS/TacitCompanion"*) ;; *) say "  quitting TACIT app from another folder (pid $p)"; kill "$p" 2>/dev/null || true ;; esac
+  done
+  if [ -n "$(companion_pids)" ]; then say "✓ TACIT app already open — bringing it forward"; else say "· opening the TACIT app"; fi
+  open "$APP"
+  for i in $(seq 1 20); do lsof -nP -iTCP:"$PORT" -sTCP:ESTABLISHED 2>/dev/null | grep -q '^TacitComp' && break; sleep 0.5; done
+  lsof -nP -iTCP:"$PORT" -sTCP:ESTABLISHED 2>/dev/null | grep -q '^TacitComp' && say "✓ TACIT app connected" || say "! TACIT app has not connected yet — click the TACIT notch/menu-bar icon"
+  # 4. Readiness, from the same checks as preflight (no secrets are printed).
+  say ""; say "Readiness"
+  (cd "$SERVER" && npx tsx scripts/preflight.ts 2>/dev/null) | awk '
+    /recognition service|voice output route|My Voice engine|calling app using the virtual mic|^FAIL/ {
+      tag=$1; sub(/^(PASS|FAIL|INFO|USER ACTION) +/, "");
+      mark = (tag=="PASS") ? "✓" : (tag=="FAIL") ? "✗" : "→"; print "  " mark " " $0 }'
+  [ "${1:-}" = "--browser" ] && { (cd "$SERVER" && npx tsx scripts/open-workspace.ts) | sed 's/^/  /'; }
+  say ""
+  say "Next"
+  say "  1. In Google Meet: Settings › Audio › Microphone = BlackHole 16ch (keep your speakers/headphones as output)."
+  say "  2. In the TACIT notch at the top of the screen, press  Start communicating."
+  say "     The first time, macOS asks to allow the camera for TACIT — choose Allow."
+  say "  3. Mouth a sentence → review it → press Speak. Typing, phrases, Hold my turn and My Voice are in the notch."
+  say "  Stop everything at any time: ⌃⇧⌘.   (nothing is ever spoken without Speak)"
+}
+
 case "${1:-help}" in
+  demo) demo "${2:-}" ;;
   build) build ;;
   start) start "${2:-}" ;;
   stop) stop ;;
@@ -98,5 +144,5 @@ case "${1:-help}" in
   preflight) (cd "$SERVER" && npx tsx scripts/preflight.ts) ;;
   open) (cd "$SERVER" && npx tsx scripts/open-workspace.ts) ;;
   logs) tail -f "$LOG" ;;
-  *) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
+  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
 esac

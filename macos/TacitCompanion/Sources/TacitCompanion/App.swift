@@ -30,6 +30,13 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate {
             CompanionRuntime.shared.island.togglePin()
         }
     }
+
+    /// `open TACIT.app` (or the demo launcher) while it is already running: bring the notch forward, never start capture.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !ExperienceLab.isEnabled else { return false }
+        CompanionRuntime.shared.island.showForKeyboard()
+        return false
+    }
 }
 
 @main
@@ -37,6 +44,7 @@ struct TacitCompanionApp: App {
     @NSApplicationDelegateAdaptor(CompanionDelegate.self) private var delegate
     private let runtime = CompanionRuntime.shared
     init() {
+        if let i = CommandLine.arguments.firstIndex(of: "--analyze-video") { VideoAnalysis.run(Array(CommandLine.arguments[(i + 1)...])) }
         if CommandLine.arguments.contains("--offline-selftest") { OfflineSelfTest.run() }
         if CommandLine.arguments.contains("--selftest") { SelfTest.run(); return }
         let me = Bundle.main.bundleIdentifier ?? ""

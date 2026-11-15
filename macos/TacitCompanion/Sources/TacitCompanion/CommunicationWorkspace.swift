@@ -5,6 +5,7 @@ struct CommunicationWorkspace: View {
     @ObservedObject var client: TacitClient
     @ObservedObject var island: IslandController
     @ObservedObject var session: CommunicationSession
+    @ObservedObject var live: LiveCoordinator
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { systemReduceMotion || CompanionAccessibility.reducedMotionPreview }
     @Environment(\.colorSchemeContrast) private var contrast
@@ -16,6 +17,7 @@ struct CommunicationWorkspace: View {
             delivery: client.lastDelivery?.state, firstAudio: client.lastDelivery?.firstAudioAt != nil,
             editing: session.surface == .compose || client.reviewDraft.editing,
             assistance: session.surface == .assistance, review: client.canReviewCurrent,
+            visualActivity: live.camera.state == .capturing, recognitionProcessing: client.processingUtteranceID != nil,
             liveEnabled: client.live?.state == "active", outputEnabled: client.output?.state == "ready",
             error: ["failed", "refused"].contains(client.lastDelivery?.state ?? "") || client.route?.state == "unavailable"
                 || (client.live?.state == "active" && client.recognition?.reachable == false)))
@@ -60,11 +62,11 @@ struct CommunicationWorkspace: View {
             Text(client.isIsolated ? "OFFLINE · " + statusTitle : statusTitle).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(statusColor)
                 .accessibilityIdentifier("communication-state")
             Spacer(minLength: 0)
-            if client.live?.state == "active" || client.output?.state == "ready" {
-                icon("pause.fill", "Pause Live and voice") { client.pauseEverything() }
+            if client.live?.state == "active" || client.output?.state == "ready" || live.camera.state.running {
+                icon("pause.fill", "Pause camera, Live and voice") { live.pause() }
             }
             Menu {
-                Button("Open camera workspace") { client.openWorkspace() }
+                Button("Open browser workspace (optional)") { client.openWorkspace() }
                 Button("Settings & output") { island.showUtility(.diagnostics) }
                 Button(island.pinned ? "Unpin island" : "Keep island open") { island.togglePin() }
                 Button("Collapse") { island.collapse() }
@@ -76,47 +78,80 @@ struct CommunicationWorkspace: View {
     }
     private var statusTitle: String {
         switch state {
-        case .off: return "Your voice, on your terms"
-        case .ready: return client.live?.state == "active" ? "Live · review before speaking" : "Voice ready"
-        case .reviewAvailable: return "Your words to review"
+        case .off, .ready, .error: return voiceProblem && client.conn == .connected ? "Check voice output" : guide.title
+        case .reviewAvailable: return "Review your words, then press Speak"
         case .editing: return "Writing"
         case .synthesizing: return "Preparing voice"
         case .speaking: return "Sending to call microphone"
         case .paused: return "Paused"
         case .disconnected: return "Not connected"
-        case .error: return "Check voice output"
         case .assistance: return "Help Me Respond"
-        case .visuallyActive: return "Visual activity"
-        case .processing: return "Recognizing"
+        case .visuallyActive: return "Reading your lips…"
+        case .processing: return "Interpreting your words"
         }
     }
     private var statusColor: Color {
         [.paused, .disconnected, .error].contains(state) ? .orange : state == .off ? .white.opacity(0.72) : .mint
     }
 
+    private var guide: CommunicationGuide {
+        .resolve(.init(connected: client.conn == .connected, serverDown: live.serverDown, starting: live.starting,
+            recognizerReachable: client.recognition?.reachable, camera: live.camera.state, live: client.live?.state,
+            ownsLive: client.ownsLive, liveElsewhere: live.liveElsewhere, processing: client.processingUtteranceID != nil,
+            reviewExpired: client.reviewExpired, abstained: client.lastHypothesis?.decision == "abstained"))
+    }
+    /// Voice-output problems (failed/refused delivery, unavailable route) outrank the camera guidance.
+    private var voiceProblem: Bool {
+        ["failed", "refused"].contains(client.lastDelivery?.state ?? "") || client.route?.state == "unavailable"
+    }
+    private func perform(_ action: CommunicationGuide.Action) {
+        switch action {
+        case .startServer: client.startServer()
+        case .reconnect: client.connect()
+        case .start, .resume: live.startCommunicating()
+        case .restartCamera: live.restartCamera()
+        case .openCameraSettings: LiveCoordinator.openCameraSettings()
+        case .type: island.showCommunication(.compose)
+        }
+    }
+
     @ViewBuilder private var conversation: some View {
         if client.canReviewCurrent {
             RecognitionReview(client: client, onEdit: { island.focusEditor() })
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                Spacer(minLength: 0)
-                Text(headline).font(.system(size: 25, weight: .medium)).tracking(-0.7)
-                    .fixedSize(horizontal: false, vertical: true).lineLimit(3)
-                Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).lineLimit(3)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(headline).font(.system(size: 23, weight: .medium)).tracking(-0.6)
+                            .fixedSize(horizontal: false, vertical: true).lineLimit(3)
+                            .accessibilityIdentifier("guide-title")
+                        Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).lineLimit(3)
+                    }
+                    Spacer(minLength: 0)
+                    if live.camera.state.running {
+                        CameraPreview(session: live.camera.session)
+                            .frame(width: 112, height: 72).clipShape(RoundedRectangle(cornerRadius: 10))
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(live.camera.state == .capturing ? Color.mint : .white.opacity(0.2), lineWidth: live.camera.state == .capturing ? 2 : 1))
+                            .accessibilityLabel("Camera preview · \(live.camera.deviceName ?? "camera") is on")
+                    }
+                }
                 Spacer(minLength: 0)
                 HStack(spacing: 10) {
-                    if client.conn != .connected {
-                        IslandAction("Reconnect", symbol: "arrow.clockwise") { client.connect() }
-                    } else if client.live?.state == "paused" {
-                        IslandAction("Resume camera workspace", symbol: "arrow.up.right") { client.openWorkspace() }
-                    } else if client.live?.state != "active" {
-                        IslandAction("Start in camera workspace", symbol: "viewfinder") { client.openWorkspace() }
+                    if !voiceProblem || client.conn != .connected, let action = guide.action, let title = guide.actionTitle {
+                        IslandAction(title, symbol: symbol(action), prominent: [.start, .resume, .startServer].contains(action)) { perform(action) }
+                            .accessibilityIdentifier("guide-action")
                     }
-                    if client.conn == .connected && client.output?.state != "ready" {
+                    if client.conn == .connected && client.output?.state != "ready" && client.route?.state == "ready"
+                        && ![.start, .resume].contains(guide.action) {
                         IslandAction(client.output?.state == "paused" ? "Resume voice" : "Enable voice", symbol: "speaker.wave.2") {
                             client.output(client.output?.state == "paused" ? "resume" : "enable")
-                        }.disabled(client.route?.state != "ready")
+                        }
                     }
+                }
+                if client.conn == .connected {
+                    Text(CallRouteLine.text(routeState: client.route?.state, device: client.route?.device, readers: client.route?.readers, output: client.output?.state))
+                        .font(.system(size: 10.5)).foregroundStyle(.white.opacity(0.62)).lineLimit(1).minimumScaleFactor(0.85)
+                        .accessibilityIdentifier("call-route-line")
                 }
             }
         }
@@ -125,30 +160,33 @@ struct CommunicationWorkspace: View {
                 .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(.mint)
         }
     }
+    private func symbol(_ a: CommunicationGuide.Action) -> String {
+        switch a {
+        case .startServer: return "power"
+        case .reconnect: return "arrow.clockwise"
+        case .start, .resume: return "play.fill"
+        case .restartCamera: return "camera.rotate"
+        case .openCameraSettings: return "gearshape"
+        case .type: return "keyboard"
+        }
+    }
     private var headline: String {
-        if client.conn != .connected { return "A connection away." }
-        if state == .error { return client.live?.state == "active" && client.recognition?.reachable == false ? "Silent speech is unavailable." : "Voice needs attention." }
-        if state == .speaking { return "Your words are on their way." }
-        if state == .synthesizing { return "Preparing your voice." }
-        if client.live?.state == "paused" { return "Ready when you are." }
-        if client.reviewExpired { return "Those words have expired." }
-        if client.lastHypothesis?.decision == "abstained" { return "No clear words this time." }
-        if client.reviewSubmittedID != nil { return "Your words. Your choice." }
-        return client.live?.state == "active" ? "There's room for your words." : "Join the conversation."
+        if client.conn == .connected {
+            if state == .speaking { return "Your words are on their way." }
+            if state == .synthesizing { return "Preparing your voice." }
+            if voiceProblem { return "Voice needs attention." }
+            if client.reviewSubmittedID != nil, guide.action == nil, !client.ownsLive { return "Your words. Your choice." }
+        }
+        return guide.title
     }
     private var detail: String {
-        if client.conn != .connected { return "Your draft is kept here. Reconnect to use voice output." }
-        if client.live?.state == "active", client.recognition?.reachable == false { return "The visual recognizer is unavailable. Type or use your phrases while it reconnects." }
-        if let notice = client.notice { return notice }
-        if state == .error { return client.authoredUnavailableReason ?? client.deliveryDetail ?? "Check voice output in settings, then try again." }
-        if let delivery = client.deliveryDetail { return delivery }
-        if client.reviewSubmittedID != nil { return "Speech requested. Waiting for voice status." }
-        if client.reviewExpired { return "That review is no longer current. Mouth it again to start a new review." }
-        if client.lastHypothesis?.decision == "abstained" { return "Try again, or type your message. You decide what is spoken." }
-        if client.live?.state == "paused" { return "Camera recognition is paused. Resume from its workspace when you're ready." }
-        return client.live?.state == "active"
-            ? "Silently articulate, choose your words, then Speak. Nothing is spoken automatically."
-            : "Start silent speech in the camera workspace, or use your own phrases and typed words here."
+        if client.conn == .connected {
+            if voiceProblem { return client.authoredUnavailableReason ?? client.deliveryDetail ?? "Check voice output in settings, then try again." }
+            if let delivery = client.deliveryDetail, state == .speaking || state == .synthesizing { return delivery }
+            if let notice = client.notice { return notice }
+            if let delivery = client.deliveryDetail { return delivery }
+        }
+        return guide.detail
     }
 
     private var composer: some View {

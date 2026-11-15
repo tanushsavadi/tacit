@@ -28,6 +28,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>0.1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
+  <key>NSCameraUsageDescription</key><string>TACIT reads your lip movements while you communicate, so it can show the words you silently mouth. Video stays on this Mac and is used only while Live is on.</string>
   <key>TACITRepoRoot</key><string>$ROOT_XML</string>
   <key>TACITNodeBinDir</key><string>$NODE_DIR</string>
 </dict></plist>
