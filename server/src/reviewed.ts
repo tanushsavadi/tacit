@@ -7,13 +7,16 @@ export type ReviewedRequest = Extract<ClientMessage, { type: 'speak_reviewed' }>
 
 /** Returns the message, or a human-readable reason why no valid request can be built. */
 export function buildReviewedRequest(h: RecognitionHypothesis, choice: { index: number; edited?: string }, out: SpeechOutputStatus,
-  live: LiveStatus, requestId: string): ReviewedRequest | string {
+  live: LiveStatus, requestId: string, now = Date.now()): ReviewedRequest | string {
   const cands = h.decision === 'shown' ? h.reviewCandidates ?? [] : [];
   if (!cands.length) return 'This utterance has nothing to speak (abstained).';
   const c = cands[choice.index];
   if (!c) return `No candidate ${choice.index + 1}.`;
   if (out.state !== 'ready' || !out.authorizationId) return `Voice output is ${out.state}: enable it first.`;
   if (live.state !== 'active' || !live.authorizationId) return `Live is ${live.state}.`;
+  if (h.authorizationId !== live.authorizationId || h.generation !== live.generation) return 'Review belongs to an earlier Live session or generation.';
+  if (!Number.isFinite(h.reviewExpiresAt) || now >= h.reviewExpiresAt!) return 'Review expired: mouth it again.';
+  if (c.index !== choice.index || c.textHash !== createHash('sha256').update(c.text, 'utf8').digest('hex')) return 'Invalid review candidate.';
   const edited = choice.edited !== undefined;
   const text = edited ? choice.edited! : c.text;
   return { type: 'speak_reviewed', requestId, outputAuthorizationId: out.authorizationId, outputGeneration: out.generation,

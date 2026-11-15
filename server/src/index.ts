@@ -12,12 +12,12 @@ import { readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WebSocketServer, type WebSocket } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, TurnLogMode } from '../../shared/protocol.ts';
 import { Controller } from './controller.ts';
 import { DEFAULT_GEMINI_MODELS, geminiGenerator, localGenerator, LOCAL_MODEL, withLabelledFallback } from './candidates.ts';
 import { BrowserCall, SimCall } from './calls.ts';
-import { TtsCache, checkElevenLabsVoice, createTts } from './tts.ts';
+import { checkElevenLabsVoice, createTts } from './tts.ts';
 import { launchWhisperServer, whisperCpp, whisperServer, withSttFallback, type Stt } from './stt.ts';
 import { TwilioCall, twiml, validTwilioSignature } from './twilio.ts';
 import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig } from './auth.ts';
@@ -197,7 +197,6 @@ controller.on('cue', (cue) => broadcast({ type: 'cue', cue }));
 let route: RouteHelper | null = null;
 let routeFallback: VoiceRouteStatus = unconfiguredRoute('Checking for the virtual microphone…');
 const speech = new SpeechOutput(tts, () => route, () => routeFallback);
-speech.usePresynth(new TtsCache(tts, 'file')); // reviewed candidates, local only, under the voice policy
 speech.on('status', (status) => { broadcast({ type: 'output_status', status }); controller.setServices({ voiceRoute: status.route }); });
 speech.on('delivery', (delivery) => {
   broadcast({ type: 'speech_delivery', delivery });
@@ -208,12 +207,16 @@ speech.on('delivery', (delivery) => {
       (t.firstAudioAt ? ` request→audio=${t.firstAudioAt - t.requestedAt}ms` : ''));
   }
 });
-const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m) => {
+const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m, replyTo) => {
+  if (replyTo instanceof WebSocket) {
+    if (replyTo.readyState === replyTo.OPEN) replyTo.send(JSON.stringify(m));
+    return;
+  }
+  if (m.type === 'review_invalidated') speech.invalidateReviewed();
   broadcast(m);
   // Unreachable today: Live refuses 'automatic' and the speech gate is UNVALIDATED_GATE. Kept so the only path from
   // recognition to voice is the policy-checked one.
   if (m.type === 'recognition_hypothesis' && live.current.mode === 'automatic') speech.speakRecognized(m.hypothesis, live.current);
-  if (m.type === 'recognition_hypothesis') speech.prepareReviewed(m.hypothesis); // pre-synthesis only; never plays
 });
 
 let liveOwner: WebSocket | null = null;
@@ -314,7 +317,7 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
       return speech.control(msg.action);
     case 'speak_typed':
       return speech.speakTyped(msg);
-    case 'speak_reviewed': // explicit user pick (or correction) of the latest shown utterance; checks in SpeechOutput
+    case 'speak_reviewed': // explicit user pick (or correction) of the current review; checks in SpeechOutput
       return speech.speakReviewed(msg, live.current, live.reviewTarget());
     case 'delete_turn_logs':
       await turnLog.deleteAll();

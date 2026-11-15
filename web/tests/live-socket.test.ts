@@ -41,6 +41,17 @@ test('header and exactly its JPEGs are contiguous; busy submissions cannot overw
   f.answer(); assert.equal((await first).utteranceId, 'one');
   const second = f.port.submit(auth, window('two'), new AbortController().signal); await tick(); f.answer(); assert.equal((await second).utteranceId, 'two'); f.port.disconnect();
 });
+test('review invalidation is additive: pending recognition still settles and nothing is automatically spoken', async () => {
+  const f = fixture(), auth = await f.activate();
+  const pending = f.port.submit(auth, window('one'), new AbortController().signal); await tick();
+  const sent = f.sent.length;
+  f.port.receive({ type: 'review_invalidated', authorizationId: 'auth', generation: 1, utteranceId: f.header().utteranceId });
+  f.answer();
+  assert.equal((await pending).utteranceId, 'one');
+  assert.equal(f.sent.length, sent);
+  assert.equal(f.sent.some(s => typeof s === 'string' && JSON.parse(s).type.startsWith('speak_')), false);
+  f.port.disconnect();
+});
 test('two callers waiting on backpressure cannot both install a pending result', async () => {
   const f = fixture(); const auth = await f.activate(); f.socket.bufferedAmount = 2 * 1024 * 1024;
   const one = f.port.submit(auth, window('one'), new AbortController().signal);

@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { LiveStatus, RecognitionHypothesis, SpeechDelivery, VoiceRouteStatus } from '../../shared/protocol.ts';
 import type { OutputRoute, PlayOutcome } from './route.ts';
 import { createHash } from 'node:crypto';
-import { MAX_PENDING, SpeechOutput, UNVALIDATED_GATE, speakableCase, type ReliabilityGate } from './speech.ts';
+import { MAX_PENDING, SpeechOutput, UNVALIDATED_GATE, type ReliabilityGate } from './speech.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const ready: VoiceRouteStatus = { state: 'ready', deviceName: 'BlackHole 2ch', deviceUid: 'bh', sampleRate: 48000, gainDb: 0, calibrated: true, readers: [], warnings: [], reason: null };
@@ -20,11 +20,11 @@ class FakeRoute extends EventEmitter implements OutputRoute {
   finishAll() { for (const p of this.plays.splice(0)) { p.started?.(1); p.resolve({ state: 'rendered', startedAt: 1, renderedAt: 2 }); } }
 }
 
-function setup(opts: { gate?: ReliabilityGate; synth?: (t: string) => Promise<void> } = {}) {
+function setup(opts: { gate?: ReliabilityGate; synth?: (t: string, signal?: AbortSignal) => Promise<void> } = {}) {
   const route = new FakeRoute();
   const synthCalls: string[] = [];
-  const tts = { label: 'macos-say (system voice, not personal)', synth: async (t: string) => {
-    synthCalls.push(t); await opts.synth?.(t);
+  const tts = { label: 'macos-say (system voice, not personal)', synth: async (t: string, _format?: 'file', signal?: AbortSignal) => {
+    synthCalls.push(t); await opts.synth?.(t, signal);
     return { audio: Buffer.from('RIFF'), mime: 'audio/wav', requestTs: 0, firstByteTs: 0, voice: 'macos-say (system voice, not personal)' };
   } };
   let routeOn: FakeRoute | null = route;
@@ -221,7 +221,7 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
   }
   const last = (d: SpeechDelivery[]) => d.at(-1)!;
 
-  it('speaks the exact picked candidate once, labelled reviewed-recognition, with review provenance; TTS gets sentence case', async () => {
+  it('speaks the exact picked candidate once, labelled reviewed-recognition, with review provenance; TTS gets the exact approved string', async () => {
     const { out, route, deliveries, synthCalls, req } = rig();
     const m = req({ requestId: 'ok' });
     out.speakReviewed(m, live, target());
@@ -229,7 +229,7 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     route.finishAll(); await tick();
     expect(last(deliveries)).toMatchObject({ requestId: 'ok', state: 'rendered', source: 'reviewed-recognition', text: 'I NEED HELP WITH THIS',
       review: { utteranceId: 'u1', liveAuthorizationId: 'L1', candidate: 'alternative', index: 1 } });
-    expect(synthCalls).toEqual(['I need help with this']);
+    expect(synthCalls).toEqual(['I NEED HELP WITH THIS']);
     expect(out.status().recognizedSpeechAllowed).toBe(false);
   });
 
@@ -282,7 +282,7 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     out.speakReviewed(req({ requestId: 'c', candidate: 'edited', index: 0, text: 'Help me', textHash: sha('Help me') }), live, target());
     expect(last(deliveries)).toMatchObject({ requestId: 'c', state: 'refused', reason: expect.stringMatching(/already spoken/) });
     await tick();
-    expect(synthCalls).toEqual(['I need help with this']);
+    expect(synthCalls).toEqual(['I NEED HELP WITH THIS']);
   });
 
   it('a refusal by the route does not consume the utterance: the user can press Speak again', async () => {
@@ -323,41 +323,116 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     expect(terminal('p')).toEqual([expect.objectContaining({ state: 'interrupted', source: 'reviewed-recognition' })]);
   });
 
-  it('pre-synthesis: with output ON, shown candidates are prepared locally (never sent); Speak uses the prepared audio', async () => {
-    const { out, route, synthCalls, req, deliveries } = rig();
-    const prepared: string[][] = [], got: string[] = [];
-    out.usePresynth({ prepare: (t) => { prepared.push(t); }, get: async (t) => { got.push(t); return { audio: Buffer.from('RIFF'), mime: 'audio/wav', requestTs: 0, firstByteTs: 0, voice: 'v' }; } });
-    out.prepareReviewed(target());
-    expect(prepared).toEqual([['I need help with the', 'I need help with this', 'Call the doctor']]);
-    expect(route.plays).toHaveLength(0);
-    expect(deliveries).toHaveLength(0); // preparing emits nothing and plays nothing
-    out.speakReviewed(req({ requestId: 'pre' }), live, target());
+  it('all candidate kinds reach synthesis exactly as explicitly approved, including casing and UTF-8', async () => {
+    for (const candidate of target().reviewCandidates!) {
+      const { out, route, req, synthCalls } = rig();
+      expect(synthCalls).toEqual([]);
+      out.speakReviewed(req({ candidate: candidate.kind, index: candidate.index, text: candidate.text, textHash: candidate.textHash }), live, target());
+      await tick();
+      expect(synthCalls).toEqual([candidate.text]);
+      route.finishAll(); await tick();
+    }
+    const { out, req, synthCalls, route } = rig();
+    const text = '  Call NASA NOW! Café 👋  ';
+    out.speakReviewed(req({ candidate: 'edited', text, textHash: sha(text) }), live, target());
     await tick();
-    expect(got).toEqual(['I need help with this']);
-    expect(synthCalls).toEqual([]);
-    expect(route.plays.map((p) => p.id)).toEqual(['pre']);
+    expect(synthCalls).toEqual([text]);
+    route.finishAll(); await tick();
   });
 
-  it('pre-synthesis does nothing while output is off/paused or for abstained results; typed speech never uses it', async () => {
-    const { out, req: _r, synthCalls } = rig();
-    const prepared: string[][] = [], got: string[] = [];
-    out.usePresynth({ prepare: (t) => { prepared.push(t); }, get: async (t) => { got.push(t); return { audio: Buffer.from('RIFF'), mime: 'audio/wav', requestTs: 0, firstByteTs: 0, voice: 'v' }; } });
-    out.prepareReviewed(target({ decision: 'abstained', reviewCandidates: undefined }));
-    out.control('pause');
-    out.prepareReviewed(target());
-    out.control('stop');
-    out.prepareReviewed(target());
-    expect(prepared).toEqual([]);
+  it('simultaneous corrections consume a current utterance once and keep the winning text immutable', async () => {
+    const { out, req, synthCalls, deliveries, route } = rig();
+    const edit = (id: string, text: string) => req({ requestId: id, candidate: 'edited', text, textHash: sha(text) });
+    const first = edit('first', 'First approved correction');
+    out.speakReviewed(first, live, target());
+    first.text = 'Mutation after approval';
+    out.speakReviewed(edit('second', 'Other correction'), live, target());
+    await tick();
+    expect(synthCalls).toEqual(['First approved correction']);
+    expect(deliveries.find(d => d.requestId === 'second')).toMatchObject({ state: 'refused' });
+    route.finishAll(); await tick();
+  });
+
+  it('expiry is exclusive, finite and enforced before any synthesis', () => {
+    for (const expiry of [NOW, NOW - 1, Number.NaN, Infinity]) {
+      const { out, req, synthCalls, deliveries } = rig();
+      out.speakReviewed(req(), live, target({ reviewExpiresAt: expiry }));
+      expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/expired/) });
+      expect(synthCalls).toEqual([]);
+    }
+  });
+
+  it('request-id cache eviction cannot replay the current approved utterance', async () => {
+    const { out, req, synthCalls, deliveries, route } = rig();
+    const original = req({ requestId: 'original' });
+    out.speakReviewed(original, live, target());
+    for (let i = 0; i < 1100; i++) out.speakReviewed(req({ requestId: `invalid-${i}`, outputAuthorizationId: 'invalid' }), live, target());
+    out.speakReviewed(original, live, target());
+    expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/already spoken/) });
+    await tick();
+    expect(synthCalls).toEqual(['I NEED HELP WITH THIS']);
+    route.finishAll(); await tick();
+  });
+
+  it.each(['pause', 'stop', 'interrupt', 'replace'] as const)('%s cancels in-flight reviewed synthesis and queued corrections even if TTS ignores abort', async action => {
+    let release!: () => void, signal: AbortSignal | undefined;
+    const { out, route, terminal, synthCalls } = setup({ synth: (_text, s) => new Promise(resolve => { signal = s; release = resolve; }) });
     out.control('enable');
-    typed(out, 't1', 'hello');
-    await tick();
-    expect(got).toEqual([]);
-    expect(synthCalls).toEqual(['hello']);
+    const request = (id: string, utteranceId: string) => ({ requestId: id, outputAuthorizationId: out.status().authorizationId,
+      outputGeneration: out.status().generation, liveAuthorizationId: 'L1', liveGeneration: 4, utteranceId,
+      candidate: 'edited', index: 0, text: 'APPROVED', textHash: sha('APPROVED') });
+    out.speakReviewed(request('inflight', 'u1'), live, target({ reviewExpiresAt: Date.now() + 120_000 }));
+    out.speakReviewed(request('queued', 'u2'), live, target({ utteranceId: 'u2', reviewExpiresAt: Date.now() + 120_000 }));
+    if (action === 'replace') out.invalidateReviewed();
+    else if (action === 'interrupt') out.interrupt('Live paused.');
+    else out.control(action);
+    expect(signal?.aborted).toBe(true);
+    release(); await tick();
+    expect(synthCalls).toEqual(['APPROVED']);
+    expect(route.plays).toEqual([]);
+    for (const id of ['inflight', 'queued']) expect(terminal(id)).toEqual([expect.objectContaining({ state: 'interrupted' })]);
   });
 
-  it('speakableCase only re-cases ALL-CAPS model output; user casing is untouched', () => {
-    expect(speakableCase("I'M TIRED AND I WANT TO GO")).toBe("I'm tired and I want to go");
-    expect(speakableCase("IT'S ELEVEN O'CLOCK")).toBe("It's eleven o'clock");
-    expect(speakableCase('Call NASA now')).toBe('Call NASA now');
+  it('late route-start/finish callbacks cannot republish an interrupted review', async () => {
+    const { out, req, route, terminal } = rig();
+    out.speakReviewed(req({ requestId: 'late-route' }), live, target());
+    await tick();
+    const late = route.plays[0]!;
+    out.invalidateReviewed();
+    late.started?.(10);
+    late.resolve({ state: 'rendered', startedAt: 10, renderedAt: 11 });
+    await tick();
+    expect(terminal('late-route')).toEqual([expect.objectContaining({ state: 'interrupted' })]);
+  });
+
+  it('expired approvals cannot wait in synthesis or a route queue until playback', async () => {
+    vi.useFakeTimers();
+    try {
+      const { out, route, req, terminal, advance } = rig();
+      out.speakReviewed(req({ requestId: 'route-wait' }), live, target({ reviewExpiresAt: NOW + 10 }));
+      await Promise.resolve(); await Promise.resolve();
+      expect(route.plays).toHaveLength(1);
+      advance(10); await vi.advanceTimersByTimeAsync(10);
+      expect(route.plays).toEqual([]);
+      expect(terminal('route-wait')).toEqual([expect.objectContaining({ state: 'interrupted', reason: 'Review expired.' })]);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('checks expiry again before queued synthesis and after in-flight synthesis resolves', async () => {
+    let release!: () => void, now = NOW;
+    const { out, route, terminal, synthCalls } = setup({ synth: () => new Promise(resolve => { release = resolve; }) });
+    (out as unknown as { now: () => number }).now = () => now;
+    out.control('enable');
+    const request = (requestId: string, utteranceId: string) => ({ requestId, outputAuthorizationId: out.status().authorizationId,
+      outputGeneration: out.status().generation, liveAuthorizationId: 'L1', liveGeneration: 4, utteranceId,
+      candidate: 'edited', index: 0, text: 'APPROVED', textHash: sha('APPROVED') });
+    out.speakReviewed(request('slow', 'u1'), live, target());
+    out.speakReviewed(request('queued', 'u2'), live, target({ utteranceId: 'u2' }));
+    now += 60_000;
+    release(); await tick();
+    expect(route.plays).toEqual([]);
+    expect(synthCalls).toEqual(['APPROVED']);
+    expect(terminal('slow')[0]).toMatchObject({ state: 'interrupted', reason: 'Review expired before playback.' });
+    expect(terminal('queued')[0]).toMatchObject({ state: 'interrupted', reason: 'Review expired before synthesis.' });
   });
 });

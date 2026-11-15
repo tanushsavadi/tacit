@@ -68,7 +68,7 @@ describe('LiveSession — reviewed-speech candidates', () => {
     expect(JSON.stringify(out)).not.toContain('"SO"');
   });
 
-  it('reviewTarget() = latest SHOWN utterance of the current authorization (abstentions do not replace it); expiry stamped', async () => {
+  it('reviewTarget() belongs only to the latest accepted utterance; abstention never restores an older review', async () => {
     let t = 1_000_000;
     const results = [{ text: 'FIRST', model: 'm' }, { text: 'SECOND', model: 'm' }, { text: null, error: 'no lip movement' }];
     let i = 0;
@@ -79,8 +79,9 @@ describe('LiveSession — reviewed-speech candidates', () => {
     const auth = live.current.authorizationId!;
     send(live, auth, 'u1'); await tick();
     send(live, auth, 'u2'); await tick();
-    send(live, auth, 'u3'); await tick();
     expect(live.reviewTarget()).toMatchObject({ utteranceId: 'u2', rawText: 'SECOND', reviewExpiresAt: t + REVIEW_TTL_MS });
+    send(live, auth, 'u3'); await tick();
+    expect(live.reviewTarget()).toBeNull();
     live.control({ type: 'live_control', action: 'end' });
     expect(live.reviewTarget()).toBeNull();
   });
@@ -182,7 +183,7 @@ describe('LiveSession (tacit-live-v1)', () => {
     await tick();
     expect(calls).toHaveLength(2);
     expect(hyps().map((h) => [h.utteranceId, h.decision, h.reason?.slice(0, 9) ?? null])).toEqual([
-      ['u1', 'abstained', 'Duplicate'], ['u1', 'shown', null], ['u2', 'shown', null]]);
+      ['u1', 'abstained', 'Duplicate'], ['u1', 'abstained', 'Dropped: '], ['u2', 'shown', null]]);
     expect(live.droppedBinary).toBe(0);
   });
 
@@ -212,7 +213,8 @@ describe('LiveSession (tacit-live-v1)', () => {
     expect(hyps()[0]!.reason).toMatch(/busy/i);
     for (const r of releases) r();
     await tick();
-    expect(hyps().filter((h) => h.decision === 'shown')).toHaveLength(MAX_INFLIGHT);
+    expect(hyps().filter((h) => h.decision === 'shown')).toHaveLength(0);
+    expect(live.reviewTarget()).toBeNull(); // the newest header was busy; earlier results stay superseded
   });
 
   it('is shared across connections: frames are matched to their own sender; a disconnect drops only that utterance', async () => {
@@ -226,7 +228,7 @@ describe('LiveSession (tacit-live-v1)', () => {
     live.disconnect(B);
     await tick();
     expect(calls.map((c) => c.frames.map((f) => f[0]))).toEqual([[1, 3]]);
-    expect(hyps().map((h) => [h.utteranceId, h.decision])).toEqual([['b', 'abstained'], ['a', 'shown']]);
+    expect(hyps().map((h) => [h.utteranceId, h.decision])).toEqual([['b', 'abstained'], ['a', 'abstained']]);
   });
 
   it('retains no frames of a rejected utterance while swallowing them', () => {

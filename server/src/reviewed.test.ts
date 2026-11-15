@@ -6,7 +6,7 @@ import { buildReviewedRequest } from './reviewed.ts';
 const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
 const h: RecognitionHypothesis = {
   utteranceId: 'u1', authorizationId: 'L1', rawText: 'HELLO THERE', final: true, stable: false, uncertainty: null, model: 'm', source: 'visual-model',
-  decision: 'shown', reason: null, recognitionMs: 1, stages: null, gate: null, transmitted: false, generation: 3, reviewExpiresAt: 10,
+  decision: 'shown', reason: null, recognitionMs: 1, stages: null, gate: null, transmitted: false, generation: 3, reviewExpiresAt: Date.now() + 120_000,
   reviewCandidates: [{ kind: 'raw', index: 0, text: 'HELLO THERE', textHash: sha('HELLO THERE') }, { kind: 'alternative', index: 1, text: 'HELLO BEAR', textHash: sha('HELLO BEAR') }],
 };
 const live = { authorizationId: 'L1', generation: 3, state: 'active' } as LiveStatus;
@@ -25,5 +25,12 @@ describe('buildReviewedRequest', () => {
     expect(buildReviewedRequest({ ...h, decision: 'abstained', reviewCandidates: undefined }, { index: 0 }, out, live, 'r')).toMatch(/nothing to speak/);
     expect(buildReviewedRequest(h, { index: 0 }, { ...out, state: 'off', authorizationId: null }, live, 'r')).toMatch(/Voice output is off/);
     expect(buildReviewedRequest(h, { index: 0 }, out, { ...live, state: 'paused' }, 'r')).toMatch(/Live is paused/);
+  });
+  it('rejects stale Live identities, generations and expired/malformed deadlines locally', () => {
+    expect(buildReviewedRequest(h, { index: 0 }, out, { ...live, authorizationId: 'other' }, 'r')).toMatch(/earlier Live/);
+    expect(buildReviewedRequest(h, { index: 0 }, out, { ...live, generation: 4 }, 'r')).toMatch(/generation/);
+    for (const expiry of [0, 10, Number.NaN, Infinity, undefined]) {
+      expect(buildReviewedRequest({ ...h, reviewExpiresAt: expiry }, { index: 0 }, out, live, 'r', 10)).toMatch(/expired/);
+    }
   });
 });

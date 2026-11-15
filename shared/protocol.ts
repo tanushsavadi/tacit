@@ -270,7 +270,7 @@ export interface RecognitionHypothesis {
    * text (index 0), N-best alternatives, and the phrase match only if accepted. Present only when decision 'shown'.
    */
   reviewCandidates?: ReviewCandidate[];
-  /** Server clock (ms since epoch): after this, `speak_reviewed` for this utterance is refused as expired. */
+  /** Exclusive server-clock deadline (epoch ms): at/after this, approval is refused and pending speech cancelled. */
   reviewExpiresAt?: number;
 }
 
@@ -442,10 +442,10 @@ export type ClientMessage =
       /** Recommended: the output_status.generation the user saw when sending. A mismatch (pause/interrupt since) is refused. */
       outputGeneration?: number }
   /**
-   * Reviewed recognised speech: the user explicitly picked candidate `index` of the LATEST shown utterance and pressed
+   * Reviewed recognised speech: the user explicitly picked candidate `index` of the latest accepted utterance and pressed
    * Speak. Echo `reviewCandidates[index]` exactly (kind, text, textHash) plus the output and Live authorizations and
    * generations the user saw. Spoken at most once per utterance; refused when paused, stale, expired, superseded by a
-   * newer shown utterance, or on any mismatch. candidate 'edited' = user-corrected text based on `index`: `text` is
+   * newer accepted utterance header, or on any mismatch. candidate 'edited' = user-corrected text based on `index`: `text` is
    * free (≤ 500 chars), `textHash` = SHA-256 of `text`, spoken with source 'user-corrected'.
    */
   | { type: 'speak_reviewed'; requestId: string; outputAuthorizationId: string; outputGeneration: number;
@@ -461,6 +461,8 @@ export type ServerMessage =
   | { type: 'session_info'; callerInvitePath: string; authRequired: boolean }
   | { type: 'live_status'; status: LiveStatus }
   | { type: 'recognition_hypothesis'; hypothesis: RecognitionHypothesis }
+  /** A valid newer header has revoked all previous review choices, even before inference starts. */
+  | { type: 'review_invalidated'; authorizationId: string; generation: number; utteranceId: string }
   /** On connect and after every change (control, route state, queue). */
   | { type: 'output_status'; status: SpeechOutputStatus }
   /** Every state change of one speech request (exactly one terminal state: rendered/refused/interrupted/failed). */

@@ -505,11 +505,11 @@ it raises coverage by ≥ 3 sentences of 60). For adaptation later: ≥ 2 sessio
 2. Google Meet on the Mac: microphone = **BlackHole 16ch**; join from the iPhone as an ordinary participant; mute the
    iPhone's own mic, unmute its speaker.
 3. Terminal: `cd server && npm run review` (or Sol's UI if it shows the candidates + Speak). Type `o` → "[voice] ready".
-4. Mouth "please turn on the lights" silently → candidates appear → type the number of the correct one → Enter.
-   Record: did the iPhone play it? (yes/no, words heard). Then mouth a NEW sentence of your own, pick or `e N` to
+4. Mouth "please turn on the lights" silently → candidates appear → type its full displayed token (e.g. `1@v3`) → Enter.
+   Record: did the iPhone play it? (yes/no, words heard). Then mouth a NEW sentence of your own, pick or `e 1@v3` (use the current token) to
    correct, Enter; record the same.
-5. Safety on the call: mouth something, type its number, then immediately `s` → the iPhone must hear nothing or a cut
-   phrase; press the same number again → "refused" (already spoken / output off). Pause Live in the browser → older
+5. Safety on the call: mouth something, enter its full choice token, then immediately `s` → the iPhone must hear nothing or a cut
+   phrase; submit the same token again → not sent/refused (stale token / already spoken / output off). Pause Live in the browser → older
    candidates must be refused.
 6. Report: per attempt — raw text, which candidate (or correction) you picked, heard yes/no. Only a "yes" from the
    listener counts as remote audibility.

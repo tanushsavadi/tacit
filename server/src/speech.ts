@@ -3,7 +3,7 @@
 //   'typed'      user-authored AAC text, spoken after an explicit send while output is enabled;
 //   'recognized' visual-model output, spoken only if the ReliabilityGate is validated — it is NOT today
 //                (UNVALIDATED_GATE), so production never speaks recognised words.
-// Reviewed speech (`speakReviewed`) is NOT automatic: the user picked one exact displayed candidate of the latest shown
+// Reviewed speech (`speakReviewed`) is NOT automatic: the user picked one exact displayed candidate of the current
 // utterance and pressed Speak ('reviewed-recognition'), or edited it first ('user-corrected', user-authored text).
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
@@ -27,21 +27,8 @@ export const MAX_TYPED_CHARS = 500;
 export const MAX_PENDING = 4;
 
 interface Synth { synth(text: string, format?: 'file', signal?: AbortSignal): Promise<TtsResult>; label: string }
-interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean; prepared: boolean }
-/** Local pre-synthesis of displayed candidates (TtsCache: obeys the voice policy). Never sends anything by itself. */
-export interface Presynth { prepare(texts: string[]): void; get(text: string): Promise<TtsResult> }
+interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean; expiresAt?: number; expiryTimer?: ReturnType<typeof setTimeout> }
 const REVIEW_CHOICES: readonly ReviewChoice[] = ['raw', 'alternative', 'phrase', 'edited'];
-
-/**
- * Model output is ALL CAPS ("I'M TIRED"), which some voices read as shouting or spell out. For synthesis only, such
- * text is put in sentence case; the words are unchanged and the delivery reports the exact text. Mixed-case (user) text
- * is never touched.
- */
-export function speakableCase(text: string): string {
-  if (/[a-z]/.test(text)) return text;
-  const lower = text.toLowerCase().replace(/\bi\b/g, 'I');
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-}
 
 export class SpeechOutput extends EventEmitter {
   private st: { authorizationId: string | null; generation: number; state: 'off' | 'ready' | 'paused'; reason: string } =
@@ -50,20 +37,25 @@ export class SpeechOutput extends EventEmitter {
   private active = new Set<Req>();   // synthesizing or in the route
   private working = false;
   private seen = new Set<string>();
-  private presynth: Presynth | null = null;
+  /** The current review's one-shot latch must outlive bounded request-id deduplication. */
+  private consumedReview: string | null = null;
 
   constructor(private tts: Synth, private route: () => OutputRoute | null, private unconfigured: () => VoiceRouteStatus,
               private gate: ReliabilityGate = UNVALIDATED_GATE, private now = () => Date.now()) { super(); }
 
-  usePresynth(p: Presynth): void { this.presynth = p; }
-
-  /**
-   * A recognition was SHOWN: while voice output is on, synthesize its exact candidates locally so an explicit Speak
-   * starts sooner. Audio stays on this Mac until speakReviewed accepts a request.
-   */
-  prepareReviewed(h: RecognitionHypothesis): void {
-    if (!this.presynth || this.st.state !== 'ready' || h.decision !== 'shown' || !h.reviewCandidates?.length) return;
-    this.presynth.prepare(h.reviewCandidates.map((c) => speakableCase(c.text)));
+  /** A newer accepted utterance revokes pending reviewed speech, including synthesis already in flight. */
+  invalidateReviewed(): void {
+    const reason = 'Cancelled: a newer utterance was accepted.';
+    const reviewed = (r: Req) => !!r.d.review;
+    const waiting = this.waiting.filter(reviewed);
+    this.waiting = this.waiting.filter(r => !reviewed(r));
+    for (const r of waiting) this.finish(r, 'interrupted', reason);
+    const active = [...this.active].filter(reviewed);
+    for (const r of active) {
+      r.abort.abort();
+      this.finish(r, 'interrupted', reason);
+    }
+    if (active.some(r => r.routed)) this.route()?.stop(reason);
   }
 
   routeStatus(): VoiceRouteStatus { return this.route()?.status() ?? this.unconfigured(); }
@@ -141,7 +133,7 @@ export class SpeechOutput extends EventEmitter {
   }
 
   /**
-   * Reviewed speech: one exact candidate of the latest shown utterance (or the user's correction of it), after an
+   * Reviewed speech: one exact candidate of the latest accepted utterance (or the user's correction of it), after an
    * explicit Speak. `target` = LiveSession.reviewTarget(). Every refusal is emitted as a 'refused' delivery.
    */
   speakReviewed(msg: Record<string, unknown>, live: LiveStatus, target: RecognitionHypothesis | null): void {
@@ -150,7 +142,7 @@ export class SpeechOutput extends EventEmitter {
     const index = Number.isInteger(msg.index) ? msg.index as number : -1;
     const sent = typeof msg.text === 'string' ? msg.text : '';
     const utteranceId = typeof msg.utteranceId === 'string' && msg.utteranceId.length <= 200 ? msg.utteranceId : '';
-    const d = this.newDelivery(id || `invalid-${randomUUID()}`, choice === 'edited' ? 'user-corrected' : 'reviewed-recognition', sent.trim().slice(0, MAX_TYPED_CHARS));
+    const d = this.newDelivery(id || `invalid-${randomUUID()}`, choice === 'edited' ? 'user-corrected' : 'reviewed-recognition', sent.slice(0, MAX_TYPED_CHARS));
     if (choice && utteranceId && live.authorizationId) d.review = { utteranceId, liveAuthorizationId: live.authorizationId, candidate: choice, index };
     const refuse = (reason: string) => { d.state = 'refused'; d.reason = reason; d.timings.endedAt = this.now(); this.deliver(d); };
     if (!id) return refuse('Missing requestId.');
@@ -167,9 +159,9 @@ export class SpeechOutput extends EventEmitter {
     if (!target || target.decision !== 'shown' || target.authorizationId !== live.authorizationId) return refuse('No recognised utterance to speak.');
     if (target.generation !== live.generation) return refuse(restarted);
     if (target.utteranceId !== utteranceId) return refuse('A newer utterance was recognised: only the latest one can be spoken.');
-    if (typeof target.reviewExpiresAt !== 'number' || this.now() > target.reviewExpiresAt) return refuse('Review window expired: mouth it again.');
+    if (!Number.isFinite(target.reviewExpiresAt) || this.now() >= target.reviewExpiresAt!) return refuse('Review window expired: mouth it again.');
     const once = `rev:${live.authorizationId}:${utteranceId}`;
-    if (this.seen.has(once)) return refuse('This utterance was already spoken.');
+    if (this.consumedReview === once || this.seen.has(once)) return refuse('This utterance was already spoken.');
     if (!choice) return refuse('Unknown candidate kind.');
     const shown = target.reviewCandidates ?? [];
     const c = shown[index];
@@ -177,17 +169,17 @@ export class SpeechOutput extends EventEmitter {
     if (choice === 'edited') {
       if (!c) return refuse('Unknown basis candidate for the correction.');
       if (!sent.trim()) return refuse('Nothing to say.');
-      if (sent.trim().length > MAX_TYPED_CHARS) return refuse(`Longer than ${MAX_TYPED_CHARS} characters.`);
+      if (sent.length > MAX_TYPED_CHARS) return refuse(`Longer than ${MAX_TYPED_CHARS} characters.`);
       if (msg.textHash !== sha256Hex(sent)) return refuse('Text hash mismatch.');
-      say = sent.trim(); // user-authored: spoken verbatim
+      say = sent; // user-authored: spoken byte-for-byte as approved
     } else {
       if (!c || c.index !== index || c.kind !== choice) return refuse('Unknown candidate: not one that was shown for this utterance.');
       if (sent !== c.text) return refuse('Candidate text does not match what was shown.');
       if (msg.textHash !== c.textHash || c.textHash !== sha256Hex(c.text)) return refuse('Text hash mismatch.');
-      say = speakableCase(c.text);
+      say = c.text;
     }
-    this.enqueue(d, say, choice !== 'edited');
-    if (d.state !== 'refused') this.remember(once); // a route/queue refusal leaves the utterance speakable
+    this.enqueue(d, say, target.reviewExpiresAt);
+    if (d.state !== 'refused') { this.consumedReview = once; this.remember(once); } // route/queue refusals allow retry
   }
 
   private remember(id: string): void {
@@ -199,7 +191,7 @@ export class SpeechOutput extends EventEmitter {
     return { requestId, outputAuthorizationId: this.st.authorizationId, generation: this.st.generation, source, text, state: 'queued', reason: null, voice: null, remoteAudibility: 'unknown', timings: { requestedAt: this.now() } };
   }
 
-  private enqueue(d: SpeechDelivery, say = d.text, prepared = false): void {
+  private enqueue(d: SpeechDelivery, say = d.text, expiresAt?: number): void {
     const route = this.route();
     if (!route || route.status().state !== 'ready') {
       d.state = 'refused'; d.reason = `Virtual microphone not ready: ${this.routeStatus().reason ?? this.routeStatus().state}.`; d.timings.endedAt = this.now();
@@ -209,7 +201,17 @@ export class SpeechOutput extends EventEmitter {
       d.state = 'refused'; d.reason = `Too many messages waiting (${MAX_PENDING}); wait or stop.`; d.timings.endedAt = this.now();
       return this.deliver(d);
     }
-    this.waiting.push({ d, say, prepared, generation: this.st.generation, abort: new AbortController(), routed: false });
+    const r: Req = { d, say, expiresAt, generation: this.st.generation, abort: new AbortController(), routed: false };
+    this.waiting.push(r);
+    if (expiresAt !== undefined) {
+      r.expiryTimer = setTimeout(() => {
+        this.waiting = this.waiting.filter(p => p !== r);
+        r.abort.abort();
+        this.finish(r, 'interrupted', 'Review expired.');
+        if (r.routed) this.route()?.stop('Review expired.');
+      }, Math.max(0, expiresAt - this.now()));
+      r.expiryTimer.unref();
+    }
     this.deliver(d);
     this.announce();
     void this.work();
@@ -222,20 +224,26 @@ export class SpeechOutput extends EventEmitter {
     try {
       for (let r = this.waiting.shift(); r; r = this.waiting.shift()) {
         this.active.add(r);
+        if (r.expiresAt !== undefined && this.now() >= r.expiresAt) { this.finish(r, 'interrupted', 'Review expired before synthesis.'); continue; }
         r.d.state = 'synthesizing'; r.d.timings.synthStartAt = this.now(); this.deliver(r.d);
         let audio: TtsResult;
-        try { audio = await (r.prepared && this.presynth ? this.presynth.get(r.say) : this.tts.synth(r.say, 'file', r.abort.signal)); } catch (e) {
+        try { audio = await this.tts.synth(r.say, 'file', r.abort.signal); } catch (e) {
           if (this.active.has(r)) this.finish(r, 'failed', `Speech synthesis failed: ${e instanceof Error ? e.message : String(e)}. Nothing was sent.`);
           continue;
         }
         if (!this.active.has(r)) continue; // already ended by a cut while synthesizing
+        if (r.expiresAt !== undefined && this.now() >= r.expiresAt) { this.finish(r, 'interrupted', 'Review expired before playback.'); continue; }
         r.d.timings.synthEndAt = this.now(); r.d.voice = audio.voice;
         if (r.generation !== this.st.generation || this.st.state !== 'ready') { this.finish(r, 'interrupted', 'Cancelled before playback.'); continue; }
         const route = this.route();
         if (!route) { this.finish(r, 'failed', 'Virtual microphone disappeared.'); continue; }
         r.routed = true;
         r.d.state = 'routing'; this.deliver(r.d);
-        void route.play(r.d.requestId, audio.audio, audio.mime, (t) => { r.d.timings.firstAudioAt = t; this.deliver(r.d); }).then((o) => {
+        void route.play(r.d.requestId, audio.audio, audio.mime, (t) => {
+          if (!this.active.has(r)) return;
+          r.d.timings.firstAudioAt = t; this.deliver(r.d);
+        }).then((o) => {
+          if (!this.active.has(r)) return;
           if (o.state === 'rendered') { r.d.timings.renderedAt = o.renderedAt; this.finish(r, 'rendered', null); }
           else this.finish(r, o.state, o.reason);
         });
@@ -245,6 +253,7 @@ export class SpeechOutput extends EventEmitter {
 
   private finish(r: Req, state: 'rendered' | 'interrupted' | 'failed', reason: string | null): void {
     if (r.d.state === 'rendered' || r.d.state === 'interrupted' || r.d.state === 'failed') return; // exactly one terminal state
+    if (r.expiryTimer) clearTimeout(r.expiryTimer);
     this.active.delete(r);
     r.d.state = state; r.d.reason = reason; r.d.timings.endedAt = this.now();
     this.deliver(r.d);

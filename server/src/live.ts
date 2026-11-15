@@ -58,7 +58,7 @@ export function phraseMatch(x: unknown): PhraseMatch | null {
 export type Recognizer = (input: { timesMs: number[]; frames: Buffer[] }, signal: AbortSignal) => Promise<RecognizerResult>;
 
 type Utterance = Extract<ClientMessage, { type: 'visual_utterance' }>;
-interface Pending { msg: Utterance; frames: Buffer[]; received: number; bytes: number; generation: number; reject: string | null; answered: boolean; headerAt: number }
+interface Pending { msg: Utterance; frames: Buffer[]; received: number; bytes: number; generation: number; sequence: number; conn: unknown; reject: string | null; answered: boolean; headerAt: number }
 
 export class LiveSession {
   private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, reason: 'Live is off.' };
@@ -67,17 +67,19 @@ export class LiveSession {
   private inflight = new Set<AbortController>();
   /** utteranceIds already answered under the current authorization (exactly one recognition per id). */
   private seen = new Set<string>();
-  /** Latest SHOWN hypothesis of the current authorization: the only utterance `speak_reviewed` may speak from. */
+  /** Server acceptance order, independent of client clocks and inference completion order. */
+  private latestAccepted = 0;
+  /** Shown result of the most recently accepted header, if it succeeded. Never resurrect an earlier review. */
   private latestShown: RecognitionHypothesis | null = null;
   droppedBinary = 0;
 
-  constructor(private recognize: Recognizer, private send: (m: ServerMessage) => void, private now = () => Date.now()) {}
+  constructor(private recognize: Recognizer, private send: (m: ServerMessage, replyTo?: unknown) => void, private now = () => Date.now()) {}
 
   get current(): LiveStatus { return { ...this.status }; }
-  /** Latest shown utterance of the current authorization (callers still check generation, expiry and Live state). */
+  /** Current review, invalidated immediately by a valid newer header or any Live generation change. */
   reviewTarget(): RecognitionHypothesis | null {
     const h = this.latestShown;
-    return h && h.authorizationId === this.status.authorizationId ? h : null;
+    return h && this.status.state === 'active' && h.generation === this.status.generation && h.authorizationId === this.status.authorizationId ? h : null;
   }
   announce(): void { this.send({ type: 'live_status', status: this.current }); }
 
@@ -86,6 +88,7 @@ export class LiveSession {
     const bump = (patch: Partial<LiveStatus>) => {
       for (const c of this.inflight) c.abort();
       this.inflight.clear();
+      this.latestShown = null;
       this.status = { ...s, ...patch, generation: s.generation + 1 };
     };
     switch (msg.action) {
@@ -129,8 +132,11 @@ export class LiveSession {
     if (!reject) {
       if (this.seen.size >= MAX_SEEN_IDS) this.seen.delete(this.seen.values().next().value!);
       this.seen.add(msg.utteranceId);
+      this.latestAccepted++;
+      this.latestShown = null;
+      this.send({ type: 'review_invalidated', authorizationId: msg.authorizationId, generation: this.status.generation, utteranceId: msg.utteranceId });
     }
-    const p: Pending = { msg, frames: [], received: 0, bytes: 0, generation: this.status.generation, reject, answered: false, headerAt: this.now() };
+    const p: Pending = { msg, frames: [], received: 0, bytes: 0, generation: this.status.generation, sequence: this.latestAccepted, conn, reject, answered: false, headerAt: this.now() };
     this.pending.set(conn, p);
     if (reject) { // answer now; keep `pending` so this utterance's frames are swallowed
       p.answered = true;
@@ -161,15 +167,18 @@ export class LiveSession {
     try { r = await this.recognize({ timesMs: p.msg.frameTimesMs, frames: p.frames }, ctl.signal); }
     catch (e) { err = ctl.signal.aborted ? 'Dropped: Live was paused, interrupted or ended.' : `Recognition failed: ${e instanceof Error ? e.message : String(e)}`; }
     this.inflight.delete(ctl);
+    const superseded = p.sequence !== this.latestAccepted;
+    if (superseded) err = 'Dropped: a newer utterance was accepted.';
     if (p.generation !== this.status.generation) err = 'Dropped: Live was paused, interrupted or ended.';
     // Observable conversation latency (additive keys in `stages`): the browser's own endpoint wait (last detected lip
     // motion → endpoint decision, browser clock, from the header) and the upload of the frames to this server.
     const endpointWait = p.msg.endpointMs - p.msg.endMs;
     const extra = { ...(Number.isFinite(endpointWait) && endpointWait >= 0 ? { endpoint_wait: Math.round(endpointWait) } : {}), upload: Math.round(received - p.headerAt), ...windowStats(p.msg) };
-    this.result(p.msg, r, err, this.now() - received, extra, p.generation);
+    // Answer the submitting client so its pending request settles; do not replace other clients' newer review UI.
+    this.result(p.msg, r, err, this.now() - received, extra, p.generation, superseded ? p.conn : undefined);
   }
 
-  private result(msg: Utterance, r: RecognizerResult | null, err: string | null, ms: number, extra: Record<string, number> = {}, generation?: number): void {
+  private result(msg: Utterance, r: RecognizerResult | null, err: string | null, ms: number, extra: Record<string, number> = {}, generation?: number, replyTo?: unknown): void {
     const text = (r?.text ?? '').trim();
     const reason = err ?? (r?.error ? r.error : !text ? 'No words decoded.' : null);
     const margin = r?.gate?.nbest_margin_per_token;
@@ -186,7 +195,7 @@ export class LiveSession {
       ...(reason ? {} : { alternatives: alts, reviewCandidates: reviewCandidates(text, alts, phrase), reviewExpiresAt: this.now() + REVIEW_TTL_MS }),
     };
     if (!reason && generation === this.status.generation && msg.authorizationId === this.status.authorizationId) this.latestShown = h;
-    this.send({ type: 'recognition_hypothesis', hypothesis: h });
+    this.send({ type: 'recognition_hypothesis', hypothesis: h }, replyTo);
   }
 }
 
