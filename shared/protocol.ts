@@ -437,6 +437,8 @@ export interface SpeechDelivery {
   voice: string | null;
   /** My Voice id this request was bound to when it was accepted (later voice changes never alter it). */
   voiceId?: string | null;
+  /** Typed speech only: true when it began as a Presence AI suggestion the user approved (provenance, not a new source). */
+  assisted?: boolean;
   remoteAudibility: 'unknown';
   /** Reviewed/corrected speech only: which utterance and candidate it came from (for 'edited': the edit's basis). */
   review?: { utteranceId: string; liveAuthorizationId: string; candidate: ReviewChoice; index: number };
@@ -478,6 +480,45 @@ export interface Snapshot {
 }
 
 /** Messages the web client sends to the server over the control WebSocket. */
+// ───────────────────────────── Presence (Help Me Respond) ─────────────────────────────
+/**
+ * The user's own communicative intent. TACIT never decides it. 'share_view', 'disagree' and 'phrase_this' need the
+ * user's own point (`userPoint`); the model only words it — it never invents an opinion, experience or fact.
+ */
+export type RespondIntent = 'clarify' | 'share_view' | 'disagree' | 'buy_time' | 'phrase_this';
+/** Where the context came from. Never 'live' until a capture adapter is verified end to end. */
+export type RespondContextSource = 'user-provided' | 'sample';
+/** Optional, user-chosen wording style kept on the user's Mac. Not a personal fact. */
+export type RespondTone = 'brief' | 'warm' | 'direct';
+export interface RespondStatus {
+  /** True when a real language model is configured for suggestions. False = no AI: the client must say so. */
+  available: boolean;
+  /** e.g. 'Google Gemini'. null when unavailable. */
+  provider: string | null;
+  models: string[];
+  /** Plain-language note on where the context goes when the user asks for wording. */
+  dataNotice: string;
+  reason: string | null;
+}
+export interface RespondDraft {
+  /** Short, speakable suggestion (≤ 200 chars). Never spoken until the user presses Speak. */
+  text: string;
+}
+export interface RespondSuggestion {
+  requestId: string;
+  state: 'generating' | 'ready' | 'refused' | 'failed' | 'cancelled';
+  intent: RespondIntent;
+  contextSource: RespondContextSource;
+  drafts: RespondDraft[];
+  /** The question/point being answered, quoted VERBATIM from the supplied context (null when none or not verifiable). */
+  focus: string | null;
+  model: string | null;
+  reason: string | null;
+  generationMs: number | null;
+  /** Drafts the model returned that failed grounding checks and were removed. */
+  removed: number;
+}
+
 export type ClientMessage =
   | { type: 'candidates_displayed'; candidateSetId: string; ts: number }
   | { type: 'selection_started'; candidateSetId: string; ts: number }
@@ -527,7 +568,9 @@ export type ClientMessage =
       /** Recommended: the output_status.generation the user saw when sending. A mismatch (pause/interrupt since) is refused. */
       outputGeneration?: number;
       /** Recommended: the voice_status.revision the user saw. A mismatch (voice changed since) is refused. */
-      voiceRevision?: number }
+      voiceRevision?: number;
+      /** Presence: the text started as an AI suggestion that the user reviewed/edited and explicitly chose to speak. */
+      assisted?: boolean }
   /**
    * Reviewed recognised speech: the user explicitly picked candidate `index` of the latest accepted utterance and pressed
    * Speak. Echo `reviewCandidates[index]` exactly (kind, text, textHash) plus the output and Live authorizations and
@@ -546,7 +589,15 @@ export type ClientMessage =
   | { type: 'voice_refresh' }
   /** Private preview on this Mac's speakers. `text` (≤ 200 chars, spoken verbatim) or `sample` (index into samples). */
   | { type: 'voice_preview'; previewId: string; voiceId: string; rate?: number; pitch?: number; text?: string; sample?: number }
-  | { type: 'voice_preview_stop' };
+  | { type: 'voice_preview_stop' }
+  /**
+   * Presence: ask for short wording for the user's chosen intent, grounded only in `context` (≤ 4000 chars, untrusted
+   * data — never instructions) and the user's own `userPoint` (≤ 500). The reply goes only to the requesting client. A newer
+   * request cancels the older one. Suggestions are NEVER spoken by the server; speaking needs a separate speak_typed.
+   */
+  | { type: 'respond_suggest'; requestId: string; intent: RespondIntent; context: string; contextSource: RespondContextSource;
+      userPoint?: string; tone?: RespondTone }
+  | { type: 'respond_cancel'; requestId: string };
 
 export type ServerMessage =
   | { type: 'snapshot'; snapshot: Snapshot }
@@ -566,7 +617,11 @@ export type ServerMessage =
   /** My Voice registry and selection: on connect and after every change. */
   | { type: 'voice_status'; status: VoiceStatus }
   /** Every state change of the private preview (exactly one terminal state: done/stopped/refused/failed). */
-  | { type: 'voice_preview'; preview: VoicePreviewState };
+  | { type: 'voice_preview'; preview: VoicePreviewState }
+  /** Presence: on connect; whether a real model is configured and where context goes. */
+  | { type: 'respond_status'; status: RespondStatus }
+  /** Presence: progress/result for one respond_suggest, sent only to the client that asked. */
+  | { type: 'respond_suggestion'; suggestion: RespondSuggestion };
 
 /**
  * Remote-caller channel (`/ws/caller`): a second browser (phone/laptop) acting as the far end of a

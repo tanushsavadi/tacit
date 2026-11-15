@@ -121,10 +121,11 @@ export class SpeechOutput extends EventEmitter {
     if (this.active.size) this.route()?.stop(reason); // route answers 'interrupted' for what it holds
   }
 
-  speakTyped(msg: { requestId: unknown; outputAuthorizationId: unknown; text: unknown; outputGeneration?: unknown; voiceRevision?: unknown }): void {
+  speakTyped(msg: { requestId: unknown; outputAuthorizationId: unknown; text: unknown; outputGeneration?: unknown; voiceRevision?: unknown; assisted?: unknown }): void {
     const id = typeof msg.requestId === 'string' && msg.requestId.length <= 100 ? msg.requestId : '';
     const text = typeof msg.text === 'string' ? msg.text.trim() : '';
     const d = this.newDelivery(id || `invalid-${randomUUID()}`, 'typed', text);
+    if (msg.assisted === true) d.assisted = true; // provenance only: same checks, same explicit user send
     const refuse = (reason: string) => { d.state = 'refused'; d.reason = reason; d.timings.endedAt = this.now(); this.deliver(d); };
     if (!id) return refuse('Missing requestId.');
     if (this.seen.has(id)) return refuse('Duplicate requestId.');

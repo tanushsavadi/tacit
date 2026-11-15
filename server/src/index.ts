@@ -27,6 +27,7 @@ import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, sweepStal
 import { SpeechOutput, UNVALIDATED_GATE } from './speech.ts';
 import { MyVoice, VoiceHelper, voiceBinary } from './voices.ts';
 import { checkPreviewSafety, VoicePreview } from './preview.ts';
+import { geminiLlm, Respond } from './respond.ts';
 import type { VoiceRouteStatus } from '../../shared/protocol.ts';
 import { spawn } from 'node:child_process';
 
@@ -62,6 +63,9 @@ const streamTokens = new StreamTokens();
 
 const geminiModels = (process.env.GEMINI_MODELS ?? process.env.GEMINI_MODEL)?.split(',').map((m) => m.trim()).filter(Boolean) ?? DEFAULT_GEMINI_MODELS;
 const gemini = process.env.GEMINI_API_KEY ? geminiGenerator(process.env.GEMINI_API_KEY, geminiModels) : null;
+// Presence (Help Me Respond): same existing Gemini key; suggestions are text only and never reach speech output.
+const respond = new Respond(process.env.GEMINI_API_KEY && process.env.TACIT_RESPOND !== 'off' ? geminiLlm(process.env.GEMINI_API_KEY, geminiModels) : null,
+  { provider: 'Google Gemini', models: geminiModels });
 const created = createTts();
 const tts = created.tts;
 if (created.reason) console.log(`[tts] system voice: ${created.reason}`);
@@ -342,6 +346,7 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
       if (!['enable', 'pause', 'resume', 'stop'].includes(msg.action)) return;
       console.log(`[speech] voice output ${msg.action} by the user`);
       if (msg.action === 'stop' || msg.action === 'pause') preview.stop(`Voice output ${msg.action === 'stop' ? 'stopped' : 'paused'}.`);
+      if (msg.action === 'stop') respond.cancelAll('Stop requested.');
       return speech.control(msg.action);
     case 'speak_typed':
       return speech.speakTyped(msg);
@@ -504,6 +509,7 @@ uiWss.on('connection', (ws) => {
   ws.send(JSON.stringify({ type: 'live_status', status: live.current } satisfies ServerMessage));
   ws.send(JSON.stringify({ type: 'output_status', status: speech.status() } satisfies ServerMessage));
   ws.send(JSON.stringify({ type: 'voice_status', status: myVoice.status() } satisfies ServerMessage));
+  ws.send(JSON.stringify({ type: 'respond_status', status: respond.status() } satisfies ServerMessage));
   ws.on('message', async (data, isBinary) => {
     try {
       if (isBinary) return live.frame(data as Buffer, ws); // JPEG frames of this socket's current visual_utterance
@@ -519,6 +525,13 @@ uiWss.on('connection', (ws) => {
         return;
       }
       if (msg.type === 'visual_utterance') return live.utterance(msg, ws);
+      // Presence: the reply (which may quote the user's context) goes only to the socket that asked.
+      if (msg.type === 'respond_suggest') {
+        return void respond.suggest(msg as unknown as Record<string, unknown>, (suggestion) => {
+          if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'respond_suggestion', suggestion } satisfies ServerMessage));
+        }, ws);
+      }
+      if (msg.type === 'respond_cancel') return respond.cancel(msg.requestId);
       const verdict = (await handleClient(msg)) as { accepted?: boolean; reason?: string } | undefined;
       if (verdict?.accepted === false) console.log(`[ui] ${msg.type} rejected: ${verdict.reason}`);
     } catch (e) {
@@ -536,6 +549,7 @@ uiWss.on('connection', (ws) => {
     clearInterval(beat);
     uiClients.delete(ws);
     live.disconnect(ws);
+    respond.disconnect(ws);
     if (liveOwner === ws) { // the capturing client left: nobody is supplying camera input any more
       liveOwner = null;
       if (live.current.state !== 'off') { live.close(); speech.interrupt('Live ended: the capturing client disconnected.'); }
