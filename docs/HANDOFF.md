@@ -1,10 +1,43 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 ~04:00 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "one-click demo".
+**Last updated:** 2026-11-15 ~05:25 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Presence / Help Me Respond".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## PRESENCE — AI Help Me Respond (2026-11-15 ~04:45–05:25 UTC) — branch `feat/presence`, NOT merged, NOT deployed
+User asked for Help Me Respond to become a real, opt-in communication assistant. Built in worktree
+`../tacit-presence` (from `c33a813`); the running demo (server pid 87313, app pid 87493) was not touched.
+Commits: `b86d815` server · `f6e7679` companion · `3b22047` research doc. Pushed to `origin/feat/presence`.
+- **Flow:** They said (typed/pasted, or SAMPLE — never "live") → your move (Ask a question · Share my view · Disagree
+  kindly · Buy a moment · Phrase it for me) → your own point for opinion intents → Gemini wording in an editable bubble
+  → one Speak via the normal `speak_typed` (output generation + voice revision locked). AI never overwrites user text.
+- **Safety:** opinion intents refused without the user's point; context fenced as untrusted; deterministic grounding
+  checks (new numbers/dates/names/links/experiences, stance for neutral intents); replies only to the requesting socket;
+  newer request supersedes; cancel / Stop / disconnect abort; content never logged; module has no path to speech.
+- **Evidence (fresh):** server 196/196 (+20 respond, +1 assisted); Swift 94/94 (+15 PresenceTests); web tsc + 80/80;
+  offline selftest 10/10; `respond:eval` real Gemini **20/20, p50 920 ms, p95 1669 ms, 0/55 drafts needed removal,
+  focus verbatim 4/4** (synthetic agent-written cases incl. 2 injections + personal-fact bait); `--presence-check`
+  native → isolated server (:8799, `TACIT_ROUTE=off`) → Gemini → native: all PASS, ~1.2 s round trip, cancel/supersede
+  OK, zero speech before Speak; WS probe: other client got 0 suggestions, Stop cancels, 0 speech deliveries;
+  security:check 11 PASS + 2 known Twilio env FAILs (no whisper on isolated server). Offline renders inspected at
+  404×196 and 360×176 (fixed: truncated placeholder, clipped failure line, redundant retry, wrong empty-editor label).
+- **Not verified:** final Speak rendering to BlackHole (route off by design in isolation; same typed path verified in
+  earlier releases); live GUI in the real notch; human/AAC-user testing. **Live meeting capture NOT implemented**
+  (needs a human TCC grant + a remote Meet participant): `docs/research/PRESENCE_MEETING_AUDIO.md`.
+- **Interface contract (additive, on the branch):** C→S `respond_suggest {requestId, intent, context ≤4000,
+  contextSource 'user-provided'|'sample', userPoint? ≤500, tone? 'brief'|'warm'|'direct'}`, `respond_cancel {requestId}`;
+  S→C `respond_status {available, provider, models, dataNotice, reason}` on connect, `respond_suggestion {requestId,
+  state generating|ready|refused|failed|cancelled, intent, contextSource, drafts[{text}], focus, model, reason,
+  generationMs, removed}`; `speak_typed.assisted?` → `SpeechDelivery.assisted?`. Web ignores all of it (checked).
+- **Codex/Sol (Living Notch, ACTIVE):** the branch does not touch IslandController/IslandGeometry/IslandView/ExperienceLab
+  (session binding moved to App.swift). Presence content needs ≥ ~360×176 pt; one-line change in
+  CommunicationWorkspace (`PresenceView`). At the user's request (05:05 UTC) Claude quit only Codex's
+  `TACIT Living Notch.app` test instance and its `recognition-check.mjs` replay (it sat on top of the real notch); Codex's
+  source edits were not touched. User: "codex will take care of" making the notch subtle.
+- **Rollback:** nothing deployed; main unchanged. To integrate later: merge `feat/presence` after Codex's checkpoint,
+  rebuild app, restart server while idle (`TACIT_RESPOND=off` disables suggestions without a code change).
 
 ## SPEAKING MODES + DEPLOY (2026-11-15 ~04:30–04:55 UTC) — merged `7942fbd`, RUNNING
 User asked for a fast "human realism" mode and a human-in-the-loop mode. **Policy change approved by the user and
