@@ -6,6 +6,14 @@
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
 
+## adaptBretake audit + final training set (2026-11-15 00:03 UTC, read-only)
+`data/webcam/20261115T000100Z-adaptBretake`: 8/8 silent clips = exactly `adapt_v1_b_retake.txt` = the 8 excluded adaptB
+sentences. 1280x720, 6.0 s, 180 frames, no gaps; brightness 156–159 (adaptB p50 156); IOD 154–157 px; FaceMesh 100 %;
+roll ≤ 1.4° after the warm-up frames. Smile check: longest lip-spread run ≤ 4 frames (adaptA ≤ 5; flagged adaptB
+takes 14–28); frame strips show no grins. PASS. Final training set (adaptA 50 + adaptB 43 + retake 8): 101 clips, 101
+unique sentences = adapt_v1_a ∪ adapt_v1_b, 0 duplicates; trainer dry-run (val placeholder diag1) plans 101 clips.
+Training NOT started (adaptVal not yet recorded). Command: DEMO_READINESS E.5.
+
 ## adaptB recording audit (2026-11-14, read-only, finished 23:57 UTC)
 `data/webcam/20261114T234421Z-adaptB` (an empty aborted `234406Z-adaptB` is ignored): 51/51 silent clips = exactly
 `adapt_v1_b.txt`, 0 overlap with adaptA/val/held-out/diagnostic/dev. All decode 1280x720, 6.0 s, 180 frames, no gaps.
