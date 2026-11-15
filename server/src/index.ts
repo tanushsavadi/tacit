@@ -24,7 +24,8 @@ import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig
 import { TurnLog } from './turnlog.ts';
 import { LIVE_CAPABILITY, LiveSession, httpRecognizer } from './live.ts';
 import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, sweepStaleAudio, unconfiguredRoute } from './route.ts';
-import { SpeechOutput } from './speech.ts';
+import { SpeechOutput, UNVALIDATED_GATE } from './speech.ts';
+import { MyVoice, VoiceHelper, voiceBinary } from './voices.ts';
 import type { VoiceRouteStatus } from '../../shared/protocol.ts';
 import { spawn } from 'node:child_process';
 
@@ -196,7 +197,22 @@ controller.on('cue', (cue) => broadcast({ type: 'cue', cue }));
 
 let route: RouteHelper | null = null;
 let routeFallback: VoiceRouteStatus = unconfiguredRoute('Checking for the virtual microphone…');
-const speech = new SpeechOutput(tts, () => route, () => routeFallback);
+// My Voice: installed macOS voices via tacit-voice (one warm synthesizer), the consented clone, the `say` default.
+const voiceBin = process.platform === 'darwin' && process.env.TACIT_VOICE !== 'off' ? voiceBinary() : null;
+if (!voiceBin) console.log('[voice] tacit-voice not available: My Voice offers only the macOS default voice (./scripts/tacit.sh build)');
+const voiceHelper = voiceBin ? new VoiceHelper(voiceBin) : null;
+const myVoice = new MyVoice({
+  engine: voiceHelper,
+  system: tts.system,
+  personal: tts.personalTts && process.env.ELEVENLABS_VOICE_ID
+    ? { tts, voiceId: process.env.ELEVENLABS_VOICE_ID, available: () => tts.personalError === null, reason: () => tts.personalError }
+    : null,
+  customReason: created.reason,
+});
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => voiceHelper?.close());
+process.on('exit', () => voiceHelper?.close());
+const speech = new SpeechOutput(myVoice, () => route, () => routeFallback, UNVALIDATED_GATE, Date.now, myVoice);
+myVoice.on('status', (status) => { broadcast({ type: 'voice_status', status }); speech.emit('status', speech.status()); });
 speech.on('status', (status) => { broadcast({ type: 'output_status', status }); controller.setServices({ voiceRoute: status.route }); });
 speech.on('delivery', (delivery) => {
   broadcast({ type: 'speech_delivery', delivery });
@@ -309,6 +325,7 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
       if (typeof msg.personalPresynth === 'boolean') patch.personalPresynth = msg.personalPresynth;
       tts.setPolicy(patch);
       console.log(`[tts] voice policy set by the user: ${JSON.stringify(tts.policy)}`);
+      myVoice.changed();
       return controller.setServices({ voicePolicy: tts.status() });
     }
     case 'output_control':
@@ -319,6 +336,13 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
       return speech.speakTyped(msg);
     case 'speak_reviewed': // explicit user pick (or correction) of the current review; checks in SpeechOutput
       return speech.speakReviewed(msg, live.current, live.reviewTarget());
+    case 'voice_select': {
+      const r = myVoice.select(msg);
+      console.log(`[voice] selection ${r.ok ? `→ ${myVoice.status().effective.voiceId}` : `refused (${r.reason})`} by the user`);
+      return;
+    }
+    case 'voice_refresh':
+      return myVoice.refresh();
     case 'delete_turn_logs':
       await turnLog.deleteAll();
       console.log('[turns] all stored turns deleted by the user');
@@ -463,6 +487,7 @@ uiWss.on('connection', (ws) => {
   ws.binaryType = 'nodebuffer';
   ws.send(JSON.stringify({ type: 'live_status', status: live.current } satisfies ServerMessage));
   ws.send(JSON.stringify({ type: 'output_status', status: speech.status() } satisfies ServerMessage));
+  ws.send(JSON.stringify({ type: 'voice_status', status: myVoice.status() } satisfies ServerMessage));
   ws.on('message', async (data, isBinary) => {
     try {
       if (isBinary) return live.frame(data as Buffer, ws); // JPEG frames of this socket's current visual_utterance

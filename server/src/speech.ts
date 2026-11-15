@@ -11,6 +11,7 @@ import type { LiveStatus, RecognitionHypothesis, ReviewChoice, SpeechDelivery, S
 import { sha256Hex } from './live.ts';
 import type { OutputRoute } from './route.ts';
 import type { TtsResult } from './tts.ts';
+import type { BindResult, VoiceBinding } from './voices.ts';
 
 export interface ReliabilityGate {
   validated: boolean;
@@ -26,8 +27,10 @@ export const UNVALIDATED_GATE: ReliabilityGate = Object.freeze({
 export const MAX_TYPED_CHARS = 500;
 export const MAX_PENDING = 4;
 
-interface Synth { synth(text: string, format?: 'file', signal?: AbortSignal): Promise<TtsResult>; label: string }
-interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean; expiresAt?: number; expiryTimer?: ReturnType<typeof setTimeout> }
+interface Synth { synth(text: string, format?: 'file', signal?: AbortSignal, voice?: VoiceBinding): Promise<TtsResult>; label: string }
+/** My Voice: binds each accepted request to the voice effective at approval time (MyVoice in production). */
+export interface VoiceBinder { bind(revision: unknown): BindResult; status(): { revision: number; effective: { voiceId: string; label: string } } }
+interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean; voice?: VoiceBinding; expiresAt?: number; expiryTimer?: ReturnType<typeof setTimeout> }
 const REVIEW_CHOICES: readonly ReviewChoice[] = ['raw', 'alternative', 'phrase', 'edited'];
 
 /**
@@ -52,7 +55,8 @@ export class SpeechOutput extends EventEmitter {
   private consumedReview: string | null = null;
 
   constructor(private tts: Synth, private route: () => OutputRoute | null, private unconfigured: () => VoiceRouteStatus,
-              private gate: ReliabilityGate = UNVALIDATED_GATE, private now = () => Date.now()) { super(); }
+              private gate: ReliabilityGate = UNVALIDATED_GATE, private now = () => Date.now(),
+              private voices: VoiceBinder | null = null) { super(); }
 
   /** A newer accepted utterance revokes pending reviewed speech, including synthesis already in flight. */
   invalidateReviewed(): void {
@@ -72,8 +76,18 @@ export class SpeechOutput extends EventEmitter {
   routeStatus(): VoiceRouteStatus { return this.route()?.status() ?? this.unconfigured(); }
 
   status(): SpeechOutputStatus {
-    return { ...this.st, route: this.routeStatus(), voice: this.tts.label, queued: this.waiting.length + this.active.size,
-      recognizedSpeechAllowed: false };
+    const v = this.voices?.status();
+    return { ...this.st, route: this.routeStatus(), voice: v?.effective.label ?? this.tts.label, queued: this.waiting.length + this.active.size,
+      recognizedSpeechAllowed: false, ...(v ? { voiceId: v.effective.voiceId, voiceRevision: v.revision } : {}) };
+  }
+
+  /** Freeze the voice for an approved request; a stale `voiceRevision` is refused (the user approved another voice). */
+  private bindVoice(d: SpeechDelivery, revision: unknown): { ok: true; voice?: VoiceBinding } | { ok: false; reason: string } {
+    if (!this.voices) return { ok: true };
+    const b = this.voices.bind(revision);
+    if (!b.ok) return b;
+    d.voiceId = b.binding.voiceId; d.voice = b.binding.label;
+    return { ok: true, voice: b.binding };
   }
   private announce(): void { this.emit('status', this.status()); }
   private deliver(d: SpeechDelivery): void { this.emit('delivery', { ...d, timings: { ...d.timings } }); }
@@ -107,7 +121,7 @@ export class SpeechOutput extends EventEmitter {
     if (this.active.size) this.route()?.stop(reason); // route answers 'interrupted' for what it holds
   }
 
-  speakTyped(msg: { requestId: unknown; outputAuthorizationId: unknown; text: unknown; outputGeneration?: unknown }): void {
+  speakTyped(msg: { requestId: unknown; outputAuthorizationId: unknown; text: unknown; outputGeneration?: unknown; voiceRevision?: unknown }): void {
     const id = typeof msg.requestId === 'string' && msg.requestId.length <= 100 ? msg.requestId : '';
     const text = typeof msg.text === 'string' ? msg.text.trim() : '';
     const d = this.newDelivery(id || `invalid-${randomUUID()}`, 'typed', text);
@@ -120,7 +134,9 @@ export class SpeechOutput extends EventEmitter {
     if (msg.outputGeneration !== undefined && msg.outputGeneration !== this.st.generation) return refuse('Voice output was paused or interrupted after this message was written; send it again if you still want it spoken.');
     if (!text) return refuse('Nothing to say.');
     if (text.length > MAX_TYPED_CHARS) return refuse(`Longer than ${MAX_TYPED_CHARS} characters.`);
-    this.enqueue(d);
+    const v = this.bindVoice(d, msg.voiceRevision);
+    if (!v.ok) return refuse(v.reason);
+    this.enqueue(d, d.text, undefined, v.voice);
   }
 
   /**
@@ -138,8 +154,11 @@ export class SpeechOutput extends EventEmitter {
     if (this.seen.has(key)) return no('Utterance already spoken.');
     const verdict = this.gate.accept(h);
     if (!verdict.ok) return no(verdict.reason);
+    const d = this.newDelivery(key, 'recognized', h.rawText.trim());
+    const v = this.bindVoice(d, undefined);
+    if (!v.ok) return no(v.reason);
     this.remember(key);
-    this.enqueue(this.newDelivery(key, 'recognized', h.rawText.trim()));
+    this.enqueue(d, d.text, undefined, v.voice);
     return null;
   }
 
@@ -189,7 +208,9 @@ export class SpeechOutput extends EventEmitter {
       if (msg.textHash !== c.textHash || c.textHash !== sha256Hex(c.text)) return refuse('Text hash mismatch.');
       say = speakableCase(c.text); // same words; casing only, for the voice
     }
-    this.enqueue(d, say, target.reviewExpiresAt);
+    const v = this.bindVoice(d, msg.voiceRevision); // a voice mismatch does not consume the utterance
+    if (!v.ok) return refuse(v.reason);
+    this.enqueue(d, say, target.reviewExpiresAt, v.voice);
     if (d.state !== 'refused') { this.consumedReview = once; this.remember(once); } // route/queue refusals allow retry
   }
 
@@ -202,7 +223,7 @@ export class SpeechOutput extends EventEmitter {
     return { requestId, outputAuthorizationId: this.st.authorizationId, generation: this.st.generation, source, text, state: 'queued', reason: null, voice: null, remoteAudibility: 'unknown', timings: { requestedAt: this.now() } };
   }
 
-  private enqueue(d: SpeechDelivery, say = d.text, expiresAt?: number): void {
+  private enqueue(d: SpeechDelivery, say = d.text, expiresAt?: number, voice?: VoiceBinding): void {
     const route = this.route();
     if (!route || route.status().state !== 'ready') {
       d.state = 'refused'; d.reason = `Virtual microphone not ready: ${this.routeStatus().reason ?? this.routeStatus().state}.`; d.timings.endedAt = this.now();
@@ -212,7 +233,7 @@ export class SpeechOutput extends EventEmitter {
       d.state = 'refused'; d.reason = `Too many messages waiting (${MAX_PENDING}); wait or stop.`; d.timings.endedAt = this.now();
       return this.deliver(d);
     }
-    const r: Req = { d, say, expiresAt, generation: this.st.generation, abort: new AbortController(), routed: false };
+    const r: Req = { d, say, expiresAt, voice, generation: this.st.generation, abort: new AbortController(), routed: false };
     this.waiting.push(r);
     if (expiresAt !== undefined) {
       r.expiryTimer = setTimeout(() => {
@@ -238,7 +259,7 @@ export class SpeechOutput extends EventEmitter {
         if (r.expiresAt !== undefined && this.now() >= r.expiresAt) { this.finish(r, 'interrupted', 'Review expired before synthesis.'); continue; }
         r.d.state = 'synthesizing'; r.d.timings.synthStartAt = this.now(); this.deliver(r.d);
         let audio: TtsResult;
-        try { audio = await this.tts.synth(r.say, 'file', r.abort.signal); } catch (e) {
+        try { audio = await this.tts.synth(r.say, 'file', r.abort.signal, r.voice); } catch (e) {
           if (this.active.has(r)) this.finish(r, 'failed', `Speech synthesis failed: ${e instanceof Error ? e.message : String(e)}. Nothing was sent.`);
           continue;
         }
