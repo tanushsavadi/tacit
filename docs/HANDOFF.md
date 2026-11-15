@@ -1,10 +1,47 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 01:02 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "integration pivot".
+**Last updated:** 2026-11-15 01:55 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (backend/speech/integration, Git owner) — session "My Voice" (branch feat/my-voice).
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## My Voice — built on branch `feat/my-voice`, NOT merged (2026-11-15 01:19–01:55 UTC)
+Main (`e710dfe`) stays the verified demo release; the running :8790 was NOT touched or restarted. Worktree
+`../tacit-my-voice`, branch pushed (`4b00cb0` say fix · `3a84dac` tacit-voice helper · `f645e69` registry/selection/
+binding · `5d18cb9` private preview · `7e391de` myvoice:check · `5e12332` findings). Full report, measurements,
+integration + rollback: `git show feat/my-voice:docs/research/MY_VOICE.md`.
+- Users choose from the 180 installed macOS voices (stable ids, locale, quality, Apple novelty flag; no gender
+  attributes), optional rate/pitch, persisted in `server/data/voice-prefs.json`; private preview on the Mac speakers
+  with a leak guard; every approved request is bound to the voice effective at acceptance.
+- Measured on the real route (isolated :8799): request → sound at the BlackHole input p50 65–76 ms with tacit-voice vs
+  872 ms with `say` (n=10 each, 30/30 rendered); Stop 7–8 ms. Server 167/167, web 80/80 + build, security 13/13.
+- Apple Personal Voice: truthful disabled state (`usableInCalls: false`) — Apple forbids apps capturing it and macOS has
+  no app speech-into-call API; Apple's Live Speech is the compliant route (FaceTime documented, Meet unverified).
+- Fidelity fix on the branch: `say` executed `[[…]]` commands from user text (now spoken literally).
+- Not verified: remote human hearing My Voice in Meet; naturalness listening. Merge needs the user's go-ahead + a Sol
+  checkpoint (no Sol files were touched).
+
+## Interface contract — My Voice (PROPOSED for Sol; additive; on `feat/my-voice` only until merged)
+Types in `shared/protocol.ts` on the branch: `VoiceOption`, `VoiceStatus`, `VoicePreviewState`. Nothing existing changes
+meaning; clients that ignore the new messages keep working (companion `default: break`, web if/else — checked).
+- **S→C `voice_status {status}`** on connect and after every change: `revision`, `selected {voiceId, rate?, pitch?,
+  source}`, `effective {voiceId, rate?, pitch?, label}` (what will speak), `fallback` (reason when effective ≠
+  selected — show it), `voices: VoiceOption[]` (`id, name, locale, language, provider, quality, kind, novelty,
+  available, unavailableReason, local, controls {rate?, pitch?: {min,max,default,step}}`), `samples` (preview
+  phrases), `engine`, `applePersonalVoice {authorization, usableInCalls:false, reason}`, `custom`, `lastChange
+  {requestId, ok, reason}`.
+- **C→S `voice_select {requestId?, voiceId | null, rate?, pitch?}`** → result in `voice_status.lastChange` (match
+  `requestId`). null = back to default. Only render sliders for `controls` present; send values inside the range.
+- **C→S `voice_preview {previewId, voiceId, rate?, pitch?, text? (≤200, verbatim) | sample? (index)}`**, **`voice_preview_stop`**
+  → S→C `voice_preview {preview}`: synthesizing → playing → done | stopped | refused | failed; `output` = local device
+  name ("Plays on MacBook Pro Speakers only"). A refusal reason explains a virtual-mic sound output.
+- **Speak requests:** add `voiceRevision: voice_status.revision` to `speak_typed` and `speak_reviewed` (optional,
+  recommended). Mismatch → refused "Your voice changed…" (reviewed: utterance NOT consumed — press Speak again).
+  `output_status` gains `voiceId`, `voiceRevision`; `speech_delivery` gains `voiceId` (voice bound at acceptance).
+- **UI rules:** choose by listening — no gender/personality copy; hide `novelty` voices behind "More voices"; show
+  `kind:'apple-personal-voice'` voices disabled with `unavailableReason`; never present preview as call audio; previewing
+  the ElevenLabs clone (`local:false`) uses the network. Voice choice never edits the user's words.
 
 ## Integration pivot — release gate (2026-11-15 00:48–01:02 UTC)
 User decision: ML workstream FROZEN (no training, no heldout_v2, no new recordings; pretrained base stays default; no
