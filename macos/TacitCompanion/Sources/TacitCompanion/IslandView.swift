@@ -22,7 +22,8 @@ struct IslandSilhouette: Shape {
 struct IslandView: View {
     @ObservedObject var client: TacitClient
     @ObservedObject var island: IslandController
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var reduceMotion: Bool { systemReduceMotion || CompanionAccessibility.reducedMotionPreview }
     @Environment(\.colorSchemeContrast) private var contrast
     private var activity: ActivityPresentation { ActivityPresentation.current(client) }
 
@@ -30,15 +31,9 @@ struct IslandView: View {
         VStack(spacing: 0) {
             crown
             if island.expanded {
-                Group {
-                    if island.reviewing {
-                        RecognitionReview(client: client, onEdit: { island.showUtility(.review) })
-                    } else {
-                        ConversationView(client: client, island: island)
-                    }
-                }
+                ConversationView(client: client, island: island)
                 .padding(.horizontal, 28).padding(.top, 8).padding(.bottom, 22)
-                .transition(.opacity)
+                .transition(CommunicationMotion.contentTransition(reduceMotion: reduceMotion))
             } else if island.reveal, let h = client.lastHypothesis {
                 Button { island.expand() } label: {
                     VStack(alignment: .leading, spacing: 6) {
@@ -52,7 +47,7 @@ struct IslandView: View {
                     }.padding(.horizontal, 28).padding(.top, 4).padding(.bottom, 10)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }.buttonStyle(.plain).accessibilityLabel("Raw recognition, display only. \(h.text). Open TACIT controls")
-                .transition(.opacity)
+                .transition(CommunicationMotion.contentTransition(reduceMotion: reduceMotion))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -62,8 +57,8 @@ struct IslandView: View {
         .contentShape(IslandSilhouette())
         .foregroundStyle(.white).preferredColorScheme(.dark)
         .onHover { island.hover($0) }
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.9), value: island.expanded)
-        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.9), value: island.reveal)
+        .animation(CommunicationMotion.expansion(reduceMotion: reduceMotion), value: island.expanded)
+        .animation(CommunicationMotion.expansion(reduceMotion: reduceMotion), value: island.reveal)
     }
 
     private var crown: some View {

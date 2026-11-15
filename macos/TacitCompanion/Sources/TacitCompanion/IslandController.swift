@@ -37,8 +37,10 @@ final class IslandController: ObservableObject {
     @Published private(set) var geometry: IslandGeometry
     @Published private(set) var displayName = ""
     @Published private(set) var reveal = false
+    let communication: CommunicationSession
     private let client: TacitClient
     private var panel: IslandPanel?
+    private let frameAnimator = IslandFrameAnimator()
     private var utilityPanel: IslandPanel?
     enum Utility { case typed, diagnostics, transcript, review }
     private var subscriptions = Set<AnyCancellable>()
@@ -50,10 +52,13 @@ final class IslandController: ObservableObject {
     private var resignObserver: NSObjectProtocol?
     private var displayID: UInt32?
     private var showKey: HotKey?
+    private var holdKey: HotKey?
+    @Published private(set) var holdKeyRegistered = false
     @Published private(set) var showKeyRegistered = false
 
-    init(client: TacitClient) {
+    init(client: TacitClient, communication: CommunicationSession? = nil, registerHotKey: Bool = true) {
         self.client = client
+        self.communication = communication ?? CommunicationSession()
         let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
         geometry = IslandGeometry(screen: screen)
         enabled = UserDefaults.standard.object(forKey: "TACITIslandEnabled") as? Bool ?? true
@@ -75,9 +80,17 @@ final class IslandController: ObservableObject {
             }
             self.updateFrame()
         }.store(in: &subscriptions)
-        showKey = HotKey(keyCode: 17, modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
+        if registerHotKey { showKey = HotKey(keyCode: 17, modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
             Task { @MainActor in self?.showForKeyboard() }
         }
+        holdKey = HotKey(keyCode: UInt32(kVK_ANSI_H), modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
+            Task { @MainActor in
+                guard let self else { return }
+                self.communication.holdTurn(using: self.client)
+            }
+        }
+        }
+        holdKeyRegistered = holdKey?.registered ?? false
         showKeyRegistered = showKey?.registered ?? false
     }
 
@@ -91,9 +104,16 @@ final class IslandController: ObservableObject {
         p.hidesOnDeactivate = false; p.isReleasedWhenClosed = false
         p.isMovable = false; p.acceptsMouseMovedEvents = true; p.animationBehavior = .none
         p.title = "TACIT conversation island"
-        p.onPress = nil // Hover and ordinary control clicks never take the calling app’s keyboard.
+        p.onPress = { [weak self] in
+            guard let self else { return }
+            if [.compose, .customize, .assistance].contains(self.communication.surface) || self.client.reviewDraft.editing {
+                self.takeKeyboard()
+            }
+        } // Only an explicit click in an editor takes the keyboard; hover never does.
         p.onEscape = { [weak self] in self?.collapse() }
-        p.contentView = IslandHostingView(rootView: IslandView(client: client, island: self))
+        let content = IslandHostingView(rootView: IslandView(client: client, island: self))
+        content.sizingOptions = [] // The controller alone owns the bounded native window dimensions.
+        p.contentView = content
         panel = p
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
             object: p, queue: .main) { [weak self] _ in
@@ -108,7 +128,7 @@ final class IslandController: ObservableObject {
 
     func setEnabled(_ value: Bool) {
         enabled = value; UserDefaults.standard.set(value, forKey: "TACITIslandEnabled")
-        if value { placeOnDisplay(); panel?.orderFrontRegardless() } else { collapse(); panel?.orderOut(nil) }
+        if value { placeOnDisplay(); panel?.orderFrontRegardless() } else { collapse(); frameAnimator.cancel(); panel?.orderOut(nil) }
     }
 
     func selectDisplay(_ screen: NSScreen) {
@@ -134,7 +154,12 @@ final class IslandController: ObservableObject {
         }
     }
 
-    func beginReview() { reviewing = true; expand() }
+    func beginReview() { reviewing = true; communication.surface = .conversation; expand() }
+    func showCommunication(_ surface: CommunicationSession.Surface) {
+        communication.surface = surface; reviewing = false; expand()
+        if surface == .compose || surface == .customize || surface == .assistance { takeKeyboard() }
+    }
+    func focusEditor() { takeKeyboard() }
     func expand() { closeWork?.cancel(); expanded = true; updateFrame() }
     func showForKeyboard() { if !enabled { setEnabled(true) }; expand(); takeKeyboard() }
     func togglePin() { pinned.toggle(); if pinned { expand() } }
@@ -150,6 +175,8 @@ final class IslandController: ObservableObject {
     }
 
     func showUtility(_ surface: Utility) {
+        if surface == .typed { showCommunication(.compose); return }
+        if surface == .review { beginReview(); focusEditor(); return }
         collapse()
         utilityPanel?.close()
         let size: CGSize
@@ -169,18 +196,33 @@ final class IslandController: ObservableObject {
         p.center(); utilityPanel = p; p.orderFrontRegardless(); p.makeKey()
     }
 
+    func focusForOfflineInspection() {
+        guard client.isIsolated else { return }
+        panel?.keyboardEnabled = true; panel?.makeKey()
+    }
+
+    var renderedSize: CGSize? { panel?.frame.size }
+
+    /// Snapshot only this app's rendered view; never captures desktop pixels or another application.
+    func saveRenderedIsland(to path: String) throws {
+        guard let view = panel?.contentView else { return }
+        view.layoutSubtreeIfNeeded()
+        view.needsDisplay = true
+        view.display()
+        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        guard let png = bitmap.representation(using: .png, properties: [:]) else { return }
+        try png.write(to: URL(fileURLWithPath: path))
+    }
+
     private func updateFrame(animated: Bool = true) {
         let size = expanded ? geometry.expandedSize : CGSize(width: reveal ? min(380, geometry.expandedSize.width) : geometry.compactSize.width,
             height: geometry.compactSize.height + (reveal ? 68 : 0))
         guard let panel else { return }
         let target = geometry.frame(size: size)
         guard panel.frame != target else { return }
-        if animated && enabled && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.28
-                panel.animator().setFrame(target, display: true)
-            }
-        } else { panel.setFrame(target, display: true) }
+        frameAnimator.setFrame(target, on: panel, animated: animated && enabled
+            && !(client.isIsolated && CommandLine.arguments.contains("--lab-reduce-motion")))
     }
 }
 

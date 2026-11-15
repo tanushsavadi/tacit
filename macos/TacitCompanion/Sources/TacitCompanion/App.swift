@@ -7,19 +7,24 @@ final class CompanionRuntime: ObservableObject {
     let client: TacitClient
     let island: IslandController
     private init() {
-        let testing = CommandLine.arguments.contains("--selftest")
-        client = TacitClient(registerHotKey: !testing, connectOnInit: false)
-        island = IslandController(client: client)
+        let lab = ExperienceLab.isEnabled
+        let testing = CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--offline-selftest") || lab
+        client = TacitClient(registerHotKey: !testing, connectOnInit: false,
+            isolatedTransport: lab ? .init(send: { ExperienceLab.shared.record($0) }) : nil)
+        island = IslandController(client: client, communication: CommunicationSession(defaults: lab ? nil : .standard), registerHotKey: !testing)
     }
 }
 
 @MainActor
 final class CompanionDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard !CommandLine.arguments.contains("--selftest") else { return }
-        if CommandLine.arguments.contains("--inspect-ui") { NSApp.setActivationPolicy(.regular) }
+        guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--offline-selftest") else { return }
+        let lab = ExperienceLab.isEnabled
+        if CommandLine.arguments.contains("--inspect-ui") || lab { NSApp.setActivationPolicy(.regular) }
         CompanionRuntime.shared.island.start()
-        CompanionRuntime.shared.client.connect()
+        if lab {
+            ExperienceLab.shared.start(client: CompanionRuntime.shared.client, island: CompanionRuntime.shared.island)
+        } else { CompanionRuntime.shared.client.connect() }
         if CommandLine.arguments.contains("--inspect-ui") {
             CompanionRuntime.shared.island.showForKeyboard()
             CompanionRuntime.shared.island.togglePin()
@@ -32,6 +37,7 @@ struct TacitCompanionApp: App {
     @NSApplicationDelegateAdaptor(CompanionDelegate.self) private var delegate
     private let runtime = CompanionRuntime.shared
     init() {
+        if CommandLine.arguments.contains("--offline-selftest") { OfflineSelfTest.run() }
         if CommandLine.arguments.contains("--selftest") { SelfTest.run(); return }
         let me = Bundle.main.bundleIdentifier ?? ""
         if !me.isEmpty, NSRunningApplication.runningApplications(withBundleIdentifier: me).count > 1 { exit(0) }
@@ -58,7 +64,7 @@ struct MenuView: View {
     @ObservedObject var island: IslandController
     var body: some View {
         ConversationView(client: client, island: island)
-            .padding(20).frame(width: 400, height: 222)
+            .padding(20).frame(width: 460, height: 320)
             .background(.black).preferredColorScheme(.dark)
     }
 }
