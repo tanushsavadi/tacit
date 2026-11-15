@@ -37,6 +37,12 @@ final class IslandController: ObservableObject {
     @Published private(set) var geometry: IslandGeometry
     @Published private(set) var displayName = ""
     @Published private(set) var reveal = false
+    @Published private(set) var hovered = false
+    @Published private(set) var discreet = false
+    var presentation: LivingNotchPresentation { .current(client, live: live) }
+    var peeking: Bool { LivingNotchVisibility.peek(expanded: expanded, hovered: hovered,
+        review: client.canReviewCurrent, busy: presentation.busy, problem: false, transient: reveal) }
+    var targetSize: CGSize { expanded ? geometry.expandedSize : peeking ? geometry.peekSize : geometry.compactSize(discreet: discreet) }
     let communication: CommunicationSession
     /// Native camera + Live for "Start communicating".
     let live: LiveCoordinator
@@ -64,24 +70,26 @@ final class IslandController: ObservableObject {
         self.communication = communication ?? CommunicationSession()
         let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
         geometry = IslandGeometry(screen: screen)
+        discreet = client.isIsolated ? false : UserDefaults.standard.bool(forKey: "TACITIslandDiscreet")
         enabled = UserDefaults.standard.object(forKey: "TACITIslandEnabled") as? Bool ?? true
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.placeOnDisplay() } }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification,
             object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.placeOnDisplay() } }
-        client.$lastHypothesis.dropFirst().sink { [weak self] hypothesis in
+        // Published values are read after storage. These subscriptions only present accepted client state.
+        client.$lastHypothesis.dropFirst().receive(on: RunLoop.main).sink { [weak self] hypothesis in
             guard let self else { return }
             self.reviewing = false
-            self.revealWork?.cancel()
-            self.reveal = hypothesis != nil
-            if hypothesis != nil {
-                let work = DispatchWorkItem { [weak self] in
-                    self?.reveal = false; self?.updateFrame()
-                }
-                self.revealWork = work
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
-            }
-            self.updateFrame()
+            if hypothesis != nil { self.showTransientPeek(seconds: 6) }
+            else { self.revealWork?.cancel(); self.reveal = false; self.updateFrame() }
+        }.store(in: &subscriptions)
+        client.$lastDelivery.dropFirst().receive(on: RunLoop.main).sink { [weak self] delivery in
+            guard let self else { return }
+            if delivery != nil { self.showTransientPeek(seconds: 4) }
+            else { self.updateFrame() }
+        }.store(in: &subscriptions)
+        client.objectWillChange.merge(with: live.objectWillChange).receive(on: RunLoop.main).sink { [weak self] _ in
+            self?.updateFrame()
         }.store(in: &subscriptions)
         if registerHotKey { showKey = HotKey(keyCode: 17, modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
             Task { @MainActor in self?.showForKeyboard() }
@@ -103,7 +111,7 @@ final class IslandController: ObservableObject {
         p.appearance = NSAppearance(named: .darkAqua)
         p.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = false
+        p.isOpaque = false; p.backgroundColor = .clear; p.hasShadow = true
         p.hidesOnDeactivate = false; p.isReleasedWhenClosed = false
         p.isMovable = false; p.acceptsMouseMovedEvents = true; p.animationBehavior = .none
         p.title = "TACIT conversation island"
@@ -120,6 +128,7 @@ final class IslandController: ObservableObject {
         let content = IslandHostingView(rootView: IslandView(client: client, island: self))
         content.sizingOptions = [] // The controller alone owns the bounded native window dimensions.
         p.contentView = content
+        content.layer?.masksToBounds = false
         panel = p
         resignObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification,
             object: p, queue: .main) { [weak self] _ in
@@ -152,12 +161,27 @@ final class IslandController: ObservableObject {
     func hover(_ inside: Bool) {
         hoverWork?.cancel(); closeWork?.cancel()
         if inside && !expanded {
-            let work = DispatchWorkItem { [weak self] in self?.expand() }
-            hoverWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
+            // Intentional short dwell reveals a small Peek. Full controls require a click/shortcut.
+            let work = DispatchWorkItem { [weak self] in self?.hovered = true; self?.updateFrame() }
+            hoverWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: work)
         } else if !inside && !pinned && panel?.isKeyWindow != true {
             let work = DispatchWorkItem { [weak self] in self?.collapse() }
-            closeWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.55, execute: work)
+            closeWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
         }
+    }
+
+    private func showTransientPeek(seconds: Double) {
+        revealWork?.cancel(); reveal = true
+        let work = DispatchWorkItem { [weak self] in self?.reveal = false; self?.updateFrame() }
+        revealWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
+        updateFrame()
+    }
+
+    func setDiscreet(_ value: Bool) {
+        discreet = value
+        if !client.isIsolated { UserDefaults.standard.set(value, forKey: "TACITIslandDiscreet") }
+        updateFrame()
     }
 
     func beginReview() { reviewing = true; communication.surface = .conversation; expand() }
@@ -165,13 +189,13 @@ final class IslandController: ObservableObject {
         communication.surface = surface; reviewing = false; expand()
         if surface == .compose || surface == .customize || surface == .assistance { takeKeyboard() }
     }
-    func focusEditor() { takeKeyboard() }
+    func focusEditor() { pinned = true; takeKeyboard() }
     func expand() { closeWork?.cancel(); expanded = true; updateFrame() }
     func showForKeyboard() { if !enabled { setEnabled(true) }; expand(); takeKeyboard() }
     func togglePin() { pinned.toggle(); if pinned { expand() } }
     private func takeKeyboard() { expand(); panel?.keyboardEnabled = true; panel?.makeKey() }
     func collapse() {
-        hoverWork?.cancel(); closeWork?.cancel(); pinned = false; expanded = false; reviewing = false
+        hoverWork?.cancel(); closeWork?.cancel(); pinned = false; expanded = false; reviewing = false; hovered = false
         if let panel, panel.isKeyWindow {
             panel.keyboardEnabled = false; panel.orderOut(nil)
             if enabled { panel.orderFrontRegardless() }
@@ -208,6 +232,7 @@ final class IslandController: ObservableObject {
     }
 
     var renderedSize: CGSize? { panel?.frame.size }
+    var displayMaximumFPS: Int { panel?.screen?.maximumFramesPerSecond ?? 60 }
 
     /// Snapshot only this app's rendered view; never captures desktop pixels or another application.
     func saveRenderedIsland(to path: String) throws {
@@ -222,11 +247,11 @@ final class IslandController: ObservableObject {
     }
 
     private func updateFrame(animated: Bool = true) {
-        let size = expanded ? geometry.expandedSize : CGSize(width: reveal ? min(380, geometry.expandedSize.width) : geometry.compactSize.width,
-            height: geometry.compactSize.height + (reveal ? 68 : 0))
+        let size = targetSize
         guard let panel else { return }
         let target = geometry.frame(size: size)
-        guard panel.frame != target else { return }
+        // Always retarget, even when the current frame equals the new destination: an earlier
+        // expansion may still be in flight. The animator deduplicates repeated destinations.
         frameAnimator.setFrame(target, on: panel, animated: animated && enabled
             && !(client.isIsolated && CommandLine.arguments.contains("--lab-reduce-motion")))
     }

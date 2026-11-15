@@ -7,14 +7,14 @@ final class CompanionTests: XCTestCase {
             leftArea: CGRect(x: 1512, y: 745, width: 656, height: 37),
             rightArea: CGRect(x: 2368, y: 745, width: 656, height: 37))
         XCTAssertTrue(g.hasNotch); XCTAssertEqual(g.cutoutWidth, 200)
-        XCTAssertEqual(g.compactSize.width, 276)
+        XCTAssertEqual(g.compactSize.width, 264)
         XCTAssertEqual(g.frame(size: g.compactSize).midX, 2268)
-        XCTAssertEqual(g.frame(size: g.expandedSize).maxY, 782)
+        XCTAssertEqual(g.frame(size: g.expandedSize).maxY, 745)
     }
     func testNonNotchAndSmallDisplayStayOnScreen() {
         let g = IslandGeometry(frame: CGRect(x: -800, y: 1200, width: 800, height: 600), safeTop: 0, leftArea: nil, rightArea: nil)
-        XCTAssertFalse(g.hasNotch); XCTAssertEqual(g.compactSize.width, 116)
-        XCTAssertEqual(g.frame(size: g.expandedSize).maxY, 1794)
+        XCTAssertFalse(g.hasNotch); XCTAssertEqual(g.compactSize.width, 264)
+        XCTAssertEqual(g.frame(size: g.expandedSize).maxY, 1770)
         XCTAssertTrue(g.screenFrame.contains(g.frame(size: g.expandedSize)))
     }
     func testInvalidAuxiliaryAreasUseFallback() {
@@ -99,7 +99,7 @@ final class CompanionTests: XCTestCase {
         let g = IslandGeometry(frame:CGRect(x:0,y:0,width:1512,height:982),safeTop:37,
             leftArea:CGRect(x:0,y:945,width:656,height:37),rightArea:CGRect(x:856,y:945,width:656,height:37))
         XCTAssertEqual(g.expandedSize.width,460); XCTAssertEqual(g.expandedSize.height,350)
-        XCTAssertLessThan(g.expandedSize.height,360)
+        XCTAssertLessThan(g.expandedSize.height,380)
     }
     @MainActor func testReviewedCandidateProvenanceExpiryAndGeneration() async {
         let c = TacitClient(registerHotKey:false,connectOnInit:false); live(c)

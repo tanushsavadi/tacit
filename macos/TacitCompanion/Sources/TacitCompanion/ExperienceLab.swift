@@ -19,7 +19,8 @@ enum CompanionAccessibility {
     @Published var requests: [[String: Any]] = []
     private var window: NSWindow?
     private var utterance = 0
-    let scenarios = ["collapsed", "ready", "review", "editing", "phrases", "assistance", "voice", "error", "paused", "disconnected", "realtime-confirm", "realtime"]
+    var cameraFixture: NativeCamera.State?
+    let scenarios = ["compact-live", "peek-review", "peek-speaking", "peek-complete", "peek-realtime", "camera-denied", "discreet", "collapsed", "ready", "review", "editing", "phrases", "assistance", "voice", "error", "paused", "disconnected", "realtime-confirm", "realtime"]
     /// Offline My Voice fixture (sample registry shaped like the server's voice_status). Never plays audio.
     private var voiceRevision = 1
     private var voiceSelected = "apple:com.apple.voice.compact.en-US.Samantha"
@@ -83,8 +84,14 @@ enum CompanionAccessibility {
         panel.title = "TACIT · OFFLINE INTERACTION LAB"
         panel.isReleasedWhenClosed = false
         panel.contentView = NSHostingView(rootView: LabControls(lab: self))
-        panel.orderFrontRegardless(); window = panel
+        if !CommandLine.arguments.contains("--lab-island-only") { panel.orderFrontRegardless(); window = panel }
         show("ready")
+        if CommandLine.arguments.contains("--play-lab") {
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                await playMotion()
+            }
+        }
         if let flag = CommandLine.arguments.firstIndex(of: "--capture-lab"), CommandLine.arguments.count > flag + 1 {
             let directory = CommandLine.arguments[flag + 1]
             Task { @MainActor in
@@ -106,7 +113,7 @@ enum CompanionAccessibility {
     func show(_ scenario: String) {
         guard let client, let island else { return }
         client.connect() // isolated transport clears fixture state; never connects to a socket
-        client.notice = nil; client.reviewDraft = ReviewDraft()
+        client.notice = nil; client.reviewDraft = ReviewDraft(); cameraFixture = nil; island.setDiscreet(false)
         live("off"); output("ready")
         emit("voice_status", "status", voiceStatus())
         island.communication.surface = .conversation
@@ -115,7 +122,10 @@ enum CompanionAccessibility {
         if !island.pinned { island.togglePin() }
         switch scenario {
         case "collapsed": island.collapse()
-        case "review", "editing":
+        case "discreet": island.setDiscreet(true); island.collapse()
+        case "compact-live": cameraFixture = .tracking; live("active"); island.collapse()
+        case "camera-denied": cameraFixture = .denied; island.collapse(); island.hover(true)
+        case "review", "editing", "peek-review":
             live("active")
             utterance += 1
             let words = ["I HAVE SOMETHING TO ADD", "I HAD SOMETHING TO ADD", "WE HAVE SOMETHING TO ADD"]
@@ -125,6 +135,7 @@ enum CompanionAccessibility {
                 "reviewCandidates":words.enumerated().map { index, text in
                     ["kind":index == 0 ? "raw" : "alternative", "index":index, "text":text, "textHash":TacitClient.textHash(text)] as [String: Any]
                 }])
+            if scenario == "peek-review" { island.collapse() }
             if scenario == "editing", let h = client.lastHypothesis, let candidate = h.candidates.first {
                 client.chooseReview(candidate, of: h.id, editing: true)
                 island.focusEditor()
@@ -137,7 +148,12 @@ enum CompanionAccessibility {
                 "output":"OFFLINE · no audio", "text":"", "timings":["requestedAt":0]])
         case "paused": live("paused", generation: 2); output("paused", generation: 2)
         case "realtime-confirm": island.live.requestMode(realtime: true)
-        case "realtime":
+        case "peek-speaking", "peek-complete":
+            emit("speech_delivery", "delivery", ["requestId":"offline-speech", "source":"typed",
+                "state":scenario == "peek-speaking" ? "routing" : "rendered", "text":"I have something to add.",
+                "outputAuthorizationId":"offline-voice", "generation":1, "timings":["requestedAt":0, "firstAudioAt":1]])
+            island.collapse()
+        case "realtime", "peek-realtime":
             // Offline fixture: the server-reported real-time state and two recorded-style deliveries. No audio.
             client.activateLive(realtime: true)
             emit("live_status", "status", ["state":"active", "authorizationId":"offline-live", "generation":3, "mode":"automatic", "unreviewed":true])
@@ -145,6 +161,7 @@ enum CompanionAccessibility {
                 emit("speech_delivery", "delivery", ["requestId":"rec:offline-live:u\(i)", "source":"recognized", "state":state, "text":text,
                     "outputAuthorizationId":"offline-voice", "generation":1, "timings":["requestedAt":0, "firstAudioAt":1]])
             }
+            if scenario == "peek-realtime" { island.collapse() }
         case "disconnected": client.disconnectIsolatedTransport()
         case "error":
             emit("output_status", "status", ["state":"off", "generation":2,
@@ -152,8 +169,22 @@ enum CompanionAccessibility {
             client.notice = "Offline test: voice output unavailable."
         default: break
         }
-        island.focusForOfflineInspection()
+        if island.expanded { island.focusForOfflineInspection() }
     }
+    /// Scripted fixture interactions for an external native-window recording, never recognition/audio evidence.
+    func playMotion() async {
+        guard let island else { return }
+        let scenes: [(String, Double)] = [("collapsed", 0.8), ("compact-live", 0.9), ("hover", 0.9),
+            ("collapsed", 0.6), ("peek-review", 1.3), ("editing", 1.2), ("peek-speaking", 1.3),
+            ("peek-complete", 1.0), ("collapsed", 0.8), ("camera-denied", 1.0), ("peek-realtime", 1.1)]
+        for (scene, duration) in scenes {
+            if scene == "hover" { show("collapsed"); island.hover(true) } else { show(scene) }
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+        }
+        show("collapsed")
+        print("OFFLINE interaction sequence complete; fixtures only, no camera/audio.")
+    }
+
     func measureMotion(directory: String) async {
         guard let island else { return }
         let samples = MotionSamples()
@@ -179,7 +210,10 @@ enum CompanionAccessibility {
         let report: [String: Any] = ["source":"offline actual NSWindow notifications", "measuredAt":ISO8601DateFormatter().string(from: Date()),
             "resize":samples.summary(samples.resize), "windowUpdate":samples.summary(samples.update),
             "hoverDwellCancellation":hoverCanceled,
-            "displayAdvertisedHz":NSScreen.main?.maximumFramesPerSecond ?? 0,
+            "displayAdvertisedHz":island.displayMaximumFPS,
+            "screenWidth":island.geometry.screenFrame.width, "screenHeight":island.geometry.screenFrame.height,
+            "cutoutWidth":island.geometry.cutoutWidth, "cutoutHeight":island.geometry.cutoutHeight,
+            "menuBarClearance":island.geometry.topInset,
             "limitation":"Main-thread resize/update notification cadence, not display presentation, GPU frame time or FPS. Includes rapid reversals and a settle interval."]
         if let data = try? JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys]) {
             try? data.write(to: URL(fileURLWithPath: directory + "/motion-pacing.json"))
@@ -206,7 +240,7 @@ enum CompanionAccessibility {
                 try await Task.sleep(nanoseconds: 850_000_000)
                 try island?.saveRenderedIsland(to: directory + "/" + scenario + ".png")
                 if let island, let actual = island.renderedSize {
-                    let expected = scenario == "collapsed" ? island.geometry.compactSize : island.geometry.expandedSize
+                    let expected = island.targetSize
                     dimensions.append(["scenario":scenario, "width":actual.width, "height":actual.height,
                         "expectedWidth":expected.width, "expectedHeight":expected.height,
                         "matches":abs(actual.width - expected.width) < 1 && abs(actual.height - expected.height) < 1])
