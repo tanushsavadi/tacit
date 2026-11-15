@@ -2,7 +2,7 @@ import XCTest
 @testable import TacitCompanion
 
 final class LivingNotchTests: XCTestCase {
-    func testEverySurfaceClearsMenuBarAndFitsOffsetDisplays() {
+    func testNotchedSurfacesSitInTheNotchBandAndPillsClearTheMenuBar() {
         for frame in [CGRect(x: 0, y: 0, width: 1512, height: 982), CGRect(x: -1800, y: 900, width: 1800, height: 1100), CGRect(x: 2500, y: -600, width: 800, height: 600)] {
             for notched in [true, false] {
                 let g = IslandGeometry(frame: frame, safeTop: notched ? 37 : 0,
@@ -11,8 +11,14 @@ final class LivingNotchTests: XCTestCase {
                 for size in [g.compactSize, g.compactSize(discreet: true), g.peekSize, g.expandedSize] {
                     let panel = g.frame(size: size)
                     XCTAssertTrue(frame.contains(panel))
-                    XCTAssertLessThanOrEqual(panel.maxY, frame.maxY - (notched ? 37 : 30))
+                    if notched { XCTAssertEqual(panel.maxY, frame.maxY, "notched: drops down from the top edge") }
+                    else { XCTAssertLessThanOrEqual(panel.maxY, frame.maxY - 30) }
                     XCTAssertEqual(panel.midX, frame.midX)
+                }
+                if notched {
+                    // The branding wing to the left of the cutout must fit "tacit".
+                    XCTAssertGreaterThanOrEqual((g.compactSize.width - g.cutoutWidth) / 2, 60)
+                    XCTAssertEqual(g.crownHeight, g.compactSize.height)
                 }
                 XCTAssertGreaterThanOrEqual(g.compactSize.height, 32)
                 XCTAssertLessThanOrEqual(g.compactSize.height, 40)

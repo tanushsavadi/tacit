@@ -1,29 +1,22 @@
 import SwiftUI
 
-/// Original attached silhouette. The narrow neck meets the hardware cutout; all hit targets are below the menu bar.
+/// Notched display: the shape is flush with the top screen edge (it merges with the dark hardware cutout), with
+/// small concave shoulders into the menu bar and rounded lower corners. Non-notch display: a floating rounded pill.
 struct IslandSilhouette: Shape {
-    var neckWidth: CGFloat = 180
     var attached = true
-    var animatableData: CGFloat {
-        get { neckWidth }
-        set { neckWidth = newValue }
-    }
     func path(in r: CGRect) -> Path {
         guard attached else { return Path(roundedRect: r.insetBy(dx: 2, dy: 1), cornerRadius: min(24, r.height / 2)) }
-        let edge: CGFloat = 4
-        let shoulder: CGFloat = 8
-        let radius = min(22, r.height / 2)
-        let neck = min(max(40, neckWidth), r.width - 24)
-        let left = r.midX - neck / 2, right = r.midX + neck / 2
+        let shoulder: CGFloat = 6
+        let radius = min(r.height > 60 ? 22 : 12, r.height / 2)
         var p = Path()
-        p.move(to: CGPoint(x: left, y: 0))
-        p.addCurve(to: CGPoint(x: edge, y: shoulder), control1: CGPoint(x: left, y: shoulder), control2: CGPoint(x: edge, y: 0))
-        p.addLine(to: CGPoint(x: edge, y: r.height - radius))
-        p.addQuadCurve(to: CGPoint(x: edge + radius, y: r.height), control: CGPoint(x: edge, y: r.height))
-        p.addLine(to: CGPoint(x: r.width - edge - radius, y: r.height))
-        p.addQuadCurve(to: CGPoint(x: r.width - edge, y: r.height - radius), control: CGPoint(x: r.width - edge, y: r.height))
-        p.addLine(to: CGPoint(x: r.width - edge, y: shoulder))
-        p.addCurve(to: CGPoint(x: right, y: 0), control1: CGPoint(x: r.width - edge, y: 0), control2: CGPoint(x: right, y: shoulder))
+        p.move(to: .zero)
+        p.addQuadCurve(to: CGPoint(x: shoulder, y: shoulder), control: CGPoint(x: shoulder, y: 0))
+        p.addLine(to: CGPoint(x: shoulder, y: r.height - radius))
+        p.addQuadCurve(to: CGPoint(x: shoulder + radius, y: r.height), control: CGPoint(x: shoulder, y: r.height))
+        p.addLine(to: CGPoint(x: r.width - shoulder - radius, y: r.height))
+        p.addQuadCurve(to: CGPoint(x: r.width - shoulder, y: r.height - radius), control: CGPoint(x: r.width - shoulder, y: r.height))
+        p.addLine(to: CGPoint(x: r.width - shoulder, y: shoulder))
+        p.addQuadCurve(to: CGPoint(x: r.width, y: 0), control: CGPoint(x: r.width - shoulder, y: 0))
         p.closeSubpath()
         return p
     }
@@ -37,7 +30,7 @@ struct IslandView: View {
     @Environment(\.colorSchemeContrast) private var contrast
     private var reduceMotion: Bool { systemReduceMotion || CompanionAccessibility.reducedMotionPreview }
     private var state: LivingNotchPresentation { island.presentation }
-    private var silhouette: IslandSilhouette { .init(neckWidth: island.geometry.cutoutWidth, attached: island.geometry.hasNotch) }
+    private var silhouette: IslandSilhouette { .init(attached: island.geometry.hasNotch) }
 
     init(client: TacitClient, island: IslandController) {
         self.client = client; self.island = island; self.live = island.live
@@ -57,7 +50,7 @@ struct IslandView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(silhouette.fill(.black))
-        .overlay(silhouette.stroke(.white.opacity(contrast == .increased ? 0.65 : (island.hovered || island.expanded ? 0.13 : 0.055)), lineWidth: 1).allowsHitTesting(false))
+        .overlay(silhouette.stroke(.white.opacity(contrast == .increased ? 0.65 : island.geometry.hasNotch ? 0 : (island.hovered || island.expanded ? 0.13 : 0.055)), lineWidth: 1).allowsHitTesting(false))
         .clipShape(silhouette)
         .contentShape(silhouette)
         .foregroundStyle(.white).preferredColorScheme(.dark)
@@ -66,7 +59,7 @@ struct IslandView: View {
         .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
     }
 
-    private var crown: some View {
+    private var pillCrown: some View {
         HStack(spacing: 8) {
             Button { island.expanded ? island.collapse() : island.expand() } label: {
                 HStack(spacing: 8) {
@@ -106,11 +99,59 @@ struct IslandView: View {
         }
         .padding(.horizontal, 18)
         .frame(height: island.discreet && !island.expanded && !island.peeking ? 28 : 38)
+    }
+
+    private var crown: some View {
+        Group { if island.geometry.hasNotch { notchCrown } else { pillCrown } }
         .contextMenu {
             Button("Visible notch (recommended)") { island.setDiscreet(false) }
             Button("Discreet notch") { island.setDiscreet(true) }
             Button(island.expanded ? "Collapse" : "Open workspace · ⌃⇧⌘T") { island.expanded ? island.collapse() : island.showForKeyboard() }
         }
+    }
+
+    /// Notched display: this row shares the band with the hardware cutout. Branding sits in the left wing; the right
+    /// wing carries only a state glyph plus the direct Pause/Stop controls. Words and details live in Peek/workspace.
+    private var notchCrown: some View {
+        let tight = island.discreet && !island.expanded && !island.peeking
+        return HStack(spacing: 0) {
+            Button { island.expanded ? island.collapse() : island.expand() } label: {
+                Group {
+                    if tight { Circle().fill(state.kind == .ready ? .white.opacity(0.55) : state.color).frame(width: 5, height: 5) }
+                    else {
+                        Text(client.isIsolated ? "TEST" : "tacit").font(.system(size: 13, weight: .semibold, design: .rounded)).tracking(-0.4)
+                            .foregroundStyle(.white.opacity(island.hovered || island.expanded || island.peeking ? 0.95 : 0.82))
+                    }
+                }.frame(maxHeight: .infinity).padding(.trailing, 6).contentShape(Rectangle())
+            }.buttonStyle(CommunicationButtonStyle())
+                .accessibilityLabel("TACIT. \(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
+                .accessibilityIdentifier("living-notch-status")
+                .help("TACIT · \(state.title). Click to open · ⌃⇧⌘T. Right-click for notch appearance.")
+            Spacer(minLength: island.geometry.cutoutWidth + 6)
+            HStack(spacing: 6) {
+                if state.busy {
+                    Button { client.stopEverything() } label: {
+                        Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).frame(width: 24, height: 20)
+                            .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
+                    }.buttonStyle(CommunicationButtonStyle()).accessibilityLabel("Stop everything immediately")
+                        .accessibilityIdentifier("living-notch-stop").help("Stop camera, Live and voice · ⌃⇧⌘.")
+                } else {
+                    if state.kind != .ready && !tight {
+                        Image(systemName: state.symbol).font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(state.color).accessibilityHidden(true)
+                            .contentTransition(.opacity)
+                    }
+                    if client.live?.state == "active" && !tight {
+                        Button { live.pause() } label: {
+                            Image(systemName: "pause.fill").font(.system(size: 9, weight: .semibold)).frame(width: 22, height: 20)
+                        }.buttonStyle(CommunicationButtonStyle()).foregroundStyle(.white.opacity(0.75))
+                            .accessibilityLabel("Pause camera, Live and voice")
+                    }
+                }
+            }
+        }
+        .padding(.leading, tight ? 12 : 18).padding(.trailing, tight ? 8 : 12)
+        .frame(height: island.geometry.crownHeight)
     }
 
     @ViewBuilder private var peek: some View {

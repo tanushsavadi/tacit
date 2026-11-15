@@ -7,9 +7,11 @@ final class CompanionTests: XCTestCase {
             leftArea: CGRect(x: 1512, y: 745, width: 656, height: 37),
             rightArea: CGRect(x: 2368, y: 745, width: 656, height: 37))
         XCTAssertTrue(g.hasNotch); XCTAssertEqual(g.cutoutWidth, 200)
-        XCTAssertEqual(g.compactSize.width, 264)
+        XCTAssertEqual(g.compactSize.width, 200 + 2 * IslandGeometry.notchWing)
+        XCTAssertEqual(g.compactSize.height, 37, "the compact bar is the notch band itself")
         XCTAssertEqual(g.frame(size: g.compactSize).midX, 2268)
-        XCTAssertEqual(g.frame(size: g.expandedSize).maxY, 745)
+        XCTAssertEqual(g.frame(size: g.compactSize).maxY, 782, "flush with the top of the screen")
+        XCTAssertEqual(g.frame(size: g.expandedSize).maxY, 782)
     }
     func testNonNotchAndSmallDisplayStayOnScreen() {
         let g = IslandGeometry(frame: CGRect(x: -800, y: 1200, width: 800, height: 600), safeTop: 0, leftArea: nil, rightArea: nil)
