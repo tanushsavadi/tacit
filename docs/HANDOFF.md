@@ -1,12 +1,23 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 ~18:00 UTC (clock-checked)
+**Last updated:** 2026-11-15 ~18:05 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Living Notch + Presence integration".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
 
-## EXPERIMENTAL PERSONAL DEMO PROFILE — ACTIVE (2026-11-15 ~17:45–18:00 UTC, Claude; user-authorised, local only)
+## FINAL DEMO STATE (2026-11-15 ~18:05 UTC, Claude) — ORIGINAL MODEL ACTIVE
+- User decision: do NOT use the personal overlay in the demo. `./scripts/tacit.sh profile base` run while idle; running
+  recognizer = base (sha e740cef3… verified), no `recognition/data/vsr_profile.json`; overlay artifacts kept, disabled.
+- Verified on the final state: review-flow-check 6/6, companion `--presence-check` (real Gemini) OK, `--selftest` OK,
+  `./scripts/tacit.sh demo` → server left as is, app connected, readiness all ✓; server 204 / recognition 50 / web 80.
+- TACIT Flow demo = Sol's separate package (`~/Documents/TACIT-Flow-Development/2026-11-15/demo-ready/`, ports
+  19890/19892, app "TACIT Flow Demo"), already running and owner-connected; NOT integrated into stable source (its patches
+  remain NO-GO for promotion per Sol). Demo sequence + fallbacks: top of `docs/RELEASE_RUNBOOK.md`.
+- Another agent session is working on a notch mouse-responsiveness report (Sol-owned `macos/TacitCompanion`); not touched.
+- Prompt sets committed with the user's name sanitised (`[name]`); original private in `recognition/data/prompts_private/`.
+
+## (superseded) EXPERIMENTAL PERSONAL DEMO PROFILE (2026-11-15 ~17:45–18:00 UTC) — now disabled
 - **Running now:** server restarted on `def764f` code (idle: Live off, no call, no BlackHole reader) and the recognizer
   switched to `personal-demo` (silent2_251 overlay, EXPERIMENTAL, Review First). Verify: `./scripts/tacit.sh profile status`.
   **Rollback:** `./scripts/tacit.sh profile base` (sidecar only; `--force` in an emergency). Pre-change snapshot:
@@ -26,8 +37,7 @@ recognised words stays DISABLED.
   (phrase card, flow, fallback). Checks: server 204 tests, recognition 50, web typecheck + 80; review-flow-check 6/6 on
   base and personal-demo (BlackHole, no reader); native `--analyze-video --send` replay personal 10/10, base 9/10.
 - **General-release verdict for silent2_251 stays NO-GO.** heldout_v2 still unrecorded/unscored.
-- **Still uncommitted (waiting on the user):** `recognition/prompts/adapt_v2_*.txt` (set E contains the user's first
-  name; repo is PUBLIC) and `docs/research/TACIT_PERSONAL_ADAPTATION_V2.md`.
+- Prompt sets and the research doc are now committed (name sanitised).
 
 ## JUDGING PITCH — produced outside the repo (2026-11-15 ~11:21–12:00 UTC, Claude) — no runtime/code change
 - Workspace `~/Documents/TACIT-Pitch/` (NOT in Git; index in its `README.md`). Figma Slides master (user asked for
