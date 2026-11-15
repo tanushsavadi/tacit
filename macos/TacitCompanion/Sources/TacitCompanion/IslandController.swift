@@ -113,7 +113,10 @@ final class IslandController: ObservableObject {
                 self.takeKeyboard()
             }
         } // Only an explicit click in an editor takes the keyboard; hover never does.
-        p.onEscape = { [weak self] in self?.collapse() }
+        p.onEscape = { [weak self] in
+            guard let self else { return }
+            if self.communication.escape() == .collapse { self.collapse() }
+        }
         let content = IslandHostingView(rootView: IslandView(client: client, island: self))
         content.sizingOptions = [] // The controller alone owns the bounded native window dimensions.
         p.contentView = content
