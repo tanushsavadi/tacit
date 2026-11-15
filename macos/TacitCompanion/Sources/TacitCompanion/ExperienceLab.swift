@@ -19,7 +19,7 @@ enum CompanionAccessibility {
     @Published var requests: [[String: Any]] = []
     private var window: NSWindow?
     private var utterance = 0
-    let scenarios = ["collapsed", "ready", "review", "editing", "phrases", "assistance", "voice", "error", "paused", "disconnected"]
+    let scenarios = ["collapsed", "ready", "review", "editing", "phrases", "assistance", "voice", "error", "paused", "disconnected", "realtime-confirm", "realtime"]
     /// Offline My Voice fixture (sample registry shaped like the server's voice_status). Never plays audio.
     private var voiceRevision = 1
     private var voiceSelected = "apple:com.apple.voice.compact.en-US.Samantha"
@@ -110,6 +110,7 @@ enum CompanionAccessibility {
         live("off"); output("ready")
         emit("voice_status", "status", voiceStatus())
         island.communication.surface = .conversation
+        if island.live.confirmingRealtime { island.live.requestMode(realtime: false) }
         island.expand()
         if !island.pinned { island.togglePin() }
         switch scenario {
@@ -135,6 +136,15 @@ enum CompanionAccessibility {
             emit("voice_preview", "preview", ["previewId":"offline-preview", "voiceId":"apple:com.apple.eloquence.en-GB.Eddy", "state":"playing",
                 "output":"OFFLINE · no audio", "text":"", "timings":["requestedAt":0]])
         case "paused": live("paused", generation: 2); output("paused", generation: 2)
+        case "realtime-confirm": island.live.requestMode(realtime: true)
+        case "realtime":
+            // Offline fixture: the server-reported real-time state and two recorded-style deliveries. No audio.
+            client.activateLive(realtime: true)
+            emit("live_status", "status", ["state":"active", "authorizationId":"offline-live", "generation":3, "mode":"automatic", "unreviewed":true])
+            for (i, (text, state)) in [("PLEASE TURN ON THE LIGHTS", "rendered"), ("HOW ARE YOU DOING", "routing")].enumerated() {
+                emit("speech_delivery", "delivery", ["requestId":"rec:offline-live:u\(i)", "source":"recognized", "state":state, "text":text,
+                    "outputAuthorizationId":"offline-voice", "generation":1, "timings":["requestedAt":0, "firstAudioAt":1]])
+            }
         case "disconnected": client.disconnectIsolatedTransport()
         case "error":
             emit("output_status", "status", ["state":"off", "generation":2,

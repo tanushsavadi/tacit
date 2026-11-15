@@ -12,6 +12,11 @@ import SwiftUI
     @Published private(set) var starting = false
     /// Live is active under an authorization this app did not mint (e.g. the browser workspace took over).
     @Published private(set) var liveElsewhere = false
+    /// The user's mode for this app session. Real-time = recognised sentences are spoken without review (unvalidated).
+    /// Only ever set by `confirmRealtime()`; Stop, disconnect and relaunch return to review.
+    @Published private(set) var realtime = false
+    /// The one-time explanation is showing (turning real-time on needs this explicit confirmation).
+    @Published var confirmingRealtime = false
     private var resumeAfterConnect = false
     private var bag = Set<AnyCancellable>()
 
@@ -39,9 +44,23 @@ import SwiftUI
         else if client.output?.state != "ready", client.route?.state == "ready" { client.output("enable") }
         Task {
             await camera.start()
-            if camera.state.running, client.conn == .connected { client.activateLive() }
+            if camera.state.running, client.conn == .connected { client.activateLive(realtime: realtime) }
             starting = false
         }
+    }
+
+    /// Review ⇄ real-time. Turning real-time ON only asks for confirmation; `confirmRealtime()` does it.
+    func requestMode(realtime on: Bool) {
+        if on { if !realtime { confirmingRealtime = true }; return }
+        confirmingRealtime = false
+        guard realtime else { return }
+        realtime = false
+        if client.ownsLive { client.activateLive(realtime: false) } // new authorization; anything queued keeps playing until Pause/Stop
+    }
+    func confirmRealtime() {
+        confirmingRealtime = false
+        realtime = true
+        if client.ownsLive { client.activateLive(realtime: true) }
     }
 
     /// Camera off and Live paused; voice output paused too (same as the notch Pause button).
@@ -55,7 +74,7 @@ import SwiftUI
 
     private func upload(_ w: CapturedWindow) {
         guard client.ownsLive else { return }
-        if Self.holdCapture(candidateSelected: client.reviewDraft.candidate != nil, editing: client.reviewDraft.editing,
+        if !client.realtimeActive, Self.holdCapture(candidateSelected: client.reviewDraft.candidate != nil, editing: client.reviewDraft.editing,
                             delivery: client.lastDelivery?.state) {
             // Dropped, not queued: a new header would revoke the review being chosen or cut speech still playing.
             client.notice = "New sentence ignored while you review or while your words are spoken. Mouth it again afterwards."
@@ -69,7 +88,12 @@ import SwiftUI
         candidateSelected || editing || ["queued", "synthesizing", "routing"].contains(delivery ?? "")
     }
 
+    private var lastLiveState: String?
     private func liveChanged() {
+        let state = client.live?.state
+        defer { lastLiveState = state }
+        // Stop / End (a session that was on is now off) → back to review mode for the next session.
+        if (state == "off" || state == nil), lastLiveState == "active" || lastLiveState == "paused" { realtime = false; confirmingRealtime = false }
         if client.ownsLive { liveElsewhere = false; return }
         if client.liveActivationPending || starting { return }
         // Paused, ended, disconnected or taken over: release the camera; never restart it automatically.
@@ -79,7 +103,7 @@ import SwiftUI
 
     private func connectionChanged(_ conn: TacitClient.Conn) {
         if conn == .connected, resumeAfterConnect { resumeAfterConnect = false; startCommunicating() }
-        if conn != .connected, conn != .connecting { camera.stop() }
+        if conn != .connected, conn != .connecting { camera.stop(); realtime = false; confirmingRealtime = false }
     }
 }
 
@@ -114,6 +138,7 @@ struct CommunicationGuide: Equatable {
         var processing = false
         var reviewExpired = false
         var abstained = false
+        var realtime = false
     }
 
     static func resolve(_ f: Facts) -> Self {
@@ -137,6 +162,10 @@ struct CommunicationGuide: Equatable {
             if f.processing { return .init(title: "Interpreting your words", detail: "Hold still for a moment.", action: nil) }
             if f.reviewExpired { return .init(title: "That sentence is no longer available", detail: "Mouth another sentence, or type it.", action: .type) }
             if f.abstained { return .init(title: "No clear words that time", detail: "Mouth it again, or type it.", action: .type) }
+            if f.realtime, f.camera == .tracking || f.camera == .capturing {
+                return .init(title: f.camera == .capturing ? "Reading your lips…" : "Real-time · just mouth your words",
+                             detail: "Each sentence is spoken into the call as soon as it is recognized — unreviewed. Pause or ⌃⇧⌘. to stop.", action: nil)
+            }
             switch f.camera {
             case .starting: return .init(title: "Starting camera…", detail: "Look at the screen with your face in view.", action: nil)
             case .searching: return .init(title: "Move into view of the camera", detail: "TACIT needs one clearly visible face.", action: nil)
@@ -150,7 +179,9 @@ struct CommunicationGuide: Equatable {
         if f.recognizerReachable == false {
             return .init(title: "Silent speech is unavailable", detail: "Type or use your phrases. Silent speech returns when the recognizer is back.", action: .type)
         }
-        return .init(title: "Ready to start", detail: "TACIT opens your camera and shows the words you mouth. You choose what is spoken.", action: .start)
+        return f.realtime
+            ? .init(title: "Ready to start · real-time", detail: "TACIT opens your camera and speaks each sentence you mouth right away, unreviewed.", action: .start)
+            : .init(title: "Ready to start", detail: "TACIT opens your camera and shows the words you mouth. You choose what is spoken.", action: .start)
     }
 }
 

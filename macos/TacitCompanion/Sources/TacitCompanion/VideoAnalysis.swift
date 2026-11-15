@@ -53,11 +53,12 @@ enum VideoAnalysis {
     /// Exits the process.
     static func run(_ args: [String]) -> Never {
         var config = ArticulationConfig.standard
-        var files: [String] = [], send = false
+        var files: [String] = [], send = false, realtime = false
         var i = 0
         while i < args.count {
             if args[i] == "--threshold", i + 1 < args.count { config.velocityThreshold = Double(args[i + 1]) ?? config.velocityThreshold; i += 2; continue }
             if args[i] == "--send" { send = true; i += 1; continue }
+            if args[i] == "--realtime" { send = true; realtime = true; i += 1; continue }
             if args[i] == "--quiet", i + 1 < args.count { config.quietMs = Double(args[i + 1]) ?? config.quietMs; i += 2; continue }
             files.append(args[i]); i += 1
         }
@@ -71,7 +72,7 @@ enum VideoAnalysis {
             all += r.windows.map { (f, $0) }
         }
         guard send else { exit(0) }
-        MainActor.assumeIsolated { VideoReplaySender.shared.run(all) }
+        MainActor.assumeIsolated { VideoReplaySender.shared.run(all, realtime: realtime) }
         RunLoop.main.run()
         exit(0)
     }
@@ -84,9 +85,12 @@ enum VideoAnalysis {
     private var queue: [(String, CapturedWindow)] = []
     private var sent: [String: String] = [:]
     private var activated = false
+    private var realtime = false
 
-    func run(_ windows: [(String, CapturedWindow)]) {
-        queue = windows
+    /// `realtime`: activate real-time (unreviewed) Live; the SERVER then speaks each recognised sentence into the virtual
+    /// mic. Refuses when any calling app reads the virtual mic (nobody may hear test audio). Labelled recorded input.
+    func run(_ windows: [(String, CapturedWindow)], realtime: Bool = false) {
+        queue = windows; self.realtime = realtime
         client.onHypothesis = { [weak self] id, decision, text, reason in
             guard let self, let file = self.sent.removeValue(forKey: id) else { return }
             print("RESULT \((file as NSString).lastPathComponent): \(decision) \(text.isEmpty ? "(\(reason ?? "no words"))" : "\"\(text)\"")")
@@ -96,7 +100,15 @@ enum VideoAnalysis {
         Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
             MainActor.assumeIsolated {
                 guard let self, self.client.conn == .connected else { return }
-                if !self.activated { self.activated = true; self.client.activateLive(); return }
+                if self.realtime, self.client.output?.state != "ready" {
+                    if self.client.route?.readers?.isEmpty != true { print("REFUSED: a calling app is reading the virtual mic (or unknown) — test audio could be heard"); exit(3) }
+                    if self.client.output?.state != nil, !self.activated { self.activated = true; self.client.output("enable") }
+                    return
+                }
+                if self.realtime, self.client.live?.state != "active" || !self.client.ownsLive, self.client.liveActivationPending == false, self.client.output?.state == "ready", self.client.live?.unreviewed != true {
+                    self.client.activateLive(realtime: true); return
+                }
+                if !self.realtime, !self.activated { self.activated = true; self.client.activateLive(); return }
                 if self.client.live?.state == "active", self.client.ownsLive { timer.invalidate(); self.next() }
             }
         }
@@ -104,7 +116,15 @@ enum VideoAnalysis {
     }
 
     private func next() {
-        guard !queue.isEmpty else { client.live("end"); DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { print("REPLAY DONE (recorded input, not live camera)"); exit(0) }; return }
+        guard !queue.isEmpty else {
+            let wait = realtime ? 10.0 : 0.5
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [self] in
+                if realtime { for line in client.realtimeSpoken.reversed() { print("SPOKEN (real-time, unreviewed): \(line.state) \"\(line.text)\"") }; client.output("stop") }
+                client.live("end")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { print("REPLAY DONE (recorded input, not live camera)"); exit(0) }
+            }
+            return
+        }
         let (file, w) = queue.removeFirst()
         if let id = client.sendVisualUtterance(w) { sent[id] = file } else { print("NOT SENT \(file): \(client.notice ?? "?")"); next() }
     }
