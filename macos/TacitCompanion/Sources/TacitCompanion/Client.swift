@@ -9,7 +9,7 @@ import CryptoKit
 final class TacitClient: ObservableObject {
     enum Conn: Equatable { case noToken, connecting, connected, disconnected(String) }
 
-    struct Live { var state: String; var authorizationId: String?; var generation: Int; var reason: String }
+    struct Live { var state: String; var authorizationId: String?; var generation: Int; var reason: String; var unreviewed = false }
     struct Output { var state: String; var authorizationId: String?; var generation: Int; var reason: String; var voice: String; var queued: Int }
     struct Route { var state: String; var device: String?; var readers: [String]?; var warnings: [String]; var reason: String?; var gainDb: Double; var calibrated: Bool }
     struct Recognition { var reachable: Bool; var model: String? }
@@ -113,6 +113,11 @@ final class TacitClient: ObservableObject {
     /// Every recognition result for the current authorization (evidence tools; never feeds speech).
     var onHypothesis: ((_ id: String, _ decision: String, _ text: String, _ reason: String?) -> Void)?
     var liveActivationPending: Bool { awaitingOwnActivation != nil }
+    /// Real-time (unreviewed) mode is on for the current Live authorization (server-reported, never assumed).
+    var realtimeActive: Bool { live?.state == "active" && live?.unreviewed == true }
+    struct RealtimeLine: Equatable, Identifiable { var id: String; var text: String; var state: String }
+    /// Sentences spoken automatically in real-time mode (server deliveries), newest first, at most 3.
+    @Published private(set) var realtimeSpoken: [RealtimeLine] = []
     var ownsLive: Bool { ownedLiveAuthorization != nil && live?.state == "active" && live?.authorizationId == ownedLiveAuthorization }
     @Published private(set) var hotKeyRegistered = false
 
@@ -176,7 +181,7 @@ final class TacitClient: ObservableObject {
         seenHypotheses.removeAll(); hypothesisOrder.removeAll()
         pendingLiveGeneration = nil; pendingOutputGeneration = nil
         pendingAuthored.removeAll()
-        ownedLiveAuthorization = nil; awaitingOwnActivation = nil; clearProcessing()
+        ownedLiveAuthorization = nil; awaitingOwnActivation = nil; clearProcessing(); realtimeSpoken.removeAll()
         reviewExpiryWork?.cancel(); reviewExpired = false; pendingReviewedRequest = nil
         myVoice = nil; voicePreview = nil; voiceNotice = nil; pendingVoiceSelect = nil
     }
@@ -233,7 +238,9 @@ final class TacitClient: ObservableObject {
                 } else if auth != ownedLiveAuthorization { ownedLiveAuthorization = nil }
                 if state != "active" || generation != live?.generation { clearProcessing() }
                 live = Live(state: st["state"] as? String ?? "?", authorizationId: st["authorizationId"] as? String,
-                            generation: st["generation"] as? Int ?? 0, reason: st["reason"] as? String ?? "")
+                            generation: st["generation"] as? Int ?? 0, reason: st["reason"] as? String ?? "",
+                            unreviewed: st["unreviewed"] as? Bool == true && st["mode"] as? String == "automatic")
+                if state != "active" || st["unreviewed"] as? Bool != true { realtimeSpoken.removeAll() }
             }
         case "output_status":
             if let st = m["status"] as? [String: Any] {
@@ -314,7 +321,13 @@ final class TacitClient: ObservableObject {
             guard let dl = m["delivery"] as? [String: Any], let auth = output?.authorizationId,
                   dl["outputAuthorizationId"] as? String == auth, dl["generation"] as? Int == output?.generation,
                   output?.state == "ready", pendingOutputGeneration == nil,
-                  ["typed", "reviewed-recognition", "user-corrected"].contains(dl["source"] as? String ?? "") else { return }
+                  ["typed", "reviewed-recognition", "user-corrected", "recognized"].contains(dl["source"] as? String ?? "") else { return }
+            if dl["source"] as? String == "recognized" { // real-time (unreviewed): keep a short visible log, newest first
+                let id = dl["requestId"] as? String ?? ""
+                let entry = RealtimeLine(id: id, text: dl["text"] as? String ?? "", state: dl["state"] as? String ?? "?")
+                if let i = realtimeSpoken.firstIndex(where: { $0.id == id }) { realtimeSpoken[i] = entry } else { realtimeSpoken.insert(entry, at: 0) }
+                if realtimeSpoken.count > 3 { realtimeSpoken.removeLast(realtimeSpoken.count - 3) }
+            }
             // The guard above already rejects revoked authorization/generation and untrusted sources.
             if dl["source"] as? String == "typed", let id = dl["requestId"] as? String,
                ["rendered", "failed", "refused", "interrupted"].contains(dl["state"] as? String ?? "") {
@@ -436,11 +449,14 @@ final class TacitClient: ObservableObject {
     }
     /// Native camera only (NativeCamera owns the frames): mint a display-only Live authorization for this app.
     /// Explicit user action ("Start communicating"); recognised words are still only shown, never spoken automatically.
-    func activateLive() {
+    /// `realtime: true` only after the user explicitly confirmed real-time (unreviewed) speech for this session.
+    func activateLive(realtime: Bool = false) {
         guard conn == .connected else { notice = "Not connected to TACIT."; return }
         awaitingOwnActivation = live?.generation ?? 0
         pendingLiveGeneration = live?.generation; lastHypothesis = nil; reviewDraft = ReviewDraft()
-        send(["type": "live_control", "action": "activate", "mode": "display-only", "inputSource": "camera"])
+        var msg: [String: Any] = ["type": "live_control", "action": "activate", "mode": realtime ? "automatic" : "display-only", "inputSource": "camera"]
+        if realtime { msg["acknowledgeUnreviewed"] = true }
+        send(msg)
     }
 
     /// Uploads one endpointed camera window: the JSON header, then exactly one binary message per JPEG, in order.
@@ -530,7 +546,7 @@ final class TacitClient: ObservableObject {
     var estimatedServerNow: Double { Date().timeIntervalSince1970 * 1000 + serverClockOffset }
     var canReviewCurrent: Bool { reviewIsCurrent(connected: conn == .connected, now: estimatedServerNow) }
     func reviewIsCurrent(connected: Bool, now: Double) -> Bool {
-        guard connected, !reviewExpired, live?.state == "active", pendingLiveGeneration == nil,
+        guard connected, !reviewExpired, live?.state == "active", live?.unreviewed != true, pendingLiveGeneration == nil,
               let h = lastHypothesis, h.decision == "shown", !h.candidates.isEmpty,
               h.authorizationId == live?.authorizationId, h.generation == live?.generation,
               let expiry = h.expiresAt, now < expiry, reviewSubmittedID != h.id else { return false }
@@ -548,6 +564,16 @@ final class TacitClient: ObservableObject {
         guard reviewIsCurrent(connected: connected, now: now), let h = lastHypothesis, h.id == utteranceID,
               h.candidates.contains(candidate) else { return }
         reviewDraft.choose(candidate, utteranceID: h.id, outputGeneration: output?.generation ?? -1, editing: editing)
+    }
+    /// One tap: speak exactly the words shown (the chosen alternative, or the raw words when none was chosen).
+    /// The tap itself is the explicit choice; it still goes through the dedicated reviewed path below.
+    @discardableResult func speakShownWords() -> Bool {
+        guard let h = lastHypothesis else { return false }
+        if reviewDraft.candidate == nil || reviewDraft.utteranceID != h.id {
+            guard let raw = h.candidates.first(where: { $0.kind == "raw" }) else { return false }
+            chooseReview(raw, of: h.id)
+        }
+        return speakReviewed()
     }
     /// Dedicated reviewed path only. Every field comes from the current hypothesis and an explicit user choice.
     @discardableResult func speakReviewed() -> Bool {

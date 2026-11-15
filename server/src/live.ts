@@ -18,6 +18,8 @@ export const REVIEW_TTL_MS = 120_000;
 const MAX_ALTERNATIVES = 4;
 export const sha256Hex = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 export const AUTOMATIC_GATED = 'Automatic transmission is gated until silent-speech reliability is validated on real silent recordings.';
+export const REALTIME_REASON = 'Real-time (unreviewed): each recognised sentence is spoken without review. Recognition is unvalidated and often wrong. Pause or Stop at any time.';
+export const REALTIME_DISABLED = 'Real-time speech is turned off on this Mac (TACIT_REALTIME=off).';
 
 export interface RecognizerResult {
   text: string | null; error?: string; model?: string; n_tokens?: number; face_fraction?: number;
@@ -61,7 +63,7 @@ type Utterance = Extract<ClientMessage, { type: 'visual_utterance' }>;
 interface Pending { msg: Utterance; frames: Buffer[]; received: number; bytes: number; generation: number; sequence: number; conn: unknown; reject: string | null; answered: boolean; headerAt: number }
 
 export class LiveSession {
-  private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, reason: 'Live is off.' };
+  private status: LiveStatus = { authorizationId: null, generation: 0, state: 'off', mode: 'display-only', autoTransmitAllowed: false, unreviewed: false, reason: 'Live is off.' };
   /** Utterance being received, per connection (frames follow their header on the same socket). */
   private pending = new Map<unknown, Pending>();
   private inflight = new Set<AbortController>();
@@ -73,7 +75,8 @@ export class LiveSession {
   private latestShown: RecognitionHypothesis | null = null;
   droppedBinary = 0;
 
-  constructor(private recognize: Recognizer, private send: (m: ServerMessage, replyTo?: unknown) => void, private now = () => Date.now()) {}
+  constructor(private recognize: Recognizer, private send: (m: ServerMessage, replyTo?: unknown) => void, private now = () => Date.now(),
+              private realtimeAllowed = true) {}
 
   get current(): LiveStatus { return { ...this.status }; }
   /** Current review, invalidated immediately by a valid newer header or any Live generation change. */
@@ -92,17 +95,23 @@ export class LiveSession {
       this.status = { ...s, ...patch, generation: s.generation + 1 };
     };
     switch (msg.action) {
-      case 'activate':
-        if ((msg.mode ?? 'display-only') === 'automatic') { this.status = { ...s, reason: AUTOMATIC_GATED }; break; }
+      case 'activate': {
+        const realtime = (msg.mode ?? 'display-only') === 'automatic';
+        // Real-time needs the user's explicit acknowledgement that words are spoken unreviewed (no validated gate).
+        if (realtime && msg.acknowledgeUnreviewed !== true) { this.status = { ...s, reason: AUTOMATIC_GATED }; break; }
+        if (realtime && !this.realtimeAllowed) { this.status = { ...s, reason: REALTIME_DISABLED }; break; }
         if (msg.inputSource && msg.inputSource !== 'camera') { this.status = { ...s, reason: 'Only camera input is supported by this recogniser.' }; break; }
         this.seen.clear();
         this.latestShown = null;
-        bump({ authorizationId: randomUUID(), state: 'active', mode: 'display-only', reason: 'Live (display only): recognised words are shown to you, not spoken.' });
+        bump(realtime
+          ? { authorizationId: randomUUID(), state: 'active', mode: 'automatic', unreviewed: true, reason: REALTIME_REASON }
+          : { authorizationId: randomUUID(), state: 'active', mode: 'display-only', unreviewed: false, reason: 'Live (display only): recognised words are shown to you, not spoken.' });
         break;
+      }
       case 'pause': if (s.state === 'active') bump({ state: 'paused', reason: 'Paused.' }); break;
       case 'resume': if (s.state === 'paused') bump({ state: 'active', reason: 'Live (display only).' }); break;
       case 'interrupt': bump({ reason: s.state === 'off' ? s.reason : 'Interrupted: pending utterances dropped.' }); break;
-      case 'end': this.latestShown = null; bump({ authorizationId: null, state: 'off', reason: 'Live ended.' }); break;
+      case 'end': this.latestShown = null; bump({ authorizationId: null, state: 'off', mode: 'display-only', unreviewed: false, reason: 'Live ended.' }); break;
     }
     for (const conn of [...this.pending.keys()]) this.abandonPending(conn, 'Incomplete: Live control changed before all frames arrived.');
     this.announce();

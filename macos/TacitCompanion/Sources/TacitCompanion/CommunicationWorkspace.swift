@@ -81,6 +81,11 @@ struct CommunicationWorkspace: View {
                     .accessibilityLabel("Back to camera").help("Back to camera · esc")
                     .accessibilityIdentifier("back-to-camera")
             }
+            if client.realtimeActive {
+                Label("REAL-TIME", systemImage: "bolt.fill").font(.system(size: 9.5, weight: .bold)).padding(.horizontal, 7).frame(height: 18)
+                    .foregroundStyle(.black).background(Color.orange, in: Capsule()).fixedSize()
+                    .accessibilityLabel("Real-time mode is on: recognized words are spoken without review")
+            }
             Text(client.isIsolated ? "OFFLINE · " + statusTitle : statusTitle).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(statusColor)
                 .accessibilityIdentifier("communication-state")
             Spacer(minLength: 0)
@@ -120,7 +125,8 @@ struct CommunicationWorkspace: View {
         .resolve(.init(connected: client.conn == .connected, serverDown: live.serverDown, starting: live.starting,
             recognizerReachable: client.recognition?.reachable, camera: live.camera.state, live: client.live?.state,
             ownsLive: client.ownsLive, liveElsewhere: live.liveElsewhere, processing: client.processingUtteranceID != nil,
-            reviewExpired: client.reviewExpired, abstained: client.lastHypothesis?.decision == "abstained"))
+            reviewExpired: client.reviewExpired, abstained: client.lastHypothesis?.decision == "abstained",
+            realtime: client.realtimeActive || live.realtime))
     }
     /// Voice-output problems (failed/refused delivery, unavailable route) outrank the camera guidance.
     private var voiceProblem: Bool {
@@ -140,14 +146,21 @@ struct CommunicationWorkspace: View {
     @ViewBuilder private var conversation: some View {
         if client.canReviewCurrent {
             RecognitionReview(client: client, onEdit: { island.focusEditor() })
+        } else if live.confirmingRealtime {
+            RealtimeConfirmation(live: live)
         } else {
             VStack(alignment: .leading, spacing: 8) {
+                if client.conn == .connected { ModePicker(live: live, realtimeOn: client.realtimeActive) }
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
+                        if client.realtimeActive, let latest = client.realtimeSpoken.first {
+                            RealtimeTranscript(lines: client.realtimeSpoken, latest: latest)
+                        } else {
                         Text(headline).font(.system(size: 23, weight: .medium)).tracking(-0.6)
                             .fixedSize(horizontal: false, vertical: true).lineLimit(3)
                             .accessibilityIdentifier("guide-title")
                         Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).lineLimit(3)
+                        }
                     }
                     Spacer(minLength: 0)
                     if live.camera.state.running {
@@ -309,5 +322,71 @@ struct OutputAuthorizationButton: View {
         IslandAction(client.output?.state == "paused" ? "Resume voice" : "Enable voice", symbol: "speaker.wave.2") {
             client.output(client.output?.state == "paused" ? "resume" : "enable")
         }.disabled(client.conn != .connected || client.route?.state != "ready")
+    }
+}
+
+/// Review first (default) ⇄ Real-time. Real-time needs the confirmation card first.
+struct ModePicker: View {
+    @ObservedObject var live: LiveCoordinator
+    var realtimeOn: Bool
+    var body: some View {
+        let rt = live.realtime || realtimeOn
+        HStack(spacing: 2) {
+            segment("Review first", "checkmark.bubble", selected: !rt) { live.requestMode(realtime: false) }
+            segment("Real-time", "bolt.fill", selected: rt) { live.requestMode(realtime: true) }
+        }.padding(2).background(.white.opacity(0.08), in: Capsule())
+            .accessibilityElement(children: .contain).accessibilityLabel("Speaking mode")
+    }
+    private func segment(_ title: String, _ symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol).font(.system(size: 11, weight: .semibold)).padding(.horizontal, 10).frame(height: 26)
+                .foregroundStyle(selected ? .black : .white.opacity(0.8))
+                .background(selected ? (title == "Real-time" ? Color.orange : Color.mint) : .clear, in: Capsule())
+        }.buttonStyle(CommunicationButtonStyle()).accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The one explicit decision before unreviewed speech. Plain about what happens and how to stop it.
+struct RealtimeConfirmation: View {
+    @ObservedObject var live: LiveCoordinator
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Speak without review?", systemImage: "bolt.fill").font(.system(size: 19, weight: .semibold)).foregroundStyle(.orange)
+            Text("Every sentence TACIT recognizes is spoken into your call right away, in your voice. Recognition is unvalidated and is often wrong — what is said may not be what you meant.")
+                .font(.system(size: 12)).foregroundStyle(.white.opacity(0.85)).fixedSize(horizontal: false, vertical: true)
+            Text("Pause or ⌃⇧⌘. stops it instantly. Real-time turns off when you Stop or quit.")
+                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.65))
+            Spacer(minLength: 0)
+            HStack(spacing: 10) {
+                IslandAction("Turn on real-time", symbol: "bolt.fill", prominent: true) { live.confirmRealtime() }
+                    .accessibilityIdentifier("confirm-realtime")
+                IslandAction("Keep review", symbol: "xmark") { live.requestMode(realtime: false) }
+            }
+        }
+    }
+}
+
+/// What real-time mode actually said (server deliveries, newest first).
+struct RealtimeTranscript: View {
+    var lines: [TacitClient.RealtimeLine]
+    var latest: TacitClient.RealtimeLine
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(stateText(latest.state)).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(latest.state == "refused" || latest.state == "failed" ? .orange : .mint)
+            Text("“\(latest.text)”").font(.system(size: 22, weight: .medium)).tracking(-0.5).lineLimit(2).minimumScaleFactor(0.7)
+                .accessibilityLabel("Last real-time sentence: \(latest.text). \(stateText(latest.state))")
+            ForEach(lines.dropFirst()) { line in
+                Text("“\(line.text)”").font(.system(size: 11)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+            }
+        }
+    }
+    private func stateText(_ s: String) -> String {
+        switch s {
+        case "queued", "synthesizing": return "PREPARING VOICE · unreviewed"
+        case "routing": return "SPEAKING INTO CALL MIC · unreviewed"
+        case "rendered": return "SPOKEN · unreviewed"
+        case "interrupted": return "STOPPED"
+        default: return s.uppercased()
+        }
     }
 }

@@ -22,7 +22,7 @@ struct RecognitionReview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(client.reviewDraft.editing ? "Your correction" : "Silent speech · choose what you mean")
+                Text(client.reviewDraft.editing ? "Your correction" : "You mouthed")
                     .font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.72))
                 Spacer()
                 if onEdit == nil { Button { client.pauseEverything() } label: { Image(systemName: "pause.fill") }.accessibilityLabel("Pause Live and voice")
@@ -41,14 +41,13 @@ struct RecognitionReview: View {
                     }.frame(maxHeight: onEdit == nil ? 120 : 78)
                         .accessibilityLabel("Exact words to review")
                     HStack(spacing: 8) {
-                        Button {
-                            if let raw = h.candidates.first(where: { $0.kind == "raw" }) { client.chooseReview(raw, of: h.id) }
-                        } label: {
-                            Label(client.reviewDraft.candidate?.kind == "raw" ? "Raw words selected" : "Choose raw words",
-                                  systemImage: client.reviewDraft.candidate?.kind == "raw" ? "checkmark.circle.fill" : "circle")
-                                .padding(.horizontal, 9).frame(height: 30)
-                                .background(.white.opacity(0.10), in: Capsule())
-                        }.buttonStyle(CommunicationButtonStyle())
+                        if client.reviewDraft.candidate != nil, client.reviewDraft.candidate?.kind != "raw",
+                           let raw = h.candidates.first(where: { $0.kind == "raw" }) {
+                            Button { client.chooseReview(raw, of: h.id) } label: {
+                                Label("Back to raw words", systemImage: "arrow.uturn.backward").padding(.horizontal, 9).frame(height: 30)
+                                    .background(.white.opacity(0.10), in: Capsule())
+                            }.buttonStyle(CommunicationButtonStyle())
+                        }
                         if h.candidates.count > 1 {
                             Menu("Alternatives") {
                                 ForEach(h.candidates.filter { $0.kind != "raw" }) { c in
@@ -62,7 +61,7 @@ struct RecognitionReview: View {
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: 10) {
-                    Text(client.reviewDraft.candidate == nil ? "Choose the words you intend." : client.reviewDraft.editing ? "Your correction · explicit send" : "Selected by you · explicit send")
+                    Text(client.reviewDraft.editing ? "Your correction · sent only when you press Speak" : "Speak sends exactly these words")
                         .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
                     Spacer(minLength: 0)
                     if !client.reviewDraft.editing {
@@ -75,9 +74,11 @@ struct RecognitionReview: View {
                     if client.output?.state != "ready" {
                         OutputAuthorizationButton(client: client)
                     } else {
-                        IslandAction("Speak", symbol: "arrow.up", prominent: true) { _ = client.speakReviewed() }
-                            .keyboardShortcut(.return, modifiers: .command)
-                            .disabled(client.reviewDraft.candidate == nil || client.reviewDraft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || client.reviewDraft.text.utf16.count > 500 || client.route?.state != "ready")
+                        IslandAction("Speak", symbol: "arrow.up", prominent: true) {
+                            _ = client.reviewDraft.editing ? client.speakReviewed() : client.speakShownWords()
+                        }
+                            .keyboardShortcut(.return, modifiers: .command).accessibilityIdentifier("speak-shown")
+                            .disabled((client.reviewDraft.editing && (client.reviewDraft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || client.reviewDraft.text.utf16.count > 500)) || client.route?.state != "ready")
                     }
                 }
                 if let d = client.lastDelivery, ["refused", "failed"].contains(d.state), d.source != "typed" {

@@ -41,7 +41,7 @@ extension TacitClient {
     var deliveryDetail: String? {
         guard let d = lastDelivery else { return nil }
         switch d.state {
-        case "queued", "synthesizing": return d.source == "user-corrected" ? "Preparing your correction…" : d.source == "reviewed-recognition" ? "Preparing your selected words…" : "Preparing your typed words…"
+        case "queued", "synthesizing": return d.source == "user-corrected" ? "Preparing your correction…" : d.source == "reviewed-recognition" ? "Preparing your selected words…" : d.source == "recognized" ? "Speaking in real time…" : "Preparing your typed words…"
         case "routing": return d.firstAudioAt == nil ? "Waiting for the virtual microphone…" : "Speaking into \(route?.device ?? "the virtual microphone")"
         case "rendered": return "Audio written to \(route?.device ?? "the virtual microphone") · remote audibility unknown"
         case "interrupted": return "Speech interrupted"

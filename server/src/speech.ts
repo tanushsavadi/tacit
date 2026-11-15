@@ -145,20 +145,27 @@ export class SpeechOutput extends EventEmitter {
    */
   speakRecognized(h: RecognitionHypothesis, live: LiveStatus): string | null {
     const no = (r: string) => r;
-    if (!this.gate.validated) return no(UNVALIDATED_GATE.accept(h).reason);
+    // Real-time (unreviewed) is the user's explicit, per-activation choice; without it the reliability gate decides.
+    const unreviewed = live.unreviewed === true && live.mode === 'automatic';
+    if (!this.gate.validated && !unreviewed) return no(UNVALIDATED_GATE.accept(h).reason);
     if (this.st.state !== 'ready') return no('Voice output is not enabled.');
     if (live.state !== 'active' || live.mode !== 'automatic') return no('Live is not in automatic mode.');
     if (h.authorizationId !== live.authorizationId) return no('Stale Live authorization.');
     if (h.source !== 'visual-model' || h.decision !== 'shown' || !h.rawText.trim()) return no('Not an accepted recognition result.');
     const key = `rec:${h.authorizationId}:${h.utteranceId}`;
     if (this.seen.has(key)) return no('Utterance already spoken.');
-    const verdict = this.gate.accept(h);
-    if (!verdict.ok) return no(verdict.reason);
+    if (unreviewed) {
+      const t = h.rawText.trim();
+      if (t.length > 200 || !/[A-Za-z]{2}/.test(t)) return no('Not speakable text.');
+    } else {
+      const verdict = this.gate.accept(h);
+      if (!verdict.ok) return no(verdict.reason);
+    }
     const d = this.newDelivery(key, 'recognized', h.rawText.trim());
     const v = this.bindVoice(d, undefined);
     if (!v.ok) return no(v.reason);
     this.remember(key);
-    this.enqueue(d, d.text, undefined, v.voice);
+    this.enqueue(d, speakableCase(d.text), undefined, v.voice); // same words; casing only, for the voice
     return null;
   }
 
