@@ -113,6 +113,44 @@ final class CompanionTests: XCTestCase {
         live(c,generation:2); XCTAssertFalse(c.reviewIsCurrent(connected:true,now:0))
         hypothesis(c,id:"old-generation",extras:["generation":1]); XCTAssertNil(c.lastHypothesis)
     }
+    @MainActor func testDelayedChoiceFromOlderRenderNeverBindsToNewerUtterance() async {
+        let c = TacitClient(registerHotKey:false,connectOnInit:false); live(c); output(c)
+        let text = "SAME WORDS"; let now = Date().timeIntervalSince1970 * 1000
+        let cand: [String: Any] = ["kind":"raw","index":0,"text":text,"textHash":TacitClient.textHash(text)]
+        let review: [String: Any] = ["generation":1,"reviewExpiresAt":now + 60000,"reviewCandidates":[cand]]
+        hypothesis(c,id:"A",extras:review)
+        let rendered = c.lastHypothesis!.candidates[0]
+        hypothesis(c,id:"B",extras:review)   // identical candidate value, different utterance
+        c.chooseReview(rendered, of:"A", editing:false, connected:true, now:now)
+        XCTAssertNil(c.reviewDraft.candidate, "A's control must not select B's words")
+        c.chooseReview(rendered, of:"B", editing:false, connected:true, now:now)
+        XCTAssertEqual(c.reviewDraft.utteranceID,"B")
+    }
+    @MainActor func testReviewInvalidatedClearsChoiceUntilNewerResult() async {
+        let c = TacitClient(registerHotKey:false,connectOnInit:false); live(c); output(c)
+        let text = "WORDS A"; let now = Date().timeIntervalSince1970 * 1000
+        let review: [String: Any] = ["generation":1,"reviewExpiresAt":now + 60000,
+            "reviewCandidates":[["kind":"raw","index":0,"text":text,"textHash":TacitClient.textHash(text)]]]
+        hypothesis(c,id:"A",extras:review)
+        c.chooseReview(c.lastHypothesis!.candidates[0], of:"A", editing:true, connected:true, now:now)
+        XCTAssertNotNil(c.reviewDraft.candidate)
+        // Wrong authorization / generation / same utterance: ignored.
+        emit2(c, ["type":"review_invalidated","authorizationId":"other","generation":1,"utteranceId":"B"])
+        emit2(c, ["type":"review_invalidated","authorizationId":"live","generation":0,"utteranceId":"B"])
+        emit2(c, ["type":"review_invalidated","authorizationId":"live","generation":1,"utteranceId":"A"])
+        XCTAssertTrue(c.reviewIsCurrent(connected:true,now:now)); XCTAssertNotNil(c.reviewDraft.candidate)
+        emit2(c, ["type":"review_invalidated","authorizationId":"live","generation":1,"utteranceId":"B"])
+        XCTAssertNil(c.reviewDraft.candidate)
+        XCTAssertFalse(c.reviewIsCurrent(connected:true,now:now))
+        c.chooseReview(c.lastHypothesis!.candidates[0], of:"A", editing:false, connected:true, now:now)
+        XCTAssertNil(c.reviewDraft.candidate, "an invalidated review cannot be chosen again")
+        XCTAssertFalse(c.speakReviewed())
+        hypothesis(c,id:"B",extras:review)
+        XCTAssertTrue(c.reviewIsCurrent(connected:true,now:now))
+    }
+    @MainActor func emit2(_ c: TacitClient, _ m: [String: Any]) {
+        c.handle(String(data: try! JSONSerialization.data(withJSONObject: m), encoding: .utf8)!)
+    }
     @MainActor func testCandidateHashMismatchNeverCreatesReviewChoice() async {
         let c = TacitClient(registerHotKey:false,connectOnInit:false); live(c)
         hypothesis(c,extras:["generation":1,"reviewExpiresAt":9999999999999.0,

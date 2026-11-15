@@ -38,12 +38,12 @@ struct RecognitionReview: View {
                         .tracking(-0.4).lineLimit(onEdit == nil ? 6 : 3).textSelection(.enabled)
                     HStack(spacing: 8) {
                         Button(client.reviewDraft.candidate?.kind == "raw" ? "✓ Raw words" : "Choose raw words") {
-                            if let raw = h.candidates.first(where: { $0.kind == "raw" }) { client.chooseReview(raw) }
+                            if let raw = h.candidates.first(where: { $0.kind == "raw" }) { client.chooseReview(raw, of: h.id) }
                         }
                         if h.candidates.count > 1 {
                             Menu("Alternatives") {
                                 ForEach(h.candidates.filter { $0.kind != "raw" }) { c in
-                                    Button("\(c.kind == "phrase" ? "Phrase list" : "Decoder alternative"): \(c.text)") { client.chooseReview(c) }
+                                    Button("\(c.kind == "phrase" ? "Phrase list" : "Decoder alternative"): \(c.text)") { client.chooseReview(c, of: h.id) }
                                 }
                             }.fixedSize()
                         }
@@ -58,7 +58,7 @@ struct RecognitionReview: View {
                     if !client.reviewDraft.editing {
                         Button("Edit") {
                             guard let base = client.reviewDraft.candidate ?? h.candidates.first else { return }
-                            client.chooseReview(base, editing: true)
+                            client.chooseReview(base, of: h.id, editing: true)
                             if let onEdit { onEdit() } else { editing = true }
                         }.font(.system(size: 11))
                     }

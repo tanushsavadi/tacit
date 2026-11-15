@@ -220,6 +220,13 @@ final class TacitClient: ObservableObject {
                                         endToResultMs: total, phrase: phrase, authorizationId: auth,
                                         generation: h["generation"] as? Int, candidates: candidates,
                                         expiresAt: h["reviewExpiresAt"] as? Double)
+        case "review_invalidated":
+            // A newer utterance header was accepted: every earlier choice/edit is void, even before its result arrives
+            // (the server already refuses it; this keeps the notch from offering it).
+            guard let auth = live?.authorizationId, !auth.isEmpty, m["authorizationId"] as? String == auth,
+                  m["generation"] as? Int == live?.generation, let id = m["utteranceId"] as? String,
+                  id != lastHypothesis?.id else { return }
+            reviewExpiryWork?.cancel(); reviewExpired = true; reviewDraft = ReviewDraft()
         case "speech_delivery":
             guard let dl = m["delivery"] as? [String: Any], let auth = output?.authorizationId,
                   dl["outputAuthorizationId"] as? String == auth, dl["generation"] as? Int == output?.generation,
@@ -297,8 +304,14 @@ final class TacitClient: ObservableObject {
     static func textHash(_ text: String) -> String {
         SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
-    func chooseReview(_ candidate: ReviewCandidate, editing: Bool = false) {
-        guard canReviewCurrent, let h = lastHypothesis, h.candidates.contains(candidate) else { return }
+    /// `utteranceID` is the hypothesis the user saw when the control was rendered. A delayed closure from an older
+    /// render must never bind its choice (even an identical candidate) to a newer utterance.
+    func chooseReview(_ candidate: ReviewCandidate, of utteranceID: String, editing: Bool = false) {
+        chooseReview(candidate, of: utteranceID, editing: editing, connected: conn == .connected, now: estimatedServerNow)
+    }
+    func chooseReview(_ candidate: ReviewCandidate, of utteranceID: String, editing: Bool, connected: Bool, now: Double) {
+        guard reviewIsCurrent(connected: connected, now: now), let h = lastHypothesis, h.id == utteranceID,
+              h.candidates.contains(candidate) else { return }
         reviewDraft.choose(candidate, utteranceID: h.id, outputGeneration: output?.generation ?? -1, editing: editing)
     }
     /// Dedicated reviewed path only. Every field comes from the current hypothesis and an explicit user choice.
