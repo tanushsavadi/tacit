@@ -23,7 +23,20 @@ enum CompanionAccessibility {
     /// Offline My Voice fixture (sample registry shaped like the server's voice_status). Never plays audio.
     private var voiceRevision = 1
     private var voiceSelected = "apple:com.apple.voice.compact.en-US.Samantha"
+    /// `--lab-voice-status FILE`: render a voice_status snapshot captured from a real server (still offline, no audio).
+    private lazy var capturedVoiceStatus: [String: Any]? = {
+        guard let i = CommandLine.arguments.firstIndex(of: "--lab-voice-status"), CommandLine.arguments.count > i + 1,
+              let data = FileManager.default.contents(atPath: CommandLine.arguments[i + 1]),
+              let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return o
+    }()
     private func voiceStatus(lastChange: [String: Any]? = nil) -> [String: Any] {
+        if var real = capturedVoiceStatus {
+            if voiceRevision > 1 { real["selected"] = ["voiceId": voiceSelected, "source": "user"]; real["effective"] = ["voiceId": voiceSelected, "label": voiceSelected]
+                real["revision"] = voiceRevision }
+            real["lastChange"] = lastChange ?? NSNull()
+            return real
+        }
         let rate: [String: Any] = ["min":0.3, "max":0.7, "default":0.5, "step":0.05]
         let pitch: [String: Any] = ["min":0.8, "max":1.25, "default":1.0, "step":0.05]
         func apple(_ id: String, _ name: String, _ locale: String, novelty: Bool = false) -> [String: Any] {
