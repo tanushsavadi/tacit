@@ -1,10 +1,42 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 ~05:56 UTC (clock-checked)
+**Last updated:** 2026-11-15 ~11:15 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Living Notch + Presence integration".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## GEMINI SPONSOR-TRACK AUDIT (2026-11-15 11:04–11:15 UTC, Claude) — no runtime change
+- Deployed build verified = main: server pid 38791 (05:37 UTC, no server/shared change since), companion pid 48577
+  (binary 05:51, no newer source). Live `respond_status` = Google Gemini, models flash-lite → flash (code defaults).
+- Fresh: `respond:eval` real Gemini 20/20, p50 872 ms, p95 2610 ms, 0/58 removed, focus 4/4; live WS probe on :8790
+  (doctor's-office scenario) share_view median 1097 ms (n=5), refusal/cancel/supersede/injection OK, 0 speech events;
+  respond.test 20/20; Swift PresenceTests 15/15.
+- **Risk:** eval + probe together (~35 calls/20 s) hit Gemini **429 per-minute quota** (recovered in ~40 s). Never run
+  evals/probes within ~2 min of judging. Paste (don't type) Help Me Respond context: code suggests the empty field turns
+  into the bubble after the first character (unverified in GUI; Sol-owned, not changed).
+- Added root `README.md` (`0f479b8`, pushed) — the public repo had none. Full report, 35–40 s demo script, Devpost copy:
+  `~/Documents/TACIT-Film-Production/devpost-upload/submission-notes/GEMINI_TRACK.md`.
+- Repo description still mentions "wearable sensing"; suggested `gh repo edit` commands are in that report (not run).
+
+## DEVPOST MEDIA — produced outside the repo (2026-11-15 ~10:45–11:00 UTC, Claude)
+- `~/Documents/TACIT-Film-Production/devpost-upload/`: 10 gallery PNGs (1800×1200, ≤1.5 MB each), video thumbnail
+  1280×720, social 1200×630, contact sheets, `DEVPOST_UPLOAD_CHECKLIST.md`, `submission-notes/DEVPOST_LINKS.md`,
+  `YOUTUBE_UPLOAD.md`. Remotion stills source in `source/` (film project untouched). Help Me Respond views rendered with
+  the shipped binary's `--render-presence` (copied out of the bundle; running app/server untouched).
+- **Repo made PUBLIC** by Claude at the user's explicit request (~11:05 UTC; verified signed out). Video:
+  https://youtu.be/GeV55H-ozqw (user-supplied; embeddable, 168 s = 2:48 cut). Everything pushed is now world-readable —
+  never push secrets, recordings or invite links (AGENTS.md "Never commit" list matters more than ever).
+
+## FILMS — produced outside the repo (2026-11-15 08:02–08:45 UTC, Claude)
+- Production workspace `~/Documents/TACIT-Film-Production/` (NOT in Git; contains the founder's face clips). Renders:
+  `renders/TACIT_Devpost_Demo_2m48s.mp4` (168.0 s), `TACIT_Directors_Cut_3m40s.mp4` (220.1 s), `TACIT_Judging_Cut.mp4` (75.1 s), all 1080p30 H.264, −16 LUFS;
+  Remotion project `timeline/tacit-film/`; notes, storyboards, captions, manifests in `production-notes/`, `captions/`.
+- Footage: founder's silent clips (video-only) + verbatim evaluator hypotheses; real notch captures; offline lab renders
+  labelled as such; brand motion from `feat/brand-orb` (still unmerged). No Higgsfield footage (10 credits; MCP unlim
+  unavailable). Narration: ElevenLabs stock voice (free tier, credited). TACIT app, server, branches untouched.
+- Deadline per hackumass.com schedule: final submission 9:00 AM EST Sun Nov 15 (Devpost pages 403 to the agent; user
+  recalls 10 AM final edits — unconfirmed).
 
 ## LIVING NOTCH + PRESENCE — integrated, DEPLOYED (2026-11-15 05:29–05:56 UTC) — main `cbb1612`
 - **Codex checkpoint (05:26 UTC, yielded in WORKSTREAM_SOL)** reviewed and committed on `feat/living-notch`: `302bc0c`
