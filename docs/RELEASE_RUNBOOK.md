@@ -26,16 +26,22 @@ Help Me Respond (Gemini) drafts are edited and spoken only with Speak.
 3. Recognizer stuck → `./scripts/tacit.sh profile base --force` (restarts only the recognizer, ~10 s).
 4. Whole runtime → `./scripts/tacit.sh restart` (only when no call is reading BlackHole), then reopen the notch.
 
-**TACIT Flow demo (separate package, simulated meeting input):** `~/Documents/TACIT-Flow-Development/2026-11-15/demo-ready/`
-— `start.command` opens the separately named "TACIT Flow Demo" app + Demo Control Center (own ports 19890/19892;
-stable TACIT untouched). Scenarios A (changing question), B (save my turn), C (correct last message); Start → Next.
-Meeting transcript is SIMULATED (badged); responses, edits, Gemini/deterministic analysis, Review First and Speak are
-real. Audio defaults to LOCAL speakers. To send Flow speech into Meet: stop stable TACIT (`./scripts/tacit.sh stop`),
-`stop.command`, then `./start.command --with-output` (refuses a competing BlackHole router); return with
-`stop.command` + `./scripts/tacit.sh demo`. Disclose: "meeting context is simulated; the response workflow and voice
-are real." Runbook: `demo-ready/runbooks/DEMO_RUNBOOK.md`.
+**ONE NOTCH AT A TIME (root cause of "the expanded notch ignores my mouse", 2026-11-15 ~18:05 UTC):** the separate
+"TACIT Flow Demo" app places its own island at the identical top-centre frame and window level as the TACIT notch. Black
+and inside the hardware cutout it is invisible, but when it is ordered in front it takes the clicks and hover there, and
+its hover-restore re-expands it over the TACIT workspace. `./scripts/tacit.sh demo` now stops the Flow demo first, and
+the Flow demo is started only through the launcher, which quits the notch app first:
 
-**Verified now (original model):** review-flow-check 6/6 (shown-not-spoken, Speak rendered once into BlackHole,
+**TACIT Flow demo (separate package, simulated meeting input, local speaker audio, ports 19890/19892):**
+`./scripts/tacit.sh flow start` → quits the TACIT notch app (server keeps running; Live must be off), starts the
+"TACIT Flow Demo" app + Demo Control Center. Scenarios A (changing question), B (save my turn), C (correct last
+message): pick → Start → Next; Reset/Restart in the Control Center. Meeting transcript is SIMULATED (badged); typing,
+edits, Gemini/deterministic analysis, Review First, Speak and Stop are real. Back to TACIT: `./scripts/tacit.sh flow stop`
+(or `./scripts/tacit.sh demo`). Flow audio stays on the local speakers — it never competes for BlackHole. (Meet audio from
+Flow needs the package's own `--with-output` procedure with the TACIT server stopped: `demo-ready/runbooks/DEMO_RUNBOOK.md`.)
+Disclose: "meeting context is simulated; the response workflow and voice are real."
+
+**Verified now (original model, after the one-notch fix, 18:05–18:15 UTC):** only one island on screen in each mode (window list); Flow `rehearse.command` 15/15 A/B/C through the Flow app (mock audio); native replay shows results with no automatic speech; review-flow-check 6/6 (shown-not-spoken, Speak rendered once into BlackHole,
 correction verbatim, Stop interrupted, Speak refused after Stop); companion `--presence-check` (real Gemini) OK,
 `--selftest` OK (Live Pause/Resume, Stop everything); Flow package evidence 15/15 mocked native runs + 3/3 real local
 audio + 2 live Gemini calls (17:47–17:53 UTC), running instance owner-connected. **Not verified:** a Meet listener

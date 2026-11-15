@@ -14,7 +14,15 @@ recognised words stays DISABLED.
 - TACIT Flow demo = Sol's separate package (`~/Documents/TACIT-Flow-Development/2026-11-15/demo-ready/`, ports
   19890/19892, app "TACIT Flow Demo"), already running and owner-connected; NOT integrated into stable source (its patches
   remain NO-GO for promotion per Sol). Demo sequence + fallbacks: top of `docs/RELEASE_RUNBOOK.md`.
-- Another agent session is working on a notch mouse-responsiveness report (Sol-owned `macos/TacitCompanion`); not touched.
+- **Notch mouse bug — root cause + fix (18:05 UTC):** the TACIT Flow Demo app (pid then 95002) had its own island at the
+  same frame (597,0 317×32) and level (statusBar+1) as the TACIT notch and was ordered in FRONT: an invisible black panel
+  in the cutout taking clicks/hover; its hover-restore re-expands over the workspace. Fix in `scripts/tacit.sh`: `demo`
+  stops the Flow demo (its own stop.command) before bringing the notch forward; new `flow start|stop` swaps the two apps
+  (never both). No Swift change and no rebuild: the deployed TACIT.app (built 05:51 UTC = `cbb1612` source) is unchanged.
+- Codex's uncommitted hover change (`IslandController.swift`, `NotchHoverState.swift`, tests; checkpoint 18:00 UTC) is
+  left UNCOMMITTED and NOT in the demo build: it drops the "editor focus pins" rule, so moving the pointer away while
+  typing a correction retracts the notch and resigns the keyboard after 300 ms — too risky before judging. Native tests on
+  that working tree 106/106. Flow Demo app (Sol's package) still contains it.
 - Prompt sets committed with the user's name sanitised (`[name]`); original private in `recognition/data/prompts_private/`.
 
 ## (superseded) EXPERIMENTAL PERSONAL DEMO PROFILE (2026-11-15 ~17:45–18:00 UTC) — now disabled
