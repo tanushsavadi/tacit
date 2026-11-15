@@ -72,9 +72,13 @@ else {
 
 // ── running server ──
 let services: ServiceStatus | null = null;
+type MyVoiceHealth = { engine: { state: string; reason: string | null }; effective: { voiceId: string; label: string }; fallback: string | null; disabled: boolean };
+let myVoice = null as MyVoiceHealth | null;
 try {
   const res = await fetch(`http://127.0.0.1:${PORT}/api/health`, { headers: { authorization: `Bearer ${secrets.userToken}` }, signal: AbortSignal.timeout(2000) });
-  services = ((await res.json()) as { services?: ServiceStatus }).services ?? null;
+  const health = (await res.json()) as { services?: ServiceStatus; myVoice?: MyVoiceHealth };
+  services = health.services ?? null;
+  myVoice = health.myVoice ?? null;
   add(services ? 'PASS' : 'FAIL', 'TACIT server', services ? `running on :${PORT}` : 'answered without detail (token mismatch?)');
 } catch { add('USER ACTION', 'TACIT server', 'not running: ./scripts/tacit.sh start'); }
 if (services) {
@@ -83,7 +87,12 @@ if (services) {
   const v = services.voiceRoute;
   add(v?.state === 'ready' ? 'PASS' : 'FAIL', 'voice output route (server)', v ? `${v.state}${v.deviceName ? ` · ${v.deviceName}` : ''}${v.reason ? ` · ${v.reason}` : ''}` : 'not reported');
   const vp = services.voicePolicy;
-  if (vp) add('INFO', 'voice', vp.personalConfigured ? `personal voice ${vp.personalAvailable ? 'available' : `UNAVAILABLE (${vp.personalError})`}` : `system voice (${vp.systemVoice}) — labelled, not your personal voice`);
+  if (!myVoice) add('FAIL', 'My Voice', 'not reported by the server (older build running? restart when idle)');
+  else if (myVoice.disabled) add('INFO', 'My Voice', `disabled by TACIT_VOICE=off (rollback): ${myVoice.effective.label}`);
+  else add(myVoice.engine.state === 'ready' ? 'PASS' : 'FAIL', 'My Voice engine (tacit-voice)', myVoice.engine.state === 'ready'
+    ? `speaking as ${myVoice.effective.label}${myVoice.fallback ? ` — FALLBACK: ${myVoice.fallback}` : ''}`
+    : `${myVoice.engine.state}${myVoice.engine.reason ? ` · ${myVoice.engine.reason}` : ''}`);
+  if (vp) add('INFO', 'legacy call voice (browser/Twilio replies)', vp.personalConfigured ? `personal voice ${vp.personalAvailable ? 'available' : `UNAVAILABLE (${vp.personalError})`}` : `system voice (${vp.systemVoice}) — labelled, not your personal voice`);
 }
 add('INFO', 'automatic speaking of recognised words', 'DISABLED: no validated silent-speech reliability gate (display-only + typed speech)');
 add('INFO', 'remote audibility', 'only a human on the other end of the call can confirm it');

@@ -421,7 +421,8 @@ const server = createServer(async (req, res) => {
       const full = auth.disabled || safeEqual(bearer(req, url), auth.secrets.userToken);
       const s = controller.snapshot();
       const body = full
-        ? { ok: true, phase: s.phase, services: s.services, tts: tts.label, stt: stt?.label ?? null, geminiModels: gemini?.models ?? null, geminiLastAttempts: gemini?.lastAttempts() ?? null }
+        ? { ok: true, phase: s.phase, services: s.services, tts: tts.label, stt: stt?.label ?? null, geminiModels: gemini?.models ?? null, geminiLastAttempts: gemini?.lastAttempts() ?? null,
+            myVoice: (({ engine, effective, fallback, revision }) => ({ engine, effective, fallback, revision, disabled: process.env.TACIT_VOICE === 'off' }))(myVoice.status()) }
         : { ok: true, authRequired: !auth.disabled };
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify(body));
