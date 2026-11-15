@@ -1,0 +1,54 @@
+# TRAINING session C (silent), 50 sentences.
+# Arm-2 adaptation (V2) — never train or select on heldout_v2.txt. Recording + audit: docs/research/TACIT_PERSONAL_ADAPTATION_V2.md
+# Disjoint from adapt_v1*, adapt_val_v1, heldout_v2, diagnostic_v1, the phrase list, record_webcam PROMPTS, CREMA-D,
+# live:test sets, every recorded sentence, and the other two V2 sets (eval.dataset prompts-check + near-duplicate scan).
+hand me that towel please
+my headphones stopped working
+I'll meet you by the front door
+when does the pool open
+that movie was better than I expected
+please hold the elevator for me
+sorry could you repeat the last part
+I think we took a wrong turn
+how much does parking cost here
+my roommate snores all night
+let's grab lunch after the meeting
+yes that works for me
+I forgot my wallet at home
+which bus goes downtown
+this curry is a bit too spicy
+I've been waiting for twenty minutes
+thanks that was really kind
+can we move this to Friday
+I'm not sure what you mean
+fair enough
+the projector won't turn on
+would you mind closing the window
+I'd rather stay in tonight
+who's bringing the cake
+my knee feels stiff this morning
+your first point makes sense
+we ran out of milk
+could you email me the slides
+what a beautiful view
+I need five more minutes
+not today
+the train was delayed by an hour
+I really admire my grandmother
+that seems like a fair deal
+where should I put these boxes
+my cousin is getting married in June
+I'm allergic to peanuts
+let me check my calendar first
+nobody told me about the change
+the coffee here is very strong
+good luck on your exam
+can I borrow a pen
+it was nice to finally meet you
+I'll handle the budget section
+which page are we on
+the heater makes a strange noise
+I would love to visit Japan someday
+I meant the second option not the first
+how was your weekend
+I fixed the bug last night

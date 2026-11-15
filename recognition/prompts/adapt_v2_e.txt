@@ -1,0 +1,58 @@
+# TRAINING session E (silent), 50 DEMO-DOMAIN sentences (user request 2026-11-15 ~12:25 UTC: "phrases I'll most likely
+# say during the demo", incl. the user's name).
+# PUBLIC COPY: the user's first name is replaced by [name]; the recorded original is in git-ignored
+# data/prompts_private/adapt_v2_e.txt (the session manifests keep the spoken labels). Replaces the earlier, unrecorded general-conversation set E.
+# These are rehearsed/trained demo phrases: recognising them later is TRAINING-SET performance, never evidence of
+# generalisation. Disjoint from adapt_v1*, adapt_val_v1, heldout_v2, diagnostic_v1, the phrase list, record_webcam
+# PROMPTS, CREMA-D, live:test, every recorded sentence and sets C/D (eval.dataset prompts-check + near-duplicate scan).
+# Never train or select on heldout_v2.txt.
+hi my name is [name]
+I'm [name] and this is tacit
+[name] here can you hear me
+nice to meet you all
+thanks for stopping by our table
+welcome to our demo
+let me show you how it works
+I'm not making any sound right now
+the camera is reading my lips
+my words are spoken in my own voice
+can you hear me on the call
+this is my silent voice
+tacit gives people their voice back
+I built this at hackumass
+nothing is spoken until I press speak
+I pick the right words first
+do you have any questions
+thank you so much for listening
+that's a great question
+let me try that one again
+sorry it got that one wrong
+give me one second
+can everyone see my screen
+I'll mouth the next sentence now
+this works with any video call
+the laptop camera does all the work
+no microphone is used at all
+people who lost their voice can use this
+I hope you enjoyed the demo
+we're really proud of this project
+it runs right here on my laptop
+hello everyone
+how is your day going
+it was great talking with you
+I'm really excited to be here
+my team worked all night on this
+I can talk without saying a word
+the words show up on my screen
+then I choose what gets spoken
+please talk to me normally
+I can hear you just fine
+let's start the call
+I'll hang up now
+see you at the closing ceremony
+thanks for having me
+could you say that again please
+have a wonderful weekend
+this is a real live demo
+my voice comes through the call
+goodbye and thank you

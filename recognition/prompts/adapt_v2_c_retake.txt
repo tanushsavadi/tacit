@@ -1,0 +1,21 @@
+# RETAKES for session C (silent): the 9 adaptC takes excluded by the 2026-11-15 11:43-12:05 UTC audit.
+# Record: .venv/bin/python record_webcam.py --name adaptCretake --modes silent --prompts prompts/adapt_v2_c_retake.txt --free 0
+# Train with --exclude adaptC/<clip> for each original below. Never train or select on heldout_v2.txt.
+# clip04: grin
+# clip16: grin
+# clip17: grin
+# clip18: grin
+# clip21: grin
+# clip22: truncated end (+ early spread)
+# clip25: grin
+# clip30: grin
+# clip35: truncated end (+ grin frames)
+can I borrow a pen
+I'd rather stay in tonight
+I fixed the bug last night
+thanks that was really kind
+I've been waiting for twenty minutes
+my cousin is getting married in June
+I'm allergic to peanuts
+the heater makes a strange noise
+I would love to visit Japan someday

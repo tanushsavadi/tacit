@@ -1,0 +1,6 @@
+# RETAKES round 3 (silent): 2 adaptE takes excluded by the 2026-11-15 12:35-12:50 UTC audit.
+# Record: .venv/bin/python record_webcam.py --name adaptEretake --modes silent --prompts prompts/adapt_v2_e_retake.txt --free 0
+# Excluded originals: adaptE/clip03 (grin), adaptE/clip05 (late start, ends ~0.2 s before clip end, grin-like spreads —
+# precaution). Never train or select on heldout_v2.txt.
+nothing is spoken until I press speak
+people who lost their voice can use this

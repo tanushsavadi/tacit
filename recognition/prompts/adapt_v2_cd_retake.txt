@@ -1,0 +1,9 @@
+# RETAKES round 2 (silent): 1 adaptCretake take + 3 adaptD takes excluded by the 2026-11-15 12:04-12:20 UTC audit.
+# Record: .venv/bin/python record_webcam.py --name adaptCDretake --modes silent --prompts prompts/adapt_v2_cd_retake.txt --free 0
+# Excluded originals: adaptCretake/clip08 (grin, 2nd attempt), adaptD/clip36 (grin), adaptD/clip44 (grin),
+# adaptD/clip50 (sentence ends < 0.1 s before clip end — precaution). Never train or select on heldout_v2.txt.
+# Pre-stated rule: if "thanks that was really kind" fails a third time, that sentence is dropped (set C = 49), not retaken.
+thanks that was really kind
+what should we cook for dinner
+who is in charge of this project
+the report is due on Monday

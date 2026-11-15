@@ -1,0 +1,54 @@
+# TRAINING session D (silent), 50 sentences.
+# Arm-2 adaptation (V2) — never train or select on heldout_v2.txt. Recording + audit: docs/research/TACIT_PERSONAL_ADAPTATION_V2.md
+# Disjoint from adapt_v1*, adapt_val_v1, heldout_v2, diagnostic_v1, the phrase list, record_webcam PROMPTS, CREMA-D,
+# live:test sets, every recorded sentence, and the other two V2 sets (eval.dataset prompts-check + near-duplicate scan).
+would you carry these bags upstairs
+we're on a call until three
+I'm feeling a little dizzy
+what's the password for the wifi
+my sister plays the violin
+let's take a short break
+I didn't catch your name
+can we split the bill
+everyone is asleep already
+I've never tried sushi before
+what should we cook for dinner
+it's freezing outside today
+I appreciate your patience
+fine by me
+could you explain that one more time
+my glasses keep slipping off
+the library has a new cafe
+swimming lessons start next week
+is this seat taken
+the garden needs some rain
+you did a great job
+the report is due on Monday
+my fingers feel numb
+what happened to the old bridge
+I'll text you when I arrive
+please lower your voice a little
+that joke was very funny
+do you want to join us
+my dog loves chasing birds
+I think the clock is wrong
+we need a bigger table
+I'll share my screen in a moment
+the hike up the hill was amazing
+sorry I'm late again
+who is in charge of this project
+I prefer tea in the morning
+my left ear feels blocked
+let's share the notes after class
+how far is the pharmacy from here
+got it thanks
+has anyone seen my keys
+please clear the dishes
+that shirt looks great on you
+what time does the game begin
+my laptop needs charging
+there's a party next door
+the client wants the changes by Thursday
+can I sit near the aisle
+this pizza is still too hot
+we can finish this tomorrow
