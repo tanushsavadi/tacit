@@ -1,10 +1,36 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 00:30 UTC (clock-checked)
+**Last updated:** 2026-11-15 00:43 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "adaptation arm 1".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
+
+## Generalisation experiment — RESULTS (2026-11-15 00:29–00:42 UTC; log `recognition/data/eval/gen_exp.log`)
+All candidates benched back to back on the same MPS session (val latency comparable). Base + silent1 hashes unchanged.
+```
+                      base        R silent1   W75         W50         F front1 (ep5/6)
+val silent errors/114 84 (73.7%)  48 (42.1%)  52 (45.6%)  64 (56.1%)  40 (35.1%)
+  better/worse clips  —           15/3        13/2        11/3        16/2
+  exact / top-5       0 / 1       4 / 6       1 / 5       1 / 4       5 / 6
+CREMA-D errors/536    33 (6.2%)   54 (10.1%)  49 (9.1%)   38 (7.1%)   58 (10.8%)
+  CREMA-D exact /96   79          67          70          75          65
+val nonspeech shown   2/3 (fl 2)  2/3 (fl 1)  2/3 (fl 2)  2/3 (fl 2)  2/3 (fl 2)
+rest shown dev /36    4 (fl 0)    4 (fl 1)    4 (fl 0)    4 (fl 0)    4 (fl 1)
+rest shown val /13    4 (fl 0)    4 (fl 1)    4 (fl 1)    4 (fl 1)    4 (fl 2)
+dev silent / voiced   .444/.377   .404/.215   .384/.246   .404/.277   .333/.231
+val model ms p50/p95  283/371     260/324     266/322     268/321     262/324
+```
+Against the pre-registered rules: only W50 meets the CREMA-D guard (38/536 = exactly the +1 pt limit) and every raw-count
+condition; after the evidence floor it shows 1 val resting-face segment vs base 0 (strictly a fail by 1/49). W50 keeps
+only 20/36 = 56 % of R's validation gain (rule: ≥ 2/3, ≤ 60 errors) → decision rule NOT met. F has the best validation
+score but the worst CREMA-D, and its epoch curve (49 → 40 → 54 errors at epochs 4–6) shows ±7-error noise on 20 clips,
+so F vs R on validation is not a reliable difference. Interpolation traces a near-linear frontier (W50 → W75 → R:
+val 64 → 52 → 48 errors, CREMA-D 38 → 49 → 54): with 101 clips, personal gain and generalisation trade against each
+other; neither recipe change escapes it. Nonspeech triggers are unchanged by every candidate (2/3 raw; the base
+already fails this). Latency unaffected (same architecture). **Conclusion (per pre-registered rule): the existing 101
+clips do not support a better-balanced checkpoint; W50 is the best balanced fallback (val −17.6 pt, CREMA-D +0.9 pt).**
+Nothing deployed; overlays only in git-ignored `recognition/data/adapt/{silent1_w50,silent1_w75,front1}`.
 
 ## Generalisation experiment on the existing 101 clips — PRE-REGISTERED 2026-11-15 00:30 UTC (before any result)
 Goal: keep silent1's personal gain while reducing its CREMA-D regression; no new recording. silent1 (overlay.pt sha
