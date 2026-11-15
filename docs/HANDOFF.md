@@ -1,10 +1,111 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 ~11:11 UTC (clock-checked)
+**Last updated:** 2026-11-15 ~18:00 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Living Notch + Presence integration".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## EXPERIMENTAL PERSONAL DEMO PROFILE — ACTIVE (2026-11-15 ~17:45–18:00 UTC, Claude; user-authorised, local only)
+- **Running now:** server restarted on `def764f` code (idle: Live off, no call, no BlackHole reader) and the recognizer
+  switched to `personal-demo` (silent2_251 overlay, EXPERIMENTAL, Review First). Verify: `./scripts/tacit.sh profile status`.
+  **Rollback:** `./scripts/tacit.sh profile base` (sidecar only; `--force` in an emergency). Pre-change snapshot:
+  `recognition/data/eval/demo_profile/pre_activation_snapshot.txt`. Base checkpoint and overlays unchanged (sha checked).
+- **Commits:** `55d6342` fix(server) socket protocol errors no longer crash the server (one >64 KB /ws frame used to
+  kill it; also caller/twilio) · `268186d` recognizer profiles · `def764f` Review First enforcement + `tacit.sh profile` ·
+  `e854f6c` fix(recognition) strict JSON (-Infinity from a short window surfaced as "Recognition failed") ·
+  `1a10171` review-flow-check · `b96c2d3` prerecorded replay tools.
+- **Interface contract (additive, announced here for Sol):** `ServiceStatus.recognition.profile?: RecognizerProfile`
+  `{id, label, experimental, reviewRequired, error, requested}`; `RecognitionHypothesis.recognizerProfile?:
+  {id, experimental, reviewRequired}`; `/api/health` (token) adds `live {state, mode, reviewRequired}`. While
+  `reviewRequired`, `live_control activate mode:'automatic'` is refused with reason REVIEW_REQUIRED_PROFILE. Optional
+  notch request: show an "Experimental profile · Review First" badge from `services.recognition.profile` (today the
+  existing Model line shows the model string, which says EXPERIMENTAL).
+- **Evidence (existing data only; demoCheck fresh takes NOT recorded → fresh-take criteria UNVERIFIED):** see the
+  addendum in `docs/research/TACIT_PERSONAL_ADAPTATION_V2.md` and the demo section at the top of `docs/RELEASE_RUNBOOK.md`
+  (phrase card, flow, fallback). Checks: server 204 tests, recognition 50, web typecheck + 80; review-flow-check 6/6 on
+  base and personal-demo (BlackHole, no reader); native `--analyze-video --send` replay personal 10/10, base 9/10.
+- **General-release verdict for silent2_251 stays NO-GO.** heldout_v2 still unrecorded/unscored.
+- **Still uncommitted (waiting on the user):** `recognition/prompts/adapt_v2_*.txt` (set E contains the user's first
+  name; repo is PUBLIC) and `docs/research/TACIT_PERSONAL_ADAPTATION_V2.md`.
+
+## JUDGING PITCH — produced outside the repo (2026-11-15 ~11:21–12:00 UTC, Claude) — no runtime/code change
+- Workspace `~/Documents/TACIT-Pitch/` (NOT in Git; index in its `README.md`). Figma Slides master (user asked for
+  Figma MCP): https://www.figma.com/slides/jf8CzZjdqJfhMHhcb9lCrT (7 main + 8 appendix, speaker notes). PDF from Figma
+  renders; native PPTX from the same spec (`build/spec.py`), checked structurally only: Keynote/Quick Look automation hung, so
+  it wasn't rendered in PowerPoint. Inter TTFs copied to `~/Library/Fonts` for the PPTX.
+- Scripts 90 s / 3 min / 5 min, demo runbook, Gemini mini-pitch, 20-question Q&A, evidence sheet, rehearsal checklist.
+  Sources verified today: Fassler 2026 (PMID 41485241), Musalia 2023 (PMID 37430313), ASHA practice portal, ACS 2026.
+- **Demo caution recorded in the runbook:** while Live captures, the presenter's own talking is read as new utterances.
+  Mouth → silent → Speak → Pause → talk. Still unverified (human): Meet listener hearing reviewed speech from the
+  current build, live camera in the judging room, `--analyze-video --send` (Level 2 fallback) run by a human.
+
+## PERSONAL ADAPTATION V2 — restarted by the user (2026-11-15 ~11:13 UTC, Claude) — no runtime change
+The user explicitly lifted the 00:48 UTC ML freeze for one bounded experiment: ~150 new silent training sentences →
+arm `silent2_251` (same recipe as silent1), pre-registered in `docs/research/TACIT_PERSONAL_ADAPTATION_V2.md` (to be
+written BEFORE any training). Demo stack untouched (server 38791, sidecar 42794 left running; no restarts).
+- **Phase 0 verified on disk (11:15 UTC):** base sha e740cef3… and silent1 overlay/run/meta/log match
+  `data/eval/preserve_hashes_0.txt`; silent1 val errors ep0–6 = 84/63/53/50/48/52/57 (ep 4 chosen), 101 train
+  (adaptA 50 + adaptB 43 + adaptBretake 8, 8 excludes) / 20 val; silent1_w50/w75/front1 overlays present;
+  `20261114T215105Z-heldout1` is EMPTY — heldout_v2 still unrecorded/unscored.
+- **Prompts written:** `recognition/prompts/adapt_v2_{c,d,e}.txt`, 50 each = 150 unique (2–8 words, median 6; 304 words
+  new vs adapt_v1+val vocab). `eval.dataset prompts-check` vs all prompt files + inventory: 0 dup / 0 clash each.
+  Extra near-duplicate scan (content-word Jaccard / shared 3–4-grams; scratchpad script, not committed) vs 241
+  reference sentences + each other: 46 flags across 3 rounds → all evaluation-set (heldout_v2, adaptVal) neighbours
+  and strong practised-frame neighbours replaced; final 0 flags. Not yet committed.
+- **Preflight 11:17 UTC FAILED:** mouth brightness 74 (need ≥ 90; good sessions 149–161), IOD 69 px (sessions
+  150–163 px). User must restore the adaptA/B lamp position + sit at the earlier distance, re-run `--check`.
+- **adaptC audit (11:43–12:05 UTC, read-only, CPU only):** session `data/webcam/20261115T113516Z-adaptC` (three empty
+  11:34 starts ignored). Labels 50/50 = adapt_v2_c exactly, 0 dup/missing/unlisted, all silent. All decode 1280x720,
+  6.01 s, 180 frames, 29.97 fps, max gap 33 ms, 0 audio streams; FaceMesh 100 %. vs adaptA/adaptB (same scripts):
+  ROI brightness 126–147 p50 140 (A 150, B 153 — lower, still ≫ 90; 3 clips < 130), IOD 139–147 p50 145 (A 142, B 156),
+  roll p95 6.4° (A/B ~4°), words/s p50 1.67 (B 1.84). Smile screen (width ≥ 25 % over rest ≥ 6 frames; on adaptB it
+  hits 5/8 historical excludes, 2/43 kept) + frame-strip review: grins in clip04/16/17/18/21/25/30; end truncated
+  (still articulating at the last frame) clip22/35. Tail/early/rate flags on 02/07/23/41/48 = false positives (visual).
+  **Verdict: RETAKE 9** → `prompts/adapt_v2_c_retake.txt`; 41 valid. Train later with `--train adaptCretake` and
+  `--exclude adaptC/clip04 …/clip16 …/clip17 …/clip18 …/clip21 …/clip22 …/clip25 …/clip30 …/clip35`. Originals untouched.
+  Audit scripts + results + images: `recognition/data/eval/audit_v2/` (git-ignored).
+- **adaptCretake + adaptD audit (12:04–12:20 UTC, same scripts/rule):** `20261115T115544Z-adaptCretake` 9/9 = exactly
+  the 9 excluded adaptC sentences → set C = 50 unique labels = adapt_v2_c, no duplicate training label once the 9
+  excludes apply. `20261115T115728Z-adaptD` 50/50 = adapt_v2_d, 0 dup/missing/unlisted. All 59 decode 1280x720, 6.01 s,
+  179–180 frames, 0 audio, FaceMesh 100 %. Light much better: ROI brightness p50 151 (C-accepted 140), L/R asymmetry
+  p50 ~11 (A 49, B 37, C 34); IOD D p50 151; roll p95 D 5.5°. RETAKE 4: adaptCretake/clip08 "thanks that was really
+  kind" (grin again), adaptD/clip36 + clip44 (grin), adaptD/clip50 (ends < 0.1 s before clip end, precaution) →
+  `prompts/adapt_v2_cd_retake.txt` (session name adaptCDretake). Pre-stated: a third grin on "thanks that was really
+  kind" drops that sentence (C = 49). Tail flags 13/22/26/33/43 and black-frame "early" flags = false positives (visual).
+  Images: `data/eval/audit_v2/{cr_spread,d_spread,d_tail}.png`.
+- **Set E replaced at the user's request (~12:25 UTC, before recording):** `prompts/adapt_v2_e.txt` is now 50
+  DEMO-DOMAIN sentences (self-introduction with the user's first name ×3, "tacit" ×2, explaining the product, call
+  phrases). prompts-check 0 dup / 0 clash vs every prompt file + inventory (incl. C/D); near-duplicate scan: no
+  neighbour in any evaluation set (heldout_v2, adaptVal, dev, live:test); only mild overlaps with training sentences and an
+  intentional intra-E "can you hear me" ×2. Consequence for the prereg: recognising these phrases at demo time is
+  training-set performance, never generalisation evidence; set E differs in domain from C/D (document it).
+- **adaptCDretake + adaptE audit (12:35–12:50 UTC):** `…122336Z-adaptCDretake` 4/4 PASS (incl. "thanks that was really
+  kind", 3rd take, no grin); `…122758Z-adaptE` 50/50 = NEW demo set (verified, not the old list), 48 PASS, RETAKE 2:
+  clip03 (grin), clip05 (late start + ~0.2 s end margin + grin-like spreads, precaution) → `prompts/adapt_v2_e_retake.txt`
+  (session adaptEretake). E light: brightness p50 139, IOD 143.
+- **Dry-run 12:37 UTC (no model, no MPS):** 8 sessions, 23 excludes matched, 249 train / 20 val, hygiene passed;
+  independent check 249 clips = 249 unique labels, ∩ val = ∩ heldout = 0; v1 101/101, C 50/50, D 50/50, E 48/50.
+- **Pre-registration written** (12:38–12:50 UTC, before training): `docs/research/TACIT_PERSONAL_ADAPTATION_V2.md` —
+  arm D silent2_251 (silent1 recipe, frozen HP), conditional D50 (alpha 0.5, only if D fails CREMA-D alone), unchanged
+  E.5 gate, sign test + paired bootstrap, adaptVal = optimistic development evidence, heldout once.
+- **adaptEretake** `…124106Z-adaptEretake` 2/2 PASS (12:42 UTC). **Final dry-run: 251 train / 20 val, 9 sessions,
+  23 excludes; 251 unique = v1 ∪ C ∪ D ∪ E exactly, ∩ val = ∩ heldout = 0.** Manifest:
+  `data/eval/audit_v2/silent2_251_train_manifest.json`; command env `data/eval/audit_v2/silent2_cmd.sh`.
+- User confirmed TACIT idle (12:42 UTC). Pre-run hashes `data/eval/preserve_hashes_v2.txt` (base e740cef3…, silent1,
+  w50, w75, front1 overlays + run.json); prior bench results archived to `data/eval/bench/archive_pre_v2/`.
+  **Training `silent2_251` started 12:43 UTC** (log `data/eval/silent2_251_train.log`). Analysis script
+  `data/eval/audit_v2/analyze_v2.py` reproduces silent1's documented 84→48, 15/3, p=0.008.
+- **RESULT (13:10 UTC): NO-GO.** silent2_251 (epoch 6 = cap, overlay sha 48460d67…, run 12:43–13:02): val errors
+  84 → **36**/114 (silent1 48, W50 64), 15/1 better/worse (p=.001), CI [−57.0, −27.3] pt — but **CREMA-D 61/536 =
+  11.4 % (+5.2 pt; 0 better / 19 worse; CI [+2.9, +7.9])** and **rest-after-floor dev 1 vs 0, val 2 vs 0** → gate
+  items 3 and 5 FAIL. D50 not built (allowed only if CREMA-D were the sole failure). Phase C not run; heldout_v2 still
+  unrecorded (`…215105Z-heldout1/manifest.jsonl` 0 bytes). All 9 preserved hashes OK; nothing deployed; server/sidecar
+  never restarted. Full table + proposals: `docs/research/TACIT_PERSONAL_ADAPTATION_V2.md` → Results.
+- Gotcha (zsh): an unquoted `$VAR` holding several flags is passed as ONE argument — wrap such loops in `bash -c`
+  (cost one wasted bench pass; the base-only results were re-run so all four candidates are back to back).
+- Uncommitted: `recognition/prompts/adapt_v2_{c,d,e}.txt`, `adapt_v2_{c,cd,e}_retake.txt`, the research doc, HANDOFF.
+  Waiting on the user: set E contains the user's first name and the repo is PUBLIC — commit only after they agree.
 
 ## GEMINI SPONSOR-TRACK AUDIT (2026-11-15 11:04–11:11 UTC, Claude) — no runtime change
 - Deployed build verified = main: server pid 38791 (05:37 UTC, no server/shared change since), companion pid 48577
