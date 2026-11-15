@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { LiveStatus, RecognitionHypothesis, SpeechDelivery, VoiceRouteStatus } from '../../shared/protocol.ts';
 import type { OutputRoute, PlayOutcome } from './route.ts';
 import { createHash } from 'node:crypto';
-import { MAX_PENDING, SpeechOutput, UNVALIDATED_GATE, type ReliabilityGate } from './speech.ts';
+import { MAX_PENDING, SpeechOutput, UNVALIDATED_GATE, speakableCase, type ReliabilityGate } from './speech.ts';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const ready: VoiceRouteStatus = { state: 'ready', deviceName: 'BlackHole 2ch', deviceUid: 'bh', sampleRate: 48000, gainDb: 0, calibrated: true, readers: [], warnings: [], reason: null };
@@ -221,7 +221,7 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
   }
   const last = (d: SpeechDelivery[]) => d.at(-1)!;
 
-  it('speaks the exact picked candidate once, labelled reviewed-recognition, with review provenance; TTS gets the exact approved string', async () => {
+  it('speaks the exact picked candidate once, labelled reviewed-recognition, with review provenance; TTS gets the approved words (ALL-CAPS model text in sentence case)', async () => {
     const { out, route, deliveries, synthCalls, req } = rig();
     const m = req({ requestId: 'ok' });
     out.speakReviewed(m, live, target());
@@ -229,7 +229,7 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     route.finishAll(); await tick();
     expect(last(deliveries)).toMatchObject({ requestId: 'ok', state: 'rendered', source: 'reviewed-recognition', text: 'I NEED HELP WITH THIS',
       review: { utteranceId: 'u1', liveAuthorizationId: 'L1', candidate: 'alternative', index: 1 } });
-    expect(synthCalls).toEqual(['I NEED HELP WITH THIS']);
+    expect(synthCalls).toEqual(['I need help with this']);
     expect(out.status().recognizedSpeechAllowed).toBe(false);
   });
 
@@ -282,7 +282,7 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     out.speakReviewed(req({ requestId: 'c', candidate: 'edited', index: 0, text: 'Help me', textHash: sha('Help me') }), live, target());
     expect(last(deliveries)).toMatchObject({ requestId: 'c', state: 'refused', reason: expect.stringMatching(/already spoken/) });
     await tick();
-    expect(synthCalls).toEqual(['I NEED HELP WITH THIS']);
+    expect(synthCalls).toEqual(['I need help with this']);
   });
 
   it('a refusal by the route does not consume the utterance: the user can press Speak again', async () => {
@@ -323,13 +323,14 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     expect(terminal('p')).toEqual([expect.objectContaining({ state: 'interrupted', source: 'reviewed-recognition' })]);
   });
 
-  it('all candidate kinds reach synthesis exactly as explicitly approved, including casing and UTF-8', async () => {
+  it('all candidate kinds reach synthesis with exactly the approved words; corrections keep casing and UTF-8 byte-for-byte', async () => {
     for (const candidate of target().reviewCandidates!) {
       const { out, route, req, synthCalls } = rig();
       expect(synthCalls).toEqual([]);
       out.speakReviewed(req({ candidate: candidate.kind, index: candidate.index, text: candidate.text, textHash: candidate.textHash }), live, target());
       await tick();
-      expect(synthCalls).toEqual([candidate.text]);
+      expect(synthCalls).toEqual([speakableCase(candidate.text)]);
+      expect(synthCalls[0]!.toLowerCase()).toBe(candidate.text.toLowerCase());
       route.finishAll(); await tick();
     }
     const { out, req, synthCalls, route } = rig();
@@ -338,6 +339,12 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     await tick();
     expect(synthCalls).toEqual([text]);
     route.finishAll(); await tick();
+  });
+
+  it('speakableCase only re-cases ALL-CAPS model output; user casing is untouched', () => {
+    expect(speakableCase("I'M TIRED AND I WANT TO GO")).toBe("I'm tired and I want to go");
+    expect(speakableCase("IT'S ELEVEN O'CLOCK")).toBe("It's eleven o'clock");
+    expect(speakableCase('Call NASA now')).toBe('Call NASA now');
   });
 
   it('simultaneous corrections consume a current utterance once and keep the winning text immutable', async () => {
@@ -370,7 +377,7 @@ describe('SpeechOutput — reviewed recognised speech (speak_reviewed)', () => {
     out.speakReviewed(original, live, target());
     expect(last(deliveries)).toMatchObject({ state: 'refused', reason: expect.stringMatching(/already spoken/) });
     await tick();
-    expect(synthCalls).toEqual(['I NEED HELP WITH THIS']);
+    expect(synthCalls).toEqual(['I need help with this']);
     route.finishAll(); await tick();
   });
 

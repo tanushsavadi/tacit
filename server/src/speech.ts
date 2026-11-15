@@ -30,6 +30,17 @@ interface Synth { synth(text: string, format?: 'file', signal?: AbortSignal): Pr
 interface Req { d: SpeechDelivery; say: string; generation: number; abort: AbortController; routed: boolean; expiresAt?: number; expiryTimer?: ReturnType<typeof setTimeout> }
 const REVIEW_CHOICES: readonly ReviewChoice[] = ['raw', 'alternative', 'phrase', 'edited'];
 
+/**
+ * Model output is ALL CAPS ("I'M TIRED"), which some voices read as shouting or spell out. For synthesis only, such
+ * text is put in sentence case; the words are unchanged and the delivery reports the exact approved text. Mixed-case
+ * (user-authored) text is never touched, and corrections are never passed through this.
+ */
+export function speakableCase(text: string): string {
+  if (/[a-z]/.test(text)) return text;
+  const lower = text.toLowerCase().replace(/\bi\b/g, 'I');
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
 export class SpeechOutput extends EventEmitter {
   private st: { authorizationId: string | null; generation: number; state: 'off' | 'ready' | 'paused'; reason: string } =
     { authorizationId: null, generation: 0, state: 'off', reason: 'Voice output is off.' };
@@ -176,7 +187,7 @@ export class SpeechOutput extends EventEmitter {
       if (!c || c.index !== index || c.kind !== choice) return refuse('Unknown candidate: not one that was shown for this utterance.');
       if (sent !== c.text) return refuse('Candidate text does not match what was shown.');
       if (msg.textHash !== c.textHash || c.textHash !== sha256Hex(c.text)) return refuse('Text hash mismatch.');
-      say = c.text;
+      say = speakableCase(c.text); // same words; casing only, for the voice
     }
     this.enqueue(d, say, target.reviewExpiresAt);
     if (d.state !== 'refused') { this.consumedReview = once; this.remember(once); } // route/queue refusals allow retry
