@@ -33,6 +33,9 @@ SCOPES = {
     # Lipflow / Silent Voice speaker adaptation (lipflow/train_vsr.py DEFAULT_SCOPE "frontend+encoder1"): the visual front
     # end (3D conv + ResNet), the embedding and Conformer block 0 — 162 tensors, 25.78 M parameters in this checkpoint.
     "frontend+embed+block0": lambda n: ("encoder.frontend.", "encoder.embed.", "encoder.encoders.0."),
+    # Conservative arm (2026-11-15): only the visual front end (3D conv + ResNet-18, BatchNorm statistics still frozen) —
+    # the speaker's appearance and mouth shapes; the embedding and every Conformer block keep the multi-speaker weights.
+    "frontend": lambda n: ("encoder.frontend.",),
     # Alternative arm (no external evidence): the top 3 Conformer blocks + the final encoder LayerNorm.
     "top3": lambda n: tuple(f"encoder.encoders.{i}." for i in range(n - 3, n)) + ("encoder.after_norm.",),
 }

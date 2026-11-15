@@ -94,6 +94,46 @@ class OverlayAndModes(unittest.TestCase):
         with self.assertRaises(ValueError):
             overlay.trainable_names(Tiny(), "everything")
 
+    def test_frontend_scope_trains_only_the_visual_front_end(self):
+        names = overlay.trainable_names(Tiny(), "frontend")
+        self.assertTrue(names and all(n.startswith("encoder.frontend.") for n in names))
+
+    def test_interpolated_overlay_is_the_weighted_mean_and_refuses_bad_inputs(self):
+        from adapt import interpolate
+        with tempfile.TemporaryDirectory() as td:
+            td = Path(td); base_m = Tiny(); base_p = td / "model.pth"
+            torch.save(base_m.state_dict(), base_p)
+            orig = (overlay.config.MODEL_PATH, interpolate.config.MODEL_PATH)
+            overlay.config.MODEL_PATH = interpolate.config.MODEL_PATH = base_p
+            try:
+                adapted = Tiny(); adapted.load_state_dict(base_m.state_dict())
+                names = overlay.trainable_names(adapted)
+                with torch.no_grad():
+                    for k, p in adapted.named_parameters():
+                        if k in names:
+                            p.add_(1.0)
+                overlay.save_overlay(adapted, names, td / "src", {"name": "src", "selected_epoch": 4})
+                with self.assertRaises(ValueError):  # unfinished source (no run.json)
+                    interpolate.write_interpolated(td / "src", td / "w", 0.5)
+                (td / "src" / "run.json").write_text(json.dumps({"overlay_written": True, "selected_epoch": 4}))
+                for bad in (0.0, 1.0, 1.5):
+                    with self.assertRaises(ValueError):
+                        interpolate.write_interpolated(td / "src", td / f"bad{bad}", bad)
+                src_bytes = (td / "src" / "overlay.pt").read_bytes()
+                s = interpolate.write_interpolated(td / "src", td / "w", 0.25)
+                self.assertEqual((s["selected_epoch"], s["interpolation"]["alpha"]), (4, 0.25))
+                self.assertEqual((td / "src" / "overlay.pt").read_bytes(), src_bytes)  # source untouched
+                with self.assertRaises(ValueError):  # never overwrite
+                    interpolate.write_interpolated(td / "src", td / "w", 0.25)
+                m = Tiny(); m.load_state_dict(base_m.state_dict())
+                overlay.load_overlay(m, td / "w")
+                pb, pm = dict(base_m.named_parameters()), dict(m.named_parameters())
+                for k in names:
+                    self.assertTrue(torch.allclose(pm[k], pb[k] + 0.25, atol=1e-6))
+                self.assertTrue(torch.equal(pm["encoder.encoders.3.0.weight"], pb["encoder.encoders.3.0.weight"]))
+            finally:
+                overlay.config.MODEL_PATH, interpolate.config.MODEL_PATH = orig
+
     def test_every_batchnorm_frozen_while_dropout_trains(self):
         m = Tiny()
         set_train_mode(m)
