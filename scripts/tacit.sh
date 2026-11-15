@@ -116,7 +116,8 @@ demo() {
   done
   if [ -n "$(companion_pids)" ]; then say "✓ TACIT app already open — bringing it forward"; else say "· opening the TACIT app"; fi
   open "$APP"
-  for i in $(seq 1 20); do lsof -nP -iTCP:"$PORT" -sTCP:ESTABLISHED 2>/dev/null | grep -q '^TacitComp' && break; sleep 0.5; done
+  # A freshly rebuilt (re-signed) app can take ~15 s on first launch while macOS verifies it.
+  for i in $(seq 1 60); do lsof -nP -iTCP:"$PORT" -sTCP:ESTABLISHED 2>/dev/null | grep -q '^TacitComp' && break; sleep 0.5; done
   lsof -nP -iTCP:"$PORT" -sTCP:ESTABLISHED 2>/dev/null | grep -q '^TacitComp' && say "✓ TACIT app connected" || say "! TACIT app has not connected yet — click the TACIT notch/menu-bar icon"
   # 4. Readiness, from the same checks as preflight (no secrets are printed).
   say ""; say "Readiness"
