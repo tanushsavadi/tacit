@@ -52,6 +52,12 @@ final class TacitClient: ObservableObject {
         var effective: VoiceOption? { voices.first { $0.id == effectiveId } }
     }
     struct VoicePreview: Equatable { var previewId: String; var voiceId: String; var state: String; var reason: String?; var output: String? }
+    // Presence (server `respond_status` / `respond_suggestion`). Suggestions are text only; nothing here can speak.
+    struct RespondStatus: Equatable { var available: Bool; var provider: String?; var dataNotice: String; var reason: String? }
+    struct Suggestion: Equatable {
+        var requestId: String; var state: String; var drafts: [String]; var focus: String?
+        var model: String?; var reason: String?; var generationMs: Int?; var removed: Int
+    }
 
     @Published private(set) var conn: Conn = .connecting
     @Published private(set) var live: Live?
@@ -63,6 +69,10 @@ final class TacitClient: ObservableObject {
     @Published private(set) var myVoice: VoiceState?
     @Published private(set) var voicePreview: VoicePreview?
     @Published private(set) var voiceNotice: String?
+    @Published private(set) var respondStatus: RespondStatus?
+    @Published private(set) var suggestion: Suggestion?
+    /// The only request whose results are accepted; anything else (older, cancelled, another client's) is dropped.
+    private(set) var pendingSuggestionID: String?
     private var pendingVoiceSelect: String?
     @Published var notice: String?
     @Published var typedDraft = ""
@@ -184,6 +194,7 @@ final class TacitClient: ObservableObject {
         ownedLiveAuthorization = nil; awaitingOwnActivation = nil; clearProcessing(); realtimeSpoken.removeAll()
         reviewExpiryWork?.cancel(); reviewExpired = false; pendingReviewedRequest = nil
         myVoice = nil; voicePreview = nil; voiceNotice = nil; pendingVoiceSelect = nil
+        respondStatus = nil; suggestion = nil; pendingSuggestionID = nil
     }
 
     private func receive(_ t: URLSessionWebSocketTask, _ gen: Int) {
@@ -352,8 +363,38 @@ final class TacitClient: ObservableObject {
             // Only the preview this client started (or a newer one from another client) replaces the shown state.
             voicePreview = VoicePreview(previewId: id, voiceId: p["voiceId"] as? String ?? "", state: p["state"] as? String ?? "?",
                                         reason: p["reason"] as? String, output: p["output"] as? String)
+        case "respond_status":
+            guard let st = m["status"] as? [String: Any] else { return }
+            respondStatus = RespondStatus(available: st["available"] as? Bool == true, provider: st["provider"] as? String,
+                                          dataNotice: st["dataNotice"] as? String ?? "", reason: st["reason"] as? String)
+        case "respond_suggestion":
+            guard let s = m["suggestion"] as? [String: Any], let id = s["requestId"] as? String, id == pendingSuggestionID else { return }
+            let state = s["state"] as? String ?? "?"
+            let drafts = (s["drafts"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }.filter(PersonalPhrase.valid)
+            if state != "generating" { pendingSuggestionID = nil }
+            suggestion = Suggestion(requestId: id, state: state, drafts: Array(drafts.prefix(3)), focus: s["focus"] as? String,
+                                    model: s["model"] as? String, reason: s["reason"] as? String,
+                                    generationMs: s["generationMs"] as? Int, removed: s["removed"] as? Int ?? 0)
         default: break
         }
+    }
+
+    /// Presence: ask the server for wording. Explicit user action (choosing an intention). Never speaks anything.
+    @discardableResult
+    func requestSuggestion(intent: String, context: String, contextSource: String, point: String, tone: String?) -> String? {
+        guard conn == .connected, respondStatus?.available == true else { return nil }
+        let id = UUID().uuidString
+        pendingSuggestionID = id // the server supersedes any older request of ours
+        suggestion = Suggestion(requestId: id, state: "generating", drafts: [], focus: nil, model: nil, reason: nil, generationMs: nil, removed: 0)
+        var msg: [String: Any] = ["type": "respond_suggest", "requestId": id, "intent": intent, "context": context, "contextSource": contextSource]
+        if !point.isEmpty { msg["userPoint"] = point }
+        if let tone { msg["tone"] = tone }
+        send(msg)
+        return id
+    }
+    func cancelSuggestion() {
+        if let id = pendingSuggestionID, conn == .connected { send(["type": "respond_cancel", "requestId": id]) }
+        pendingSuggestionID = nil; suggestion = nil
     }
 
     static func parseVoiceStatus(_ st: [String: Any]) -> VoiceState? {
@@ -518,7 +559,7 @@ final class TacitClient: ObservableObject {
 
     /// User-authored or deliberately selected saved text only. Never fed from recognised text.
     @discardableResult
-    func speakTyped(_ text: String) -> Bool {
+    func speakTyped(_ text: String, assisted: Bool = false) -> Bool {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return false }
         guard let auth = output?.authorizationId, output?.state == "ready", pendingOutputGeneration == nil else { notice = "Turn voice output on first."; return false }
@@ -539,6 +580,7 @@ final class TacitClient: ObservableObject {
         var request: [String: Any] = ["type": "speak_typed", "requestId": requestID, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1]
         // voiceRevision: spoken only in the voice the user saw; a voice change in between is refused, never substituted.
         if let revision = myVoice?.revision { request["voiceRevision"] = revision }
+        if assisted { request["assisted"] = true } // provenance: began as an AI suggestion the user approved
         send(request)
         return true
     }
@@ -613,6 +655,7 @@ final class TacitClient: ObservableObject {
     func stopEverything() {
         if conn != .connected { notice = "Disconnected. Stop could not be confirmed; check the call and TACIT server."; return }
         if previewActive { stopVoicePreview() }
+        cancelSuggestion()
         live("end")
         output("stop")
         notice = "Stop requested for Live and voice output."

@@ -89,31 +89,20 @@ final class CommunicationTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName:name) }
         let session = CommunicationSession(defaults:defaults)
         var phrases = session.phrases; phrases[0].text = "That's so me!"
-        session.context = "Private meeting context"; session.assistanceDraft = "A private draft"
+        session.presence.context = "Private meeting context"; session.presence.draft = "A private draft"; session.presence.tone = .warm
         XCTAssertNil(session.phraseSelection)
         XCTAssertTrue(session.save(hold:"Just a second, my thought is coming.",phrases:phrases))
         let restored = CommunicationSession(defaults:defaults)
         XCTAssertEqual(restored.phrases[0].text,"That's so me!")
         XCTAssertEqual(restored.holdPhrase,"Just a second, my thought is coming.")
-        XCTAssertTrue(restored.context.isEmpty); XCTAssertTrue(restored.assistanceDraft.isEmpty)
+        XCTAssertTrue(restored.presence.context.isEmpty); XCTAssertTrue(restored.presence.draft.isEmpty)
+        XCTAssertEqual(restored.presence.tone, .warm, "Only the chosen tone preference is saved")
         XCTAssertNil(restored.lastRequestedWords)
         XCTAssertFalse(session.save(hold:" ",phrases:phrases))
         XCTAssertFalse(PersonalPhrase.valid(String(repeating:"😀",count:251)))
         XCTAssertEqual(CommunicationSession(defaults:defaults).phrases[0].text,"That's so me!")
     }
-    @MainActor func testAssistanceOnlyOffersEditableScaffoldsAndRevocableSuppliedContext() async {
-        let session = CommunicationSession(defaults:nil)
-        XCTAssertFalse(session.contextProvider.liveCaptureAvailable)
-        XCTAssertNil(session.contextProvider.context(from:"  "))
-        session.context = "How should we approach this?"
-        session.choosePath(.thought)
-        XCTAssertEqual(session.assistanceDraft,"I'd like to add ")
-        XCTAssertEqual(session.contextProvider.context(from:session.context)?.source,.userProvided)
-        session.assistanceDraft += "my own opinion."
-        session.clearContext()
-        XCTAssertTrue(session.context.isEmpty); XCTAssertTrue(session.assistanceDraft.isEmpty); XCTAssertNil(session.selectedPath)
-    }
-    @MainActor func testAssistanceMergeAndPhraseActionsUseSameViewModelAsInterface() async {
+    @MainActor func testPhraseSpeakUsesSameViewModelAsInterface() async {
         var requests: [[String: Any]] = []
         let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send: { requests.append($0) }))
         let session = CommunicationSession(defaults:nil)
@@ -123,19 +112,11 @@ final class CommunicationTests: XCTestCase {
         XCTAssertTrue(session.speakSelection(using:c))
         XCTAssertEqual(requests.last?["text"] as? String,session.phrases[2].text)
         c.typedDraft = "My own point."
-        session.assistanceDraft = "My chosen new wording."
         let before = requests.count
-        XCTAssertTrue(session.useAssistanceDraft(in:c))
-        XCTAssertEqual(c.typedDraft,"My own point.\nMy chosen new wording.")
-        XCTAssertEqual(requests.count,before, "Using a starter only edits a draft")
-        session.assistanceDraft = String(repeating:"x",count:500)
-        let preserved = c.typedDraft
-        XCTAssertFalse(session.useAssistanceDraft(in:c))
-        XCTAssertEqual(c.typedDraft,preserved)
         c.disconnectIsolatedTransport()
         XCTAssertFalse(session.speakDraft(using:c))
         XCTAssertEqual(requests.count,before)
-        XCTAssertEqual(c.typedDraft,preserved)
+        XCTAssertEqual(c.typedDraft,"My own point.")
     }
 
     func testStatePriorityNeverInventsVisualActivityOrReadinessFromSocket() {

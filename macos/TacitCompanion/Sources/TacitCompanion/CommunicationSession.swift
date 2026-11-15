@@ -24,16 +24,16 @@ struct PersonalPhrase: Codable, Equatable, Identifiable {
     @Published var phraseSelection: String?
     @Published var customizationError: String?
     @Published private(set) var lastRequestedWords: String?
-    @Published var context = ""
-    @Published var assistanceDraft = ""
-    @Published var selectedPath: ResponsePath?
-    let contextProvider: any MeetingContextProvider
+    /// Help Me Respond (Presence). Context, point and wording stay in RAM; only the tone preference is saved.
+    let presence: PresenceModel
+    private weak var client: TacitClient?
+    func attach(_ client: TacitClient) { self.client = client; presence.bind(client) }
     private let defaults: UserDefaults?
     private static let key = "TACITCommunicationPhrases.v1"
     private struct Saved: Codable { var hold: String; var phrases: [PersonalPhrase] }
 
-    init(defaults: UserDefaults? = .standard, contextProvider: any MeetingContextProvider = UserProvidedContext()) {
-        self.defaults = defaults; self.contextProvider = contextProvider
+    init(defaults: UserDefaults? = .standard) {
+        self.defaults = defaults; presence = PresenceModel(defaults: defaults)
         let saved = defaults?.data(forKey: Self.key).flatMap { try? JSONDecoder().decode(Saved.self, from: $0) }
         holdPhrase = saved.flatMap { PersonalPhrase.valid($0.hold) ? $0.hold : nil } ?? "One moment, I'm responding."
         phrases = saved.flatMap { value in
@@ -64,10 +64,10 @@ struct PersonalPhrase: Codable, Equatable, Identifiable {
         guard client.speakTyped(client.typedDraft) else { return false }
         recordRequest(client.typedDraft); goHome(); return true // the draft stays in the composer for reuse
     }
-    @discardableResult func useAssistanceDraft(in client: TacitClient) -> Bool {
-        let combined = client.typedDraft.isEmpty ? assistanceDraft : client.typedDraft + "\n" + assistanceDraft
-        guard PersonalPhrase.valid(assistanceDraft), PersonalPhrase.valid(combined) else { return false }
-        client.typedDraft = combined; surface = .compose; return true
+    @discardableResult func speakPresence(using client: TacitClient) -> Bool {
+        let text = presence.draft
+        guard presence.speak(using: client) else { return false }
+        recordRequest(text); goHome(); return true
     }
 
     func recordRequest(_ text: String) { lastRequestedWords = text }
@@ -81,51 +81,10 @@ struct PersonalPhrase: Codable, Equatable, Identifiable {
         switch surface {
         case .conversation: return .collapse
         case .customize: surface = .phrases
+        case .assistance: if let client, presence.back(client) { return .navigated }; surface = .conversation
         default: surface = .conversation
         }
         return .navigated
-    }
-    func clearContext() { context = ""; assistanceDraft = ""; selectedPath = nil }
-    func choosePath(_ path: ResponsePath) {
-        selectedPath = path
-        assistanceDraft = path.starter
-    }
-}
-
-struct MeetingContext: Equatable {
-    enum Source: String { case userProvided = "Provided by you" }
-    let source: Source
-    let text: String
-}
-
-/// No capture adapter exists. A future adapter must report consent/source/revocation before supplying input.
-protocol MeetingContextProvider {
-    var label: String { get }
-    var liveCaptureAvailable: Bool { get }
-    func context(from suppliedText: String) -> MeetingContext?
-}
-struct UserProvidedContext: MeetingContextProvider {
-    let label = "Provided by you · this session only"
-    let liveCaptureAvailable = false
-    func context(from suppliedText: String) -> MeetingContext? {
-        let text = String(suppliedText.prefix(4000)).trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : MeetingContext(source: .userProvided, text: text)
-    }
-}
-
-enum ResponsePath: String, CaseIterable, Identifiable {
-    case clarify = "Ask for clarity", thought = "Share a thought", disagree = "Different view", moment = "Buy a moment"
-    var id: String { rawValue }
-    var symbol: String {
-        switch self { case .clarify: return "questionmark.bubble"; case .thought: return "text.bubble"; case .disagree: return "arrow.triangle.branch"; case .moment: return "hand.raised" }
-    }
-    var starter: String {
-        switch self {
-        case .clarify: return "Could you clarify what you mean by "
-        case .thought: return "I'd like to add "
-        case .disagree: return "I see it differently because "
-        case .moment: return "I'd like a moment to think about that."
-        }
     }
 }
 

@@ -8,17 +8,20 @@ final class CompanionRuntime: ObservableObject {
     let island: IslandController
     private init() {
         let lab = ExperienceLab.isEnabled
-        let testing = CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--offline-selftest") || lab
+        let testing = CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--offline-selftest") || CommandLine.arguments.contains("--presence-check") || CommandLine.arguments.contains("--render-presence") || lab
         client = TacitClient(registerHotKey: !testing, connectOnInit: false,
             isolatedTransport: lab ? .init(send: { ExperienceLab.shared.record($0) }) : nil)
-        island = IslandController(client: client, communication: CommunicationSession(defaults: lab ? nil : .standard), registerHotKey: !testing)
+        let communication = CommunicationSession(defaults: lab ? nil : .standard)
+        communication.attach(client) // Help Me Respond follows its own suggestion requests on this client
+        island = IslandController(client: client, communication: communication, registerHotKey: !testing)
     }
 }
 
 @MainActor
 final class CompanionDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--offline-selftest") else { return }
+        guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--offline-selftest"), !CommandLine.arguments.contains("--presence-check") else { return }
+        if let i = CommandLine.arguments.firstIndex(of: "--render-presence"), CommandLine.arguments.count > i + 1 { PresenceRender.run(CommandLine.arguments[i + 1]); return }
         let lab = ExperienceLab.isEnabled
         if CommandLine.arguments.contains("--inspect-ui") || lab { NSApp.setActivationPolicy(.regular) }
         CompanionRuntime.shared.island.start()
@@ -47,6 +50,7 @@ struct TacitCompanionApp: App {
         if let i = CommandLine.arguments.firstIndex(of: "--analyze-video") { VideoAnalysis.run(Array(CommandLine.arguments[(i + 1)...])) }
         if CommandLine.arguments.contains("--offline-selftest") { OfflineSelfTest.run() }
         if CommandLine.arguments.contains("--selftest") { SelfTest.run(); return }
+        if CommandLine.arguments.contains("--presence-check") { PresenceCheck.run(); return }
         let me = Bundle.main.bundleIdentifier ?? ""
         if !me.isEmpty, NSRunningApplication.runningApplications(withBundleIdentifier: me).count > 1 { exit(0) }
     }

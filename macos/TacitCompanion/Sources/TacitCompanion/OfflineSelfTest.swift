@@ -32,9 +32,10 @@ import Foundation
         session.phraseSelection = session.phrases[0].id
         check(session.speakSelection(using: client) && requests.last?["text"] as? String == session.phrases[0].text, "selected exact phrase")
         let count = requests.count
-        session.context = "A supplied question"
-        session.choosePath(.clarify)
-        check(requests.count == count && !session.contextProvider.liveCaptureAvailable, "assistance has no automatic output or capture")
+        session.presence.context = "A supplied question"
+        session.presence.choose(.buyTime, client: client)
+        check(!requests.suffix(from: count).contains { $0["type"] as? String == "speak_typed" } && !PresenceModel.liveCaptureAvailable,
+              "Help Me Respond never speaks by itself and has no meeting capture")
         client.pauseEverything()
         check(!session.holdTurn(using: client) && !client.speakReviewed(), "pause blocks before acknowledgment")
         client.stopEverything()

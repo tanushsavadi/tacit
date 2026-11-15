@@ -44,7 +44,7 @@ struct CommunicationWorkspace: View {
                 case .compose: composer
                 case .phrases: PhrasePicker(client: client, session: session, customize: { island.showCommunication(.customize) })
                 case .customize: PhraseCustomization(session: session)
-                case .assistance: ResponseAssistance(client: client, session: session)
+                case .assistance: PresenceView(client: client, session: session)
                 case .voice: MyVoicePicker(client: client)
                 case .recovery:
                     VStack(alignment: .leading, spacing: 10) {
