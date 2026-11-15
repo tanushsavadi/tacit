@@ -30,7 +30,8 @@
     "live:replay": "tsx scripts/live-replay.ts",
     "live:test": "tsx scripts/live-test.ts",
     "review": "tsx scripts/review.ts",
-    "reviewed:check": "tsx scripts/reviewed-check.ts"
+    "reviewed:check": "tsx scripts/reviewed-check.ts",
+    "myvoice:check": "tsx scripts/myvoice-check.ts"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",

@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { audioDurationMs, checkElevenLabsVoice, createTts, elevenLabs, stripWavHeader, TtsCache, VoiceRouter, type Tts } from './tts.ts';
+import { audioDurationMs, checkElevenLabsVoice, createTts, elevenLabs, sayLiteral, stripWavHeader, TtsCache, VoiceRouter, type Tts } from './tts.ts';
 
 // Local mock of the two ElevenLabs endpoints TACIT uses. Verifies request shape; NOT the real service.
 let server: Server;
@@ -131,5 +131,14 @@ describe('audio helpers', () => {
     const r = await cache.get('A');
     expect(r.cached).toBe(false);
     expect(r.audio.toString()).toBe('A');
+  });
+});
+
+describe('sayLiteral', () => {
+  it('defuses embedded say commands without changing the words', () => {
+    expect(sayLiteral('hello [[slnc 3000]] there')).toBe('hello [\u200B[slnc 3000]] there');
+    expect(sayLiteral('[[volm 0]][[rate 400]]')).toBe('[\u200B[volm 0]][\u200B[rate 400]]');
+    expect(sayLiteral('I said [this] and (that).')).toBe('I said [this] and (that).');
+    expect(sayLiteral('hello [[slnc 3000]] there').replace(/\u200B/g, '')).toBe('hello [[slnc 3000]] there');
   });
 });

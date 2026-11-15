@@ -29,6 +29,8 @@ build() {
   [ -d "$ROOT/web/node_modules" ] || (cd "$ROOT/web" && npm ci)
   say "building tacit-route (Swift, release)…"
   (cd "$ROOT/macos/TacitRoute" && swift build -c release >/dev/null) && say "  ok: macos/TacitRoute/.build/release/tacit-route"
+  say "building tacit-voice (Swift, release)…"
+  (cd "$ROOT/macos/TacitVoice" && swift build -c release >/dev/null) && say "  ok: macos/TacitVoice/.build/release/tacit-voice"
   if [ -d "$ROOT/macos/TacitCompanion" ]; then
     say "building TACIT companion (menu bar)…"
     "$ROOT/macos/TacitCompanion/build-app.sh" >/dev/null && say "  ok: macos/TacitCompanion/.build/TACIT.app"
@@ -49,6 +51,7 @@ start() {
     if [ -n "$s" ] && ps -o command= -p "$s" | grep -qE 'tacit_vsr|whisper-server'; then say "stopping stale sidecar on :$p (pid $s)"; kill "$s" || true; fi
   done
   [ -x "$ROOT/macos/TacitRoute/.build/release/tacit-route" ] || say "note: tacit-route not built — virtual microphone disabled (./scripts/tacit.sh build)"
+  [ -x "$ROOT/macos/TacitVoice/.build/release/tacit-voice" ] || say "note: tacit-voice not built — My Voice offers only the system default voice (./scripts/tacit.sh build)"
   [ -f "$ROOT/web/dist/index.html" ] || say "note: web/dist not built — run ./scripts/tacit.sh build (or use Vite on :5173)"
   say "starting TACIT server on ${host:-all interfaces}:$PORT (log: server/data/run/server.log)…"
   # Detach completely (no inherited stdio), so callers piping this script never hang.

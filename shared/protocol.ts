@@ -212,6 +212,76 @@ export interface VoicePolicyStatus {
 }
 
 /**
+ * My Voice: the voice the user chose to be heard with. Voices are described only by what they are (name, language,
+ * provider, quality) — never by gender or personality; the user decides by listening (`voice_preview`).
+ * Stable ids: 'apple:<AVSpeechSynthesisVoice.identifier>' (installed macOS voice, rendered on this Mac),
+ * 'elevenlabs:<voiceId>' (the user's own consented clone, network), 'system:default' (macOS `say` default voice; used
+ * when the voice helper is not built).
+ */
+export interface VoiceControlRange { min: number; max: number; default: number; step: number }
+export interface VoiceOption {
+  id: string;
+  name: string;
+  /** BCP-47, e.g. 'en-US'. */
+  locale: string;
+  /** Primary language subtag, e.g. 'en'. */
+  language: string;
+  provider: 'apple-speech' | 'macos-say' | 'elevenlabs';
+  quality: 'default' | 'enhanced' | 'premium' | null;
+  /** 'apple-personal-voice' is listed for status only: Apple does not let apps capture or route it. */
+  kind: 'system' | 'personal-clone' | 'apple-personal-voice';
+  /** Apple marks it as a novelty/effect voice (Bells, Zarvox…). UIs should keep these out of the main list. */
+  novelty: boolean;
+  available: boolean;
+  unavailableReason: string | null;
+  /** Rendered on this Mac (no network). */
+  local: boolean;
+  /** Only the controls this provider really supports; absent = not adjustable. */
+  controls: { rate?: VoiceControlRange; pitch?: VoiceControlRange };
+}
+export interface VoiceSettings { voiceId: string; rate?: number; pitch?: number }
+export interface VoiceStatus {
+  /** Bumped whenever the effective voice or its settings change. Echo it as `voiceRevision` in speak_* requests. */
+  revision: number;
+  /** The user's choice ('default' = never chosen / reset; 'saved' = loaded from disk; 'user' = chosen this run). */
+  selected: VoiceSettings & { source: 'default' | 'saved' | 'user' };
+  /** The voice that will speak approved messages now. Differs from `selected` only when `fallback` explains why. */
+  effective: VoiceSettings & { label: string };
+  fallback: string | null;
+  /** The choice is stored on this Mac (server/data/voice-prefs.json, 0600). */
+  persisted: boolean;
+  persistError: string | null;
+  voices: VoiceOption[];
+  /** Built-in preview phrases (index = `sample` in voice_preview). */
+  samples: string[];
+  engine: { state: 'starting' | 'ready' | 'unavailable'; reason: string | null };
+  applePersonalVoice: {
+    authorization: 'notDetermined' | 'denied' | 'unsupported' | 'authorized' | 'unknown';
+    /** Literal false: Apple does not allow apps to capture Personal Voice audio, and macOS has no supported
+     *  speech-into-call API for apps. Use Apple's own Live Speech for Personal Voice in calls. */
+    usableInCalls: false;
+    reason: string;
+  };
+  custom: { provider: 'elevenlabs'; configured: boolean; available: boolean; reason: string | null };
+  /** Result of the last voice_select (for the client that sent `requestId`). */
+  lastChange: { requestId: string | null; ok: boolean; reason: string | null; at: number } | null;
+}
+/**
+ * Private preview: played on this Mac's own sound output, never into the virtual microphone, never queued with call
+ * speech. Refused when the Mac's sound output is (or contains) the virtual microphone.
+ */
+export interface VoicePreviewState {
+  previewId: string;
+  voiceId: string;
+  text: string;
+  state: 'synthesizing' | 'playing' | 'done' | 'stopped' | 'refused' | 'failed';
+  reason: string | null;
+  /** Name of the local output device the preview plays on. */
+  output: string | null;
+  timings: { requestedAt: number; synthEndAt?: number; playStartAt?: number; endedAt?: number };
+}
+
+/**
  * Live Silent Speech (protocol 'tacit-live-v1'). The user activates Live once per session; utterances are recognised
  * and shown to the user. `autoTransmitAllowed` stays false until a recognition reliability gate is validated on real
  * silent recordings — the server never speaks recognised text before then, whatever the client requests.
@@ -328,6 +398,9 @@ export interface SpeechOutputStatus {
   route: VoiceRouteStatus;
   /** The TTS voice that will speak (VoiceRouter label; never a substituted personal voice without set_voice_policy). */
   voice: string;
+  /** My Voice: the effective voice id and VoiceStatus.revision that new requests would be bound to. */
+  voiceId?: string;
+  voiceRevision?: number;
   queued: number;
   /** Whether recognised (visual) speech may be spoken automatically. Literal false until validated. */
   recognizedSpeechAllowed: false;
@@ -355,6 +428,8 @@ export interface SpeechDelivery {
   state: 'queued' | 'synthesizing' | 'routing' | 'rendered' | 'refused' | 'interrupted' | 'failed';
   reason: string | null;
   voice: string | null;
+  /** My Voice id this request was bound to when it was accepted (later voice changes never alter it). */
+  voiceId?: string | null;
   remoteAudibility: 'unknown';
   /** Reviewed/corrected speech only: which utterance and candidate it came from (for 'edited': the edit's basis). */
   review?: { utteranceId: string; liveAuthorizationId: string; candidate: ReviewChoice; index: number };
@@ -440,7 +515,9 @@ export type ClientMessage =
    */
   | { type: 'speak_typed'; requestId: string; outputAuthorizationId: string; text: string;
       /** Recommended: the output_status.generation the user saw when sending. A mismatch (pause/interrupt since) is refused. */
-      outputGeneration?: number }
+      outputGeneration?: number;
+      /** Recommended: the voice_status.revision the user saw. A mismatch (voice changed since) is refused. */
+      voiceRevision?: number }
   /**
    * Reviewed recognised speech: the user explicitly picked candidate `index` of the latest accepted utterance and pressed
    * Speak. Echo `reviewCandidates[index]` exactly (kind, text, textHash) plus the output and Live authorizations and
@@ -450,7 +527,16 @@ export type ClientMessage =
    */
   | { type: 'speak_reviewed'; requestId: string; outputAuthorizationId: string; outputGeneration: number;
       liveAuthorizationId: string; liveGeneration: number; utteranceId: string;
-      candidate: ReviewChoice; index: number; text: string; textHash: string };
+      candidate: ReviewChoice; index: number; text: string; textHash: string;
+      /** Recommended: the voice_status.revision the user saw. A mismatch (voice changed since) is refused. */
+      voiceRevision?: number }
+  /** My Voice: choose the voice approved messages are spoken with (persisted). voiceId null = back to the default. */
+  | { type: 'voice_select'; requestId?: string; voiceId: string | null; rate?: number; pitch?: number }
+  /** Re-read the installed voices (e.g. after installing one in System Settings). */
+  | { type: 'voice_refresh' }
+  /** Private preview on this Mac's speakers. `text` (≤ 200 chars, spoken verbatim) or `sample` (index into samples). */
+  | { type: 'voice_preview'; previewId: string; voiceId: string; rate?: number; pitch?: number; text?: string; sample?: number }
+  | { type: 'voice_preview_stop' };
 
 export type ServerMessage =
   | { type: 'snapshot'; snapshot: Snapshot }
@@ -466,7 +552,11 @@ export type ServerMessage =
   /** On connect and after every change (control, route state, queue). */
   | { type: 'output_status'; status: SpeechOutputStatus }
   /** Every state change of one speech request (exactly one terminal state: rendered/refused/interrupted/failed). */
-  | { type: 'speech_delivery'; delivery: SpeechDelivery };
+  | { type: 'speech_delivery'; delivery: SpeechDelivery }
+  /** My Voice registry and selection: on connect and after every change. */
+  | { type: 'voice_status'; status: VoiceStatus }
+  /** Every state change of the private preview (exactly one terminal state: done/stopped/refused/failed). */
+  | { type: 'voice_preview'; preview: VoicePreviewState };
 
 /**
  * Remote-caller channel (`/ws/caller`): a second browser (phone/laptop) acting as the far end of a
