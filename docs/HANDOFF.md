@@ -1,10 +1,55 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 ~05:25 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Presence / Help Me Respond".
+**Last updated:** 2026-11-15 ~05:56 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Living Notch + Presence integration".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## LIVING NOTCH + PRESENCE — integrated, DEPLOYED (2026-11-15 05:29–05:56 UTC) — main `cbb1612`
+- **Codex checkpoint (05:26 UTC, yielded in WORKSTREAM_SOL)** reviewed and committed on `feat/living-notch`: `302bc0c`
+  feature, `8e04de7` workstream docs (SHA-256 manifest taken before staging). Untracked `docs/demo-review-races-codex.mts`
+  left untouched (not part of the yield). Codex's preview instance (pid 27862) quit at deploy; it is superseded.
+- **Integration:** worktree `../tacit-integration`, branch `release/living-presence` = living-notch + `feat/presence`
+  (`ae5fb91`, clean merge — no file overlap). Help Me Respond = dock speech-bubble button inside the 460×350 workspace;
+  renders without clipping (lab 19/19 geometry).
+- **User request mid-session (~05:46 UTC):** "move the tacit ui upwards into the dark notch area… tacit branding to the
+  left". `cbb1612`: on notched displays the window is flush with the screen top, compact = notch band (cutout height,
+  66 pt wings → 317×32 here), "tacit" left wing, glyph + Pause/Stop right wing; Peek/workspace drop down from it;
+  non-notch = 264×38 pill below the menu bar. Tests updated to pin it. **Sol/Codex: this supersedes the below-notch
+  neck geometry — start any further notch work from `cbb1612`.**
+- **Gate (merged tree):** Swift 103/103 · server tsc + 196/196 · web tsc + 80/80 + build · TacitRoute 4/4 · tacit-voice
+  5/5 · recognition 40/40 · offline selftest 10/10. Isolated server (:8799, route off): `--presence-check` real Gemini
+  11/11; `security:check` 11 + 2 known Twilio env FAILs. (Gotcha: `security:check` targets `TACIT_HTTP`, default
+  :8790 — set `TACIT_HTTP=http://localhost:8799` for an isolated server.)
+- **Deploy (idle: Live/output off, 0 BlackHole readers, last activity 05:26):** ff-merge to main, server restarted
+  05:37 UTC (pid 38791), companion rebuilt + relaunched; relaunched again 05:51 UTC (pid from that build) for `cbb1612`. **A re-signed build
+  shows macOS "TACIT would like to access files in your Documents folder" — the user must click Allow** (token read);
+  until then the notch says Connecting… and the launcher says "has not connected yet".
+- **Live runtime checks after deploy:** live:check OK · speech:check OK · reviewed:check 13/13 · myvoice:check --preview
+  10/10 (restored Daniel) · live:stress --kill-recognizer OK (8 s) · security:check 13/13 · companion --selftest OK ·
+  `--presence-check` 11/11 incl. edited draft spoken once via speak_typed → rendered at BlackHole (no listener) ·
+  native `--analyze-video --send` exact on 2 recorded clips. Final state: Live off, output off, 0 readers, Gemini on.
+- **Film:** `docs/FILM_FEATURE_AUDIT.md` (verified features, claims to avoid, shot list per cut). Real window captures
+  in `macos/TacitCompanion/.build/film-evidence/` (ignored). Hover Peek, Help Me Respond / My Voice / Real-time in the
+  real notch and screen recordings need a human pass (agent has no Accessibility permission). No Higgsfield footage made.
+- **UX notes (not fixed):** a pending review keeps priority in the Peek if speech starts from ANOTHER client (header says
+  Speaking + Stop, body shows the review); "tacit" appears twice in the expanded workspace (crown + header); focus loss
+  while pasting into Help Me Respond collapses the notch after 380 ms (context kept).
+- **SECURITY — AWS key exposure (Codex profiling, 2026-11-15 04:57:39 UTC):** long-term IAM user key `AKIA…GZGD`
+  (also `[default]` and `[jobforge]` in ~/.aws/credentials). Root cause: `~/.codex/config.toml` →
+  `[shell_environment_policy.set]` injects AWS_ACCESS_KEY_ID/SECRET into every Codex shell; an Instruments metadata
+  export printed them. Exposure: one tool output in Codex session `rollout-2026-11-14T23-44-55-01a1dd85….jsonl` (key ID
+  + secret, 2 lines) — i.e. sent to Codex's model provider and stored locally. NOT found in: any repo/worktree incl.
+  ignored `.build` evidence, full Git history (all refs), /tmp, $TMPDIR, ~/Library/Logs, Claude transcripts. STS now
+  returns InvalidClientTokenId for this key (inactive or deleted — rotation NOT confirmed by anyone). **Urgent, human:**
+  confirm in IAM the key is deleted, issue a new one if needed, review CloudTrail for the key since at least 04:57 UTC
+  (ideally since it was put in the Codex config), remove the creds from `~/.codex/config.toml` (+ its backup copy).
+- **Rollback:** tag `demo-modes-2026-11-15` (see RELEASE_RUNBOOK → CURRENT RELEASE). Worktree `../tacit-integration` kept.
+- **Disk:** was 0.7 GB free at 05:35 UTC; now ~2.8 GB after removing this session's caches. Biggest reclaimable:
+  ~/Library/Caches/ms-playwright (3.5 GB), Codex's `.build/living-notch-build` (360 MB, rebuildable).
+- **Next (human):** Meet listener test of Review → Speak, Help Me Respond → Speak and Stop; live camera with a person;
+  hover Peek; film capture pass; then rotate/verify the AWS key.
 
 ## PRESENCE — AI Help Me Respond (2026-11-15 ~04:45–05:25 UTC) — branch `feat/presence`, NOT merged, NOT deployed
 User asked for Help Me Respond to become a real, opt-in communication assistant. Built in worktree

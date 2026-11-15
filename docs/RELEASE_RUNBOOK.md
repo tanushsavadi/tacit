@@ -1,5 +1,39 @@
 # TACIT — release gate and demo runbook
 
+## CURRENT RELEASE — Living Notch + Help Me Respond (`ae5fb91` deployed 05:37–05:45 UTC; notch-band layout `cbb1612` relaunched 05:51 UTC)
+
+**The notch:** sits IN the notch band at the top of the screen — **tacit** in the dark wing left of the camera cutout,
+a state glyph (camera / words / speaker) plus direct Pause or Stop in the right wing (317×32 on this Mac; non-notch
+displays get a 264×38 pill below the menu bar). **Hover** ~0.16 s → a small **360×190 Peek** drops down. **Click** (or ⌃⇧⌘T) → the
+**460×350 workspace**. A pending review stays in the Peek (**Edit** / **Speak**) until you act or it expires; while
+speaking, the Peek shows the exact words and **Stop**. Right-click the notch → Discreet (224×28). The dock's
+speech-bubble icon opens **Help Me Respond**: paste what they said (or Try a sample) → your move → your own point for
+opinion intents → Gemini wording in an editable box → **Speak** (one tap, your voice). It never listens to the meeting
+and never speaks by itself. Disable suggestions with `TACIT_RESPOND=off` in `server/.env` + restart.
+
+**First launch after a rebuild:** macOS asks *"TACIT would like to access files in your Documents folder"* (the app
+reads its local access token). Choose **Allow**. Until then the notch says *Connecting…* and the launcher reports
+"has not connected yet".
+
+**Notch-band layout `cbb1612`:** Swift **103/103**, rebuilt, relaunched while idle, connected; real window captures checked (compact, Peek review, Speaking, workspace).
+
+**Gate on `ae5fb91` (merged tree, 05:31–05:50 UTC):** Swift companion **103/103**; server tsc + **196/196**; web tsc +
+**80/80** + build; TacitRoute **4/4**; tacit-voice **5/5**; recognition **40/40**; offline selftest **10/10**; Lab
+geometry **19/19**. Live runtime after deploy: `live:check` OK · `speech:check` OK · `reviewed:check` 13/13 (stop during
+reviewed speech 22 ms) · `myvoice:check --preview` 10/10 (voice restored to Daniel) · `live:stress --kill-recognizer`
+OK (restart 8 s) · `security:check` 13/13 · companion `--selftest` OK · `--presence-check` (real Gemini) 11/11 incl.
+the edited draft spoken once via `speak_typed` → rendered at BlackHole · native `--analyze-video --send` (recorded
+clips → live recognizer) "HOW ARE YOU DOING", "PLEASE TURN ON THE LIGHTS" exact. Isolated pre-deploy: `--presence-check`
+11/11 and `security:check` 11 PASS + 2 known Twilio env FAILs (no whisper on the isolated server).
+
+**Rollback:** `git switch --detach demo-modes-2026-11-15 && macos/TacitCompanion/build-app.sh && ./scripts/tacit.sh
+restart`, then `pkill -f MacOS/TacitCompanion; open macos/TacitCompanion/.build/TACIT.app` (old notch, no Help Me
+Respond). Only when idle (no Live session, no call reading BlackHole). Return: `git switch main` + the same steps.
+
+**Physical checks still owed (human + second device):** hover Peek with a real pointer; live camera with a person in
+both modes; Help Me Respond Speak heard by a Meet listener; Meet listener for review/correction/phrase/voice change;
+VoiceOver pass; 1920×1080 / external display.
+
 ## 30-second startup (demo-p1 + native Start, 2026-11-15 ~04:00 UTC)
 
 1. **Double-click `TACIT Demo.command`** in the repository folder (or run `./scripts/tacit.sh demo`). Safe to repeat:
