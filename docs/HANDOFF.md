@@ -48,8 +48,12 @@ recognised words stays DISABLED.
 - **Rollback:** tag `demo-modes-2026-11-15` (see RELEASE_RUNBOOK → CURRENT RELEASE).
 - **Worktrees removed at the user's request (06:05 UTC, disk):** tacit-demo, -integration, -my-voice, -native,
   -p1-integration, -presence, -review-races — all clean and on main (review-races = `d3fa006`, checked by range-diff);
-  branches kept. Left for a decision: `../tacit-independent-qa` (uncommitted, 1.4 GB QA data) and Codex's
-  `~/.codex/worktrees/564f` (uncommitted, superseded since 02:45 UTC).
+  branches kept. Then (user: "go + qa"): `../tacit-independent-qa` removed after its unique QA docs were archived
+  in `docs/qa/codex-independent-qa/` (`21217f8`; its code was already on main; its 1.4 GB was Swift build caches). Also
+  cleared: ~/.cache/huggingface (old datasets/models, not TACIT), Playwright/Cypress caches, a stale Codex runtime
+  install, companion `.build/{out,index-build,living-notch-build}` + Codex's preview app. Disk 6.9 → 32 GB free.
+  Not cleared: uv cache (8.6 GB) — locked by running uvx MCP servers; `uv cache clean` once they are closed.
+  Still present: Codex's `~/.codex/worktrees/564f` (uncommitted, superseded since 02:45 UTC).
 - **Disk:** was 0.7 GB free at 05:35 UTC; now ~2.8 GB after removing this session's caches. Biggest reclaimable:
   ~/Library/Caches/ms-playwright (3.5 GB), Codex's `.build/living-notch-build` (360 MB, rebuildable).
 - **Next (human):** Meet listener test of Review → Speak, Help Me Respond → Speak and Stop; live camera with a person;
