@@ -6,6 +6,14 @@
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
 
+## NOTCH NAVIGATION FIX (2026-11-15 ~04:15 UTC) — merged `1becab2` (fix `fix/notch-navigation`), NOT yet running
+User: after opening phrases/My Voice/typing there was no way back to the camera view. Now: dock "Camera" home button
+(green dot while capturing), "‹ Camera" back button on every other surface, Escape steps back before collapsing,
+successful Speak from phrases/composer returns to the camera view (draft kept; Hold stays put), "New words to review ·
+Show" banner elsewhere. Swift 73/73, offline selftest 10/10, lab renders checked. **Not relaunched:** Brave was reading
+BlackHole 16ch (a Meet session) at deploy time, so the running app (pid 68965, from 7dd51dd) was left alone; the new
+bundle is built on disk. To use it: quit TACIT (notch ••• or menu) when not in a call, then `./scripts/tacit.sh demo`.
+
 ## ONE-CLICK DEMO + NATIVE CAMERA + CODEX P1 — integrated and deployed (2026-11-15 03:25–04:00 UTC)
 User asked for: Codex P1 fixes first, then one obvious entry point, and "the live preview website shouldn't be
 something I have to rely on". Done in that order. Runbook: **`docs/RELEASE_RUNBOOK.md` → "30-second startup"**.
