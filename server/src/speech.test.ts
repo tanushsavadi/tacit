@@ -38,6 +38,19 @@ const typed = (out: SpeechOutput, id: string, text = 'hello there', auth = out.s
   out.speakTyped({ requestId: id, outputAuthorizationId: auth, text });
 
 describe('SpeechOutput — typed AAC fallback', () => {
+  it('Presence: assisted text keeps every typed check and is labelled assisted (provenance only)', async () => {
+    const { out, route, deliveries, terminal } = setup();
+    out.speakTyped({ requestId: 'p0', outputAuthorizationId: out.status().authorizationId, text: 'One moment, please.', assisted: true });
+    expect(terminal('p0')[0]).toMatchObject({ state: 'refused', source: 'typed', assisted: true }); // off → refused like any typed text
+    out.control('enable');
+    out.speakTyped({ requestId: 'p1', outputAuthorizationId: out.status().authorizationId, text: 'One moment, please.', assisted: true });
+    typed(out, 'p2');
+    await tick(); route.finishAll(); await tick(); route.finishAll(); await tick();
+    expect(terminal('p1')[0]).toMatchObject({ state: 'rendered', source: 'typed', assisted: true });
+    expect(terminal('p2')[0]!.assisted).toBeUndefined();
+    expect(deliveries.every((d) => d.source === 'typed')).toBe(true);
+  });
+
   it('refuses while off, then speaks once enabled: queued → synthesizing → routing → rendered, never "heard"', async () => {
     const { out, route, deliveries, terminal } = setup();
     typed(out, 'r0');
