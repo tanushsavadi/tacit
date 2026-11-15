@@ -14,6 +14,7 @@ os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 import argparse
 import base64
 import json
+import math
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +26,20 @@ from .transcribe import recognize_clip
 
 MAX_BODY = 20 * 1024 * 1024
 MAX_FRAMES = 300
+
+
+def finite_json(obj) -> bytes:
+    """Strict JSON for the Node client: non-finite floats (e.g. -inf scores from a very short window) become null.
+    Python's default would emit -Infinity/NaN, which JSON.parse rejects ("Recognition failed")."""
+    def clean(x):
+        if isinstance(x, float):
+            return x if math.isfinite(x) else None
+        if isinstance(x, dict):
+            return {k: clean(v) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            return [clean(v) for v in x]
+        return x
+    return json.dumps(clean(obj), allow_nan=False).encode()
 
 
 class Service:
@@ -87,7 +102,7 @@ def main() -> None:
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, code: int, obj: dict) -> None:
-            data = json.dumps(obj).encode()
+            data = finite_json(obj)
             self.send_response(code); self.send_header("content-type", "application/json")
             self.send_header("content-length", str(len(data))); self.end_headers(); self.wfile.write(data)
 
