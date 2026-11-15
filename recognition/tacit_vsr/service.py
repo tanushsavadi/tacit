@@ -1,7 +1,7 @@
 """Local Auto-AVSR recognition service for the TACIT backend (binds 127.0.0.1 only; the Node server is the only client).
 
     .venv/bin/python -m tacit_vsr.service [--port 8765] [--device mps|cpu]
-GET  /health    → {ok, model, device, licence}
+GET  /health    → {ok, model, device, licence, profile}  (profile: tacit_vsr/profiles.py; default "base")
 POST /recognize → body {"kind":"jpeg-frames","timesMs":[...],"frames":[base64 JPEG,...]} or {"kind":"video","data":base64}
                   → {text, n_tokens, gate, ms, frames, face_fraction, ...}; raw model output, never rewritten.
 """
@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import torch
 
-from . import config, engine, video
+from . import config, engine, profiles, video
 from .transcribe import recognize_clip
 
 MAX_BODY = 20 * 1024 * 1024
@@ -31,10 +31,17 @@ class Service:
     def __init__(self, device: str):
         t = time.perf_counter()
         self.device = device
-        self.eng = engine.VSREngine(device)
+        requested, source = profiles.selected()
+        self.eng, self.profile = profiles.apply(engine.VSREngine(device), requested, source, lambda: engine.VSREngine(device))
+        self.model_name = profiles.model_name(profiles.PROFILES[self.profile["id"]])
+        # Compact copy attached to every result, so the server can enforce review per result (not only per health probe).
+        self.result_profile = {k: self.profile[k] for k in ("id", "experimental", "reviewRequired")}
         self.crop = video.MouthCropper()
         self.lock = threading.Lock()  # one inference at a time (MediaPipe graph + model are not shared-safe)
-        print(f"[vsr] {config.MODEL_NAME} on {device}, loaded in {round((time.perf_counter() - t) * 1000)} ms", flush=True)
+        print(f"[vsr] {self.model_name} on {device}, loaded in {round((time.perf_counter() - t) * 1000)} ms", flush=True)
+        print(f"[vsr] profile {self.profile['id']} (requested {requested!r} via {source})"
+              + (f" — {self.profile['error']}" if self.profile["error"] else "")
+              + (" — EXPERIMENTAL, review required" if self.profile["reviewRequired"] else ""), flush=True)
         # Warm-up on a blank 2 s clip so the user's first utterance does not pay kernel compilation / allocator cost.
         # Its output is discarded and never reported.
         w = time.perf_counter()
@@ -55,8 +62,9 @@ class Service:
             raise ValueError("kind must be 'jpeg-frames' or 'video'")
         with self.lock:
             out = recognize_clip(self.eng, self.crop, clip, t0)
-        out["model"] = config.MODEL_NAME
+        out["model"] = self.model_name
         out["device"] = self.device
+        out["profile"] = self.result_profile
         return out
 
 
@@ -85,7 +93,8 @@ def main() -> None:
 
         def do_GET(self):  # noqa: N802
             if self.path == "/health":
-                self._send(200, {"ok": True, "model": config.MODEL_NAME, "device": svc.device, "licence": config.WEIGHTS_LICENSE})
+                self._send(200, {"ok": True, "model": svc.model_name, "device": svc.device, "licence": config.WEIGHTS_LICENSE,
+                                "profile": svc.profile})
             else:
                 self._send(404, {"error": "not found"})
 
