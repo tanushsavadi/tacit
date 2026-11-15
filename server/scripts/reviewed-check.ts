@@ -25,7 +25,7 @@ const sha = (t: string) => createHash('sha256').update(t, 'utf8').digest('hex');
 
 const ws = new WebSocket(`${process.env.TACIT_URL ?? 'ws://127.0.0.1:8790'}/ws?token=${secrets.userToken}`);
 let live: LiveStatus | null = null, out: SpeechOutputStatus | null = null;
-const hyps = new Map<string, RecognitionHypothesis>(), deliveries: SpeechDelivery[] = [];
+const hyps = new Map<string, RecognitionHypothesis>(), deliveries: SpeechDelivery[] = [], invalidated: string[] = [];
 ws.on('message', (d, bin) => {
   if (bin) return;
   const m = JSON.parse(String(d)) as ServerMessage;
@@ -33,12 +33,15 @@ ws.on('message', (d, bin) => {
   if (m.type === 'output_status') out = m.status;
   if (m.type === 'recognition_hypothesis') hyps.set(m.hypothesis.utteranceId, m.hypothesis);
   if (m.type === 'speech_delivery') deliveries.push(m.delivery);
+  if (m.type === 'review_invalidated') invalidated.push(m.utteranceId);
 });
 const send = (m: ClientMessage) => ws.send(JSON.stringify(m));
 const until = async <T>(f: () => T | null | undefined | false, ms = 15_000): Promise<T> => {
   const t0 = Date.now();
   for (;;) { const v = f(); if (v) return v; if (Date.now() - t0 > ms) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 20)); }
 };
+// Request IDs are deduplicated server-wide for the server's lifetime: make them unique per run so the check can be rerun.
+const run = Date.now().toString(36), rid = (x: string) => `${run}-${x}`;
 let failed = 0;
 const check = (ok: boolean, what: string) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${what}`); if (!ok) failed++; };
 const terminal = (id: string) => until(() => deliveries.find((d) => d.requestId === id && ['rendered', 'refused', 'interrupted', 'failed'].includes(d.state)), 30_000);
@@ -85,26 +88,48 @@ try {
     ['unknown utterance', { utteranceId: 'not-shown' }], ['stale output authorization', { outputAuthorizationId: 'old' }], ['wrong kind', { candidate: 'phrase' }],
   ];
   for (const [what, over] of refusals) {
-    const id = `ref-${what}`; send({ ...base, ...over, requestId: id });
+    const id = rid(`ref-${what}`); send({ ...base, ...over, requestId: id });
     const d = await terminal(id);
     check(d.state === 'refused', `${what} → refused (${d.reason})`);
   }
-  send({ ...base, requestId: 'speak-1' });
-  const ok = await terminal('speak-1');
+  send({ ...base, requestId: rid('speak-1') });
+  const ok = await terminal(rid('speak-1'));
   const t = ok.timings;
   check(ok.state === 'rendered' && ok.source === 'reviewed-recognition', `picked candidate spoken into the virtual mic: ${ok.state}${ok.reason ? ` (${ok.reason})` : ''}; ` +
     `press→first audio ${t.firstAudioAt ? t.firstAudioAt - t.requestedAt : '?'} ms, rendered ${t.renderedAt ? t.renderedAt - t.requestedAt : '?'} ms, voice ${ok.voice}`);
-  send({ ...base, requestId: 'speak-dup' });
-  check((await terminal('speak-dup')).reason?.includes('already spoken') === true, 'second Speak for the same utterance → refused');
+  send({ ...base, requestId: rid('speak-dup') });
+  check((await terminal(rid('speak-dup'))).reason?.includes('already spoken') === true, 'second Speak for the same utterance → refused');
+
+  // User correction of a fresh utterance (scenario: recognition wrong → the user's own words, user-corrected).
+  const hE = await utter(clips[1]!.file);
+  if (hE.decision === 'shown') {
+    const cE = hE.reviewCandidates![0]!, mine = 'This is my own correction, typed by me.';
+    send({ ...base, requestId: rid('speak-edit'), liveGeneration: hE.generation!, utteranceId: hE.utteranceId, candidate: 'edited', index: cE.index, text: mine, textHash: sha(mine) });
+    const e = await terminal(rid('speak-edit'));
+    check(e.state === 'rendered' && e.source === 'user-corrected' && e.text === mine, `correction spoken exactly, labelled ${e.source}: ${e.state}${e.reason ? ` (${e.reason})` : ''}`);
+  } else console.log(`SKIP  correction test: clip abstained (${hE.reason})`);
+
+  // A newer utterance header (frames still uploading / recognising) revokes the older review immediately.
+  const hOld = await utter(clips[0]!.file);
+  if (hOld.decision === 'shown') {
+    const newer = `reviewed-check-newer-${Date.now()}`, nt = [t0, t0 + 33, t0 + 66]; t0 += 60_000;
+    send({ type: 'visual_utterance', utteranceId: newer, authorizationId: live!.authorizationId!, startMs: nt[0]!, endMs: nt[2]!, endpointMs: nt[2]! + 480, frameTimesMs: nt });
+    await until(() => invalidated.includes(newer), 5_000).catch(() => false);
+    check(invalidated.includes(newer), 'newer accepted header → review_invalidated published before its result');
+    const cO = hOld.reviewCandidates![0]!;
+    send({ ...base, requestId: rid('speak-old'), liveGeneration: hOld.generation!, utteranceId: hOld.utteranceId, candidate: cO.kind, index: cO.index, text: cO.text, textHash: cO.textHash });
+    const o = await terminal(rid('speak-old'));
+    check(o.state === 'refused', `old pick while a newer utterance is pending → ${o.state} (${o.reason})`);
+  } else console.log(`SKIP  invalidation test: clip abstained (${hOld.reason})`);
 
   const h2 = await utter(clips[1]!.file);
   if (h2.decision === 'shown') {
     const c2 = h2.reviewCandidates![0]!;
-    send({ ...base, requestId: 'speak-stop', liveGeneration: h2.generation!, utteranceId: h2.utteranceId, candidate: c2.kind, index: c2.index, text: c2.text, textHash: c2.textHash });
-    await until(() => deliveries.find((d) => d.requestId === 'speak-stop' && d.state !== 'queued'));
+    send({ ...base, requestId: rid('speak-stop'), liveGeneration: h2.generation!, utteranceId: h2.utteranceId, candidate: c2.kind, index: c2.index, text: c2.text, textHash: c2.textHash });
+    await until(() => deliveries.find((d) => d.requestId === rid('speak-stop') && d.state !== 'queued'));
     const stopAt = Date.now();
     send({ type: 'output_control', action: 'stop' });
-    const s = await terminal('speak-stop');
+    const s = await terminal(rid('speak-stop'));
     check(s.state === 'interrupted', `emergency stop during reviewed speech → ${s.state} (${Date.now() - stopAt} ms after stop)`);
   } else console.log(`SKIP  stop test: second clip abstained (${h2.reason})`);
 } catch (e) {
