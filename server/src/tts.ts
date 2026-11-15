@@ -14,6 +14,16 @@ import { parseWav, toMono } from '../../voice/src/audio/wav.ts';
 
 const run = promisify(execFile);
 
+/**
+ * macOS `say` executes embedded speech commands written in the text ("[[volm 0]]", "[[slnc 3000]]"), so user text
+ * could silence or reshape itself instead of being spoken. A zero-width space between the brackets stops the command
+ * parser (measured: "[[slnc 3000]]" then renders as spoken words, not 3 s of silence); the words are unchanged.
+ * AVSpeechSynthesizer (tacit-voice) does not execute embedded commands and needs no escaping.
+ */
+export function sayLiteral(text: string): string {
+  return text.replace(/\[\[/g, '[\u200B[');
+}
+
 /** 'file' = a playable file (WAV/MP3) for browsers; 'ulaw_8000' = raw G.711 μ-law 8 kHz for telephony. */
 export type TtsFormat = 'file' | 'ulaw_8000';
 
@@ -48,7 +58,7 @@ export function macSay(voice = process.env.SAY_VOICE): Tts {
       try {
         const args = ['-o', out, '--file-format=WAVE', `--data-format=LEI16@${rate}`];
         if (voice) args.push('-v', voice);
-        args.push('--', text);
+        args.push('--', sayLiteral(text));
         await run('say', args, { timeout: 15_000, signal });
         const wav = await readFile(out);
         if (format === 'ulaw_8000') {
