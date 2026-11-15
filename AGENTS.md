@@ -11,17 +11,26 @@ recognized words in an authorized synthesized voice → the remote caller hears 
   immediate pause / mute / stop. No mandatory per-utterance confirmation in that experience.
 - **Automatic transmission of recognized speech stays disabled until a recognition reliability gate is supported by
   real measurements** (held-out silent recordings: WER, abstention, incorrect-transmission rate, non-speech false
-  triggers). Until then recognized text is shown to the user only.
+  triggers). Until then recognized text is shown to the user only — **except** the user-approved **Real-time
+  (unreviewed)** mode (approved by the user 2026-11-15 ~04:30 UTC, "human realism mode"): off by default; turned on only
+  by an explicit per-session confirmation in the notch that states words are spoken unreviewed and often wrong; the
+  server accepts it only as `live_control activate mode:'automatic' acknowledgeUnreviewed:true` (kill switch
+  `TACIT_REALTIME=off`); `LiveStatus.unreviewed` reports it; raw words are spoken verbatim (casing only), labelled
+  `recognized` / "REAL-TIME"; Pause/Stop cancel it; Stop, disconnect and relaunch return to review. The reliability
+  gate stays UNVALIDATED (`autoTransmitAllowed:false`) and must never be described as validated.
 - Camera-based visual speech recognition (`recognition/`) is the current priority. AirPods jaw-motion sensing is
   experimental and has **not** demonstrated reliable word recognition (`docs/research/AIRPODS_SILENT_SPEECH.md`).
 
 ## Non-negotiable product rules
 - Nothing reaches the remote caller unless the user has authorized speech for this session (Live enabled, not
-  paused/stopped) and, for recognized speech, the measured reliability gate passes. Pause/stop must cancel queued and
+  paused/stopped) and, for recognized speech, the measured reliability gate passes, the user pressed Speak on the
+  reviewed words, or the user explicitly turned on Real-time (unreviewed) for this activation. Pause/stop must cancel queued and
   playing audio. The legacy candidate flow keeps its explicit per-proposal confirmation (`server/src/controller.ts`).
 - **User-reviewed recognized speech** (approved by the user 2026-11-14 ~20:30 UTC; **implemented**: backend
   `speak_reviewed`, native notch, terminal `npm run review`; release status in `docs/RELEASE_RUNBOOK.md`): the user explicitly picks one displayed candidate of the
-  CURRENT utterance (raw text, a decoder alternative, or an accepted phrase) and presses Speak; that exact text is spoken
+  CURRENT utterance (raw text, a decoder alternative, or an accepted phrase) and presses Speak — in the notch one tap on
+  Speak sends exactly the words shown (the raw words unless the user chose an alternative or wrote a correction; the
+  tap is the explicit choice, approved by the user 2026-11-15); that exact text is spoken
   once via a dedicated `speak_reviewed` request carrying output authorization + generation + Live authorization +
   utteranceId + candidate index + text hash, labelled source `reviewed-recognition`. No pre-selection, no timeout
   auto-confirm, never LLM-edited; refused if paused/stale/a newer utterance header was accepted (`review_invalidated`); stop cancels it. Never routed

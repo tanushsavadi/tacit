@@ -293,7 +293,14 @@ export interface LiveStatus {
   generation: number;
   state: 'off' | 'active' | 'paused';
   mode: LiveMode;
+  /** Still false: no reliability gate is validated. Real-time speech below is an explicit, unvalidated user choice. */
   autoTransmitAllowed: false;
+  /**
+   * Additive (2026-11-15): true only while the user has explicitly turned on REAL-TIME (unreviewed) speech for this
+   * activation (`live_control activate mode:'automatic' acknowledgeUnreviewed:true`). Recognised words are then spoken
+   * verbatim without review. Never persisted; any new activation without the acknowledgement turns it off.
+   */
+  unreviewed?: boolean;
   reason: string;
 }
 export interface LiveRecognitionCapability {
@@ -500,8 +507,11 @@ export type ClientMessage =
   | { type: 'delete_turn_logs' }
   /** Explicit user choices for this session; see VoicePolicyStatus. */
   | { type: 'set_voice_policy'; allowSystemFallback?: boolean; personalPresynth?: boolean }
-  /** Live Silent Speech session control. `activate` with mode 'automatic' is refused while autoTransmitAllowed=false. */
-  | { type: 'live_control'; action: 'activate' | 'pause' | 'resume' | 'interrupt' | 'end'; mode?: LiveMode; inputSource?: 'camera' }
+  /**
+   * Live Silent Speech session control. `activate` with mode 'automatic' is refused unless `acknowledgeUnreviewed: true`
+   * (the user's explicit real-time choice, unvalidated) and the server allows it (TACIT_REALTIME != 'off').
+   */
+  | { type: 'live_control'; action: 'activate' | 'pause' | 'resume' | 'interrupt' | 'end'; mode?: LiveMode; inputSource?: 'camera'; acknowledgeUnreviewed?: boolean }
   /**
    * One endpointed utterance from the camera: followed by exactly `frameTimesMs.length` binary WebSocket messages,
    * each one JPEG frame, in order. Times are the browser's monotonic capture timestamps (performance.now, ms).

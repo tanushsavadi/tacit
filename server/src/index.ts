@@ -237,10 +237,13 @@ const live = new LiveSession(httpRecognizer(RECOGNITION_URL), (m, replyTo) => {
   }
   if (m.type === 'review_invalidated') speech.invalidateReviewed();
   broadcast(m);
-  // Unreachable today: Live refuses 'automatic' and the speech gate is UNVALIDATED_GATE. Kept so the only path from
-  // recognition to voice is the policy-checked one.
-  if (m.type === 'recognition_hypothesis' && live.current.mode === 'automatic') speech.speakRecognized(m.hypothesis, live.current);
-});
+  // The only path from recognition to voice: automatic mode exists only after the user's explicit real-time
+  // (unreviewed) choice for this activation; speakRecognized re-checks output authorization, Live authorization and dedup.
+  if (m.type === 'recognition_hypothesis' && live.current.mode === 'automatic') {
+    const refused = speech.speakRecognized(m.hypothesis, live.current);
+    if (refused) console.log(`[speech] real-time result not spoken: ${refused}`);
+  }
+}, Date.now, process.env.TACIT_REALTIME !== 'off');
 
 let liveOwner: WebSocket | null = null;
 
