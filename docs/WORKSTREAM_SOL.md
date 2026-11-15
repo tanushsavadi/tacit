@@ -1,3 +1,94 @@
+# STABLE — Living Notch, subtle revision · yielded to Claude
+
+Final checkpoint: 2026-11-15 05:26:41 UTC (clock checked). Codex has stopped editing the files below.
+Claude remains sole Git writer and final integration owner. No Git writes, branch/worktree changes, backend edits,
+release replacement, server restart or camera activation by this workstream. Please copy this checkpoint into
+Claude-owned HANDOFF. The existing untracked `docs/demo-review-races-codex.mts` was preserved.
+
+## Final interaction and appearance
+
+User feedback superseded the initial large visible-pill target: the 310×64-point prototype was too prominent.
+The final default is **264×38 points**, about half that area, with one quiet line (`tacit · Ready`, Camera live,
+Interpreting, Words ready, Speaking, Paused or a real problem), restrained activity color and small affordances.
+No icon tiles, second status line, idle animation, waveform or decorative particle system. Discreet is 224×28.
+The attached neck uses the measured cutout; the entire interactive window sits below the macOS menu bar.
+Actual notebook geometry: screen 1512×982 pt; cutout 185×32; visible menu-bar clearance 33 pt; display advertises 120 Hz.
+Non-notch positioning also measures the visible menu bar; offset/negative-origin and small-display geometry is tested.
+
+Hover dwell **160 ms** opens a **360×190 Peek**; it does not open the full workspace. Leaving returns after 380 ms.
+Click / existing open shortcut opens the existing **460×350 workspace**. A genuine current review stays in Peek until
+acted on, invalidated or expired. Speak sends the exact displayed candidate/correction through the existing dedicated
+reviewed path, guarded by the rendered utterance and words; Edit opens and pins the existing correction editor.
+Explicit collapse preserves the draft. Speaking stays in Peek with exact delivery text and direct Stop. Real-time
+uses readable amber labels and actual deliveries, with no approval action for words already sent. Errors have a short
+compact label and one recovery action in Peek. Notch appearance is available by right-clicking its status surface.
+
+Astra's spring/model and motion source files remain unchanged. Fixed a controller retarget bug exposed by rapid
+expand→collapse: a current-frame equality check could leave an older expansion running to the wrong dimensions.
+All targets now reach the existing animator. Narrowed content animation to the status text to avoid overlapping
+outgoing workspaces during rapid state changes. Native window shadow, quieter outline, press feedback, Reduced Motion
+and contrast support remain. Explicit Edit now pins its workspace so focus loss cannot immediately hide the editor.
+No changes to Client, capture, recognition, authorization, voice selection, duplicates, corrected-draft recovery,
+Help Me Respond, Presence, camera pipeline, output route or emergency cancellation implementations.
+
+## Evidence and exact checks
+
+- Baseline Swift **80/80**; final Swift **89/89**, 0 failures. Command:
+  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path macos/TacitCompanion --scratch-path macos/TacitCompanion/.build/living-notch-build`.
+- Isolated release build and `codesign --verify --strict` PASS. Final isolated binary `--offline-selftest`: **10/10** PASS.
+  `tools/build-living-notch.sh` uses its own scratch directory and `.build/TACIT Living Notch.app`, a distinct bundle ID.
+  It copies only the installed release's non-secret bundle configuration. Canonical `.build/TACIT.app` is untouched.
+- Actual normal panel dimensions **19/19**; final Reduced Motion preview dimensions **19/19**. Fixture captures are
+  explicitly marked TEST/OFFLINE. They are not real camera activity, recognition or speech.
+- Genuine existing silent clip → live recognizer → current native Peek: two final results took **1528 ms / 1028 ms**,
+  each with 5 real candidates, `transmitted:false`. Explicit native Peek Speak then produced actual
+  `reviewed-recognition` queued→synthesizing→routing/first audio→rendered at BlackHole. Remote audibility remained unknown.
+  Earlier actual Edit / Cmd-Return also produced `user-corrected` output; final Edit pin/focus and expiry preservation
+  were exercised in the UI. No recognition accuracy or fresh live-camera/human-call claim.
+- Every shared-runtime QA activation first required Live/output off and known zero readers. QA ended its own session.
+  Final isolated connected preview PID 27862 is running, collapsed, with Live/output off and zero readers.
+  Original release process 87493 was never stopped. Its executable SHA-256 remained
+  `605c1730bcc1f483726fa7adf7a43dd49dfd5411236b894a86bb9ac882ecdcd4`.
+- `git diff --check -- macos/TacitCompanion docs/WORKSTREAM_SOL.md` PASS. Native source compiles with pre-existing
+  AVFoundation Sendable warnings. No new dependency or backend/shared/web test changes.
+
+Evidence is ignored under `macos/TacitCompanion/.build/living-notch-evidence/subtle/` (README describes provenance).
+Actual final CUA screenshots: `real-compact.jpg`, `real-review.jpg`, `real-speaking.jpg`, `real-return-compact.jpg`.
+`real-review-expired.jpg` is expiry/recovery, not an editor screenshot. Final camera/error/Real-time/Discreet/Edit and
+Reduced Motion appearance are offline fixtures in `reduced-motion/`. Physical pointer hover, full VoiceOver user
+navigation, multi-display hotplug, 1920×1080 full-desktop/standing-distance legibility, new live-camera use and remote
+listener confirmation remain unverified. Global shortcuts are retained by the running release during side-by-side QA;
+this preview cannot claim to replace their registration before Claude integrates the single normal app.
+
+## Motion measurement limits and profiling incident
+
+The actual window notification harness measured resize callbacks at **8.34 ms median / 15.96 ms p95**, with rapid
+reversals and canceled hover dwell. This is scheduling cadence, not presented FPS. Instruments' bitmap-capture/scene
+switching workload reported 33 hitches (8.33–283.33 ms), including launch/snapshot overhead. A separate interaction-only
+trace failed export with `Document Missing Template Error`. No steady 120-FPS or hitch-free claim is made.
+Attempts at a short native-window recording returned stale frames; provisional videos/frame sequences were removed.
+Screenshots are retained as evidence; no invalid motion clip is delivered.
+
+An initial Instruments metadata export included inherited AWS credential environment values in tool output.
+Raw profiler traces/exports were removed; only aggregate measurements remain. The affected AWS credentials should be
+rotated. Subsequent isolated profiling launches used an empty, explicitly allowlisted environment. No credentials were
+written into source, instructions, bundles, workstream notes or retained aggregate artifacts.
+
+## Files yielded — one cohesive native UX change
+
+- Sources: `IslandGeometry.swift`, `IslandController.swift`, `IslandView.swift`, new `LivingNotchPresentation.swift`,
+  `ExperienceLab.swift` (fixture states, geometry evidence and offline interaction playback).
+- Tests: updated `CompanionTests.swift`; new `LivingNotchTests.swift` (9 tests).
+- Tool: new executable `macos/TacitCompanion/tools/build-living-notch.sh`.
+- This `docs/WORKSTREAM_SOL.md` checkpoint. No other owned workstream files changed.
+
+Design references (viewed only; no source/assets shipped):
+[boring.notch](https://github.com/TheBoredTeam/boring.notch) and [Atoll](https://github.com/Atoll-Labs/Atoll).
+Existing MIT notices remain unchanged. Claude may review/stage these stable files now. Integrate/rebuild/relaunch only
+when the runtime is idle and no calling app is using the route. Rollback remains the untouched canonical app/binary.
+
+---
+
 # STABLE — YIELDED FOR CLAUDE · isolated native experience
 
 Final checkpoint: 2026-11-15 01:47:49 UTC. Sol yields all companion files listed in
