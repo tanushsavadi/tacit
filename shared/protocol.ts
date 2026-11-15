@@ -267,6 +267,21 @@ export interface VoiceStatus {
   lastChange: { requestId: string | null; ok: boolean; reason: string | null; at: number } | null;
 }
 /**
+ * Private preview: played on this Mac's own sound output, never into the virtual microphone, never queued with call
+ * speech. Refused when the Mac's sound output is (or contains) the virtual microphone.
+ */
+export interface VoicePreviewState {
+  previewId: string;
+  voiceId: string;
+  text: string;
+  state: 'synthesizing' | 'playing' | 'done' | 'stopped' | 'refused' | 'failed';
+  reason: string | null;
+  /** Name of the local output device the preview plays on. */
+  output: string | null;
+  timings: { requestedAt: number; synthEndAt?: number; playStartAt?: number; endedAt?: number };
+}
+
+/**
  * Live Silent Speech (protocol 'tacit-live-v1'). The user activates Live once per session; utterances are recognised
  * and shown to the user. `autoTransmitAllowed` stays false until a recognition reliability gate is validated on real
  * silent recordings — the server never speaks recognised text before then, whatever the client requests.
@@ -518,7 +533,10 @@ export type ClientMessage =
   /** My Voice: choose the voice approved messages are spoken with (persisted). voiceId null = back to the default. */
   | { type: 'voice_select'; requestId?: string; voiceId: string | null; rate?: number; pitch?: number }
   /** Re-read the installed voices (e.g. after installing one in System Settings). */
-  | { type: 'voice_refresh' };
+  | { type: 'voice_refresh' }
+  /** Private preview on this Mac's speakers. `text` (≤ 200 chars, spoken verbatim) or `sample` (index into samples). */
+  | { type: 'voice_preview'; previewId: string; voiceId: string; rate?: number; pitch?: number; text?: string; sample?: number }
+  | { type: 'voice_preview_stop' };
 
 export type ServerMessage =
   | { type: 'snapshot'; snapshot: Snapshot }
@@ -536,7 +554,9 @@ export type ServerMessage =
   /** Every state change of one speech request (exactly one terminal state: rendered/refused/interrupted/failed). */
   | { type: 'speech_delivery'; delivery: SpeechDelivery }
   /** My Voice registry and selection: on connect and after every change. */
-  | { type: 'voice_status'; status: VoiceStatus };
+  | { type: 'voice_status'; status: VoiceStatus }
+  /** Every state change of the private preview (exactly one terminal state: done/stopped/refused/failed). */
+  | { type: 'voice_preview'; preview: VoicePreviewState };
 
 /**
  * Remote-caller channel (`/ws/caller`): a second browser (phone/laptop) acting as the far end of a

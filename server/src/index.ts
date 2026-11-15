@@ -26,6 +26,7 @@ import { LIVE_CAPABILITY, LiveSession, httpRecognizer } from './live.ts';
 import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, sweepStaleAudio, unconfiguredRoute } from './route.ts';
 import { SpeechOutput, UNVALIDATED_GATE } from './speech.ts';
 import { MyVoice, VoiceHelper, voiceBinary } from './voices.ts';
+import { checkPreviewSafety, VoicePreview } from './preview.ts';
 import type { VoiceRouteStatus } from '../../shared/protocol.ts';
 import { spawn } from 'node:child_process';
 
@@ -213,6 +214,12 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => voiceHel
 process.on('exit', () => voiceHelper?.close());
 const speech = new SpeechOutput(myVoice, () => route, () => routeFallback, UNVALIDATED_GATE, Date.now, myVoice);
 myVoice.on('status', (status) => { broadcast({ type: 'voice_status', status }); speech.emit('status', speech.status()); });
+// Private preview on the Mac's own speakers — never the virtual mic, never the speech queue.
+const preview = new VoicePreview(myVoice, () => checkPreviewSafety(routeBinary(), route?.status().deviceUid ?? null));
+preview.on('preview', (state) => {
+  broadcast({ type: 'voice_preview', preview: state });
+  if (!['synthesizing', 'playing'].includes(state.state)) console.log(`[voice] preview ${state.state}${state.reason ? ` (${state.reason})` : ''}`);
+});
 speech.on('status', (status) => { broadcast({ type: 'output_status', status }); controller.setServices({ voiceRoute: status.route }); });
 speech.on('delivery', (delivery) => {
   broadcast({ type: 'speech_delivery', delivery });
@@ -331,6 +338,7 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
     case 'output_control':
       if (!['enable', 'pause', 'resume', 'stop'].includes(msg.action)) return;
       console.log(`[speech] voice output ${msg.action} by the user`);
+      if (msg.action === 'stop' || msg.action === 'pause') preview.stop(`Voice output ${msg.action === 'stop' ? 'stopped' : 'paused'}.`);
       return speech.control(msg.action);
     case 'speak_typed':
       return speech.speakTyped(msg);
@@ -343,6 +351,10 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
     }
     case 'voice_refresh':
       return myVoice.refresh();
+    case 'voice_preview':
+      return preview.start(msg);
+    case 'voice_preview_stop':
+      return preview.stop();
     case 'delete_turn_logs':
       await turnLog.deleteAll();
       console.log('[turns] all stored turns deleted by the user');
@@ -526,6 +538,7 @@ uiWss.on('connection', (ws) => {
     }
     if (uiClients.size === 0) { // nobody left who could see or pause TACIT: fail safe
       live.close();
+      preview.stop('Nobody is connected.');
       if (speech.status().state !== 'off') speech.control('stop');
     }
   });
