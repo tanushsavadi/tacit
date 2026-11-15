@@ -1,10 +1,26 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 00:25 UTC (clock-checked)
+**Last updated:** 2026-11-15 00:30 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "adaptation arm 1".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
+
+## Generalisation experiment on the existing 101 clips — PRE-REGISTERED 2026-11-15 00:30 UTC (before any result)
+Goal: keep silent1's personal gain while reducing its CREMA-D regression; no new recording. silent1 (overlay.pt sha
+aa2d8de5…) and the base (e740cef3…) are read-only; hashes re-checked at the end. Candidates (no other runs, no search):
+- **R** = `silent1` epoch 4 (reference).
+- **W50 / W75** = weight-space interpolation of R toward the base, alpha 0.5 / 0.75 (WiSE-FT; `adapt.interpolate`, no
+  training). Two alphas only; choosing between them on adaptVal is mild selection optimism (reported).
+- **F** = `--scope frontend` (visual front end only, 11.2 M params), otherwise the default recipe/data/seed/epoch selection.
+- Multi-speaker replay: NOT run — no suitable data on disk (no LRS3; CREMA-D has only the 12 sentences of the CREMA-D
+  regression benchmark, so replaying it would contaminate the very metric being protected).
+Metrics (eval.bench, gate included): adaptVal silent WER/exact/top-5 + clips better/worse vs base; CREMA-D WER/exact;
+adaptVal nonspeech shown (raw/after floor); rest shown (dev 36 + val 13; raw/after floor); model ms p50/p95.
+"Balanced" = ALL of the unchanged E.5 Phase-C conditions: val WER ≤ base − 5 pt; better > worse; CREMA-D WER ≤ base + 1 pt
+(≤ 38/536 errors); val nonspeech shown not higher; rest shown not higher; plus p95 latency ≤ +300 ms.
+Decision rule: if a balanced candidate keeps ≥ 2/3 of R's validation gain (≤ 60/114 errors), the 101 clips support a
+better-balanced checkpoint; if none does, the recommendation is to record more data. No candidate is deployed either way.
 
 ## Adaptation arm 1 `silent1` — trained + validated (2026-11-15 00:08–00:25 UTC)
 **Audit (read-only, same scripts as adaptA/B):** adaptBretake 8/8 and adaptVal 20 silent + 3 nonspeech (swallow, listen,
@@ -33,7 +49,8 @@ rest shown (floor)       4/36 (0)            4/36 (1)
 model ms p50/p95 (val)   283 / 388           303 / 401            (same run conditions; dev/CREMA-D base from 21:13 run)
 ```
 **Decision checklist (E.5, pre-registered):** items 1–2 pass; Phase-C entry FAILS on CREMA-D (+3.9 pt > 1 pt) and,
-marginally, rest-after-floor 0 → 1. Status: VALIDATION (val chose the epoch; but epochs 2–6 all 46–50 % vs 73.7 %).
+marginally, rest-after-floor 0 → 1. Status: VALIDATION (val chose the epoch; epochs 2–6 scored 42.1–50.0 % vs 73.7 % base — corrected 00:28 UTC, an earlier
+version of this line said "46–50 %").
 The verdict: improved on the user's own silent speech, but at the cost of forgetting other speakers (CREMA-D),
 so NOT adopted and Phase C NOT run. Production recognizer, server, BlackHole route and notch untouched; no overlay
 loaded anywhere. The sidecar on :8790 stayed up (idle) during training/bench.
