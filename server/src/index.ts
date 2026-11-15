@@ -22,7 +22,7 @@ import { launchWhisperServer, whisperCpp, whisperServer, withSttFallback, type S
 import { TwilioCall, twiml, validTwilioSignature } from './twilio.ts';
 import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig } from './auth.ts';
 import { TurnLog } from './turnlog.ts';
-import { LIVE_CAPABILITY, LiveSession, httpRecognizer } from './live.ts';
+import { LIVE_CAPABILITY, LiveSession, httpRecognizer, recognizerProfile } from './live.ts';
 import { guardSockets } from './wsguard.ts';
 import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, sweepStaleAudio, unconfiguredRoute } from './route.ts';
 import { SpeechOutput, UNVALIDATED_GATE } from './speech.ts';
@@ -175,9 +175,12 @@ if (!process.env.RECOGNITION_URL && process.env.RECOGNITION_AUTOSTART !== 'off' 
 async function probeRecognition(): Promise<void> {
   try {
     const res = await fetch(`${RECOGNITION_URL}/health`, { signal: AbortSignal.timeout(1500) });
-    const body = (await res.json()) as { model?: string; device?: string };
+    const body = (await res.json()) as { model?: string; device?: string; profile?: unknown };
     if (res.ok) recognitionRestarts = 0;
-    controller.setServices({ recognition: { reachable: res.ok, model: body.model ?? null, device: body.device ?? null, checkedAt: Date.now(), ...(res.ok ? { live: LIVE_CAPABILITY } : {}) } });
+    const profile = res.ok ? recognizerProfile(body.profile) : null;
+    // Review First follows the recognizer's own report: experimental profile → real-time refused (and dropped if on).
+    if (res.ok) live.setReviewRequired(profile?.reviewRequired === true);
+    controller.setServices({ recognition: { reachable: res.ok, model: body.model ?? null, device: body.device ?? null, checkedAt: Date.now(), ...(res.ok ? { live: LIVE_CAPABILITY } : {}), ...(profile ? { profile } : {}) } });
   } catch {
     const prev = controller.snapshot().services.recognition;
     if (prev.reachable || prev.checkedAt === null)
@@ -430,7 +433,7 @@ const server = createServer(async (req, res) => {
       const full = auth.disabled || safeEqual(bearer(req, url), auth.secrets.userToken);
       const s = controller.snapshot();
       const body = full
-        ? { ok: true, phase: s.phase, services: s.services, tts: tts.label, stt: stt?.label ?? null, geminiModels: gemini?.models ?? null, geminiLastAttempts: gemini?.lastAttempts() ?? null,
+        ? { ok: true, phase: s.phase, live: { state: live.current.state, mode: live.current.mode, reviewRequired: live.reviewRequired }, services: s.services, tts: tts.label, stt: stt?.label ?? null, geminiModels: gemini?.models ?? null, geminiLastAttempts: gemini?.lastAttempts() ?? null,
             myVoice: (({ engine, effective, fallback, revision }) => ({ engine, effective, fallback, revision, disabled: process.env.TACIT_VOICE === 'off' }))(myVoice.status()) }
         : { ok: true, authRequired: !auth.disabled };
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });

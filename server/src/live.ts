@@ -4,7 +4,7 @@
 // user: this module has no path to TTS or the call, and
 // `autoTransmitAllowed` is the literal type `false` until a reliability gate is validated on real silent recordings.
 import { createHash, randomUUID } from 'node:crypto';
-import type { ClientMessage, LiveRecognitionCapability, LiveStatus, PhraseMatch, RecognitionHypothesis, ReviewCandidate, ServerMessage } from '../../shared/protocol.ts';
+import type { ClientMessage, LiveRecognitionCapability, LiveStatus, PhraseMatch, RecognitionHypothesis, RecognizerProfile, RecognizerProfileTag, ReviewCandidate, ServerMessage } from '../../shared/protocol.ts';
 
 export const LIVE_CAPABILITY: LiveRecognitionCapability = {
   protocol: 'tacit-live-v1', supportedInputs: ['camera'], automaticSpeechValidated: false, validationEvidence: null,
@@ -20,10 +20,19 @@ export const sha256Hex = (text: string) => createHash('sha256').update(text, 'ut
 export const AUTOMATIC_GATED = 'Automatic transmission is gated until silent-speech reliability is validated on real silent recordings.';
 export const REALTIME_REASON = 'Real-time (unreviewed): each recognised sentence is spoken without review. Recognition is unvalidated and often wrong. Pause or Stop at any time.';
 export const REALTIME_DISABLED = 'Real-time speech is turned off on this Mac (TACIT_REALTIME=off).';
+export const REVIEW_REQUIRED_PROFILE = 'Review First: the recognizer is running an EXPERIMENTAL personal profile. Recognised words are shown for review and spoken only when you press Speak.';
+
+/** The sidecar's per-result profile tag, validated field by field; anything malformed is treated as absent. */
+export function profileTag(x: unknown): RecognizerProfileTag | null {
+  if (!x || typeof x !== 'object') return null;
+  const p = x as Record<string, unknown>;
+  if (typeof p.id !== 'string' || !p.id || p.id.length > 64 || typeof p.experimental !== 'boolean' || typeof p.reviewRequired !== 'boolean') return null;
+  return { id: p.id, experimental: p.experimental, reviewRequired: p.reviewRequired };
+}
 
 export interface RecognizerResult {
   text: string | null; error?: string; model?: string; n_tokens?: number; face_fraction?: number;
-  ms?: Record<string, number>; gate?: Record<string, number | string | null>; phrase?: unknown; alternatives?: unknown;
+  ms?: Record<string, number>; gate?: Record<string, number | string | null>; phrase?: unknown; alternatives?: unknown; profile?: unknown;
 }
 
 /** Other N-best texts from the sidecar: strings only, trimmed, non-empty, ≤ 200 chars, distinct, never the raw text. */
@@ -57,6 +66,14 @@ export function phraseMatch(x: unknown): PhraseMatch | null {
     reason: p.reason as string | null, margin: p.margin as number, garbageGap: p.garbageGap as number, listSize: p.listSize as number,
     ...(att !== undefined ? { freeAttPerToken: att as number | null } : {}) };
 }
+/** Full /health profile report, validated; a malformed report is treated as absent (base). */
+export function recognizerProfile(x: unknown): RecognizerProfile | null {
+  const tag = profileTag(x);
+  if (!tag) return null;
+  const p = x as Record<string, unknown>;
+  const str = (v: unknown) => (typeof v === 'string' ? v.slice(0, 300) : null);
+  return { ...tag, label: str(p.label) ?? tag.id, error: str(p.error), requested: str(p.requested) };
+}
 export type Recognizer = (input: { timesMs: number[]; frames: Buffer[] }, signal: AbortSignal) => Promise<RecognizerResult>;
 
 type Utterance = Extract<ClientMessage, { type: 'visual_utterance' }>;
@@ -73,6 +90,9 @@ export class LiveSession {
   private latestAccepted = 0;
   /** Shown result of the most recently accepted header, if it succeeded. Never resurrect an earlier review. */
   private latestShown: RecognitionHypothesis | null = null;
+  /** True while the recognizer reports an experimental, review-required profile: real-time speech is refused. Sticky
+   *  until a recognizer reports a profile that does not require review (a failed probe never clears it). */
+  private reviewOnly = false;
   droppedBinary = 0;
 
   constructor(private recognize: Recognizer, private send: (m: ServerMessage, replyTo?: unknown) => void, private now = () => Date.now(),
@@ -85,6 +105,20 @@ export class LiveSession {
     return h && this.status.state === 'active' && h.generation === this.status.generation && h.authorizationId === this.status.authorizationId ? h : null;
   }
   announce(): void { this.send({ type: 'live_status', status: this.current }); }
+
+  get reviewRequired(): boolean { return this.reviewOnly; }
+  /** Recognizer profile changed. Turning review on while real-time is active drops to display-only (new generation:
+   *  in-flight results are discarded, nothing queued under the unreviewed authorization survives). */
+  setReviewRequired(on: boolean): void {
+    this.reviewOnly = on;
+    const s = this.status;
+    if (!on || s.mode !== 'automatic') return;
+    for (const c of this.inflight) c.abort();
+    this.inflight.clear();
+    this.latestShown = null;
+    this.status = { ...s, mode: 'display-only', unreviewed: false, reason: REVIEW_REQUIRED_PROFILE, generation: s.generation + 1 };
+    this.announce();
+  }
 
   control(msg: Extract<ClientMessage, { type: 'live_control' }>): void {
     const s = this.status;
@@ -100,6 +134,7 @@ export class LiveSession {
         // Real-time needs the user's explicit acknowledgement that words are spoken unreviewed (no validated gate).
         if (realtime && msg.acknowledgeUnreviewed !== true) { this.status = { ...s, reason: AUTOMATIC_GATED }; break; }
         if (realtime && !this.realtimeAllowed) { this.status = { ...s, reason: REALTIME_DISABLED }; break; }
+        if (realtime && this.reviewOnly) { this.status = { ...s, reason: REVIEW_REQUIRED_PROFILE }; break; }
         if (msg.inputSource && msg.inputSource !== 'camera') { this.status = { ...s, reason: 'Only camera input is supported by this recogniser.' }; break; }
         this.seen.clear();
         this.latestShown = null;
@@ -193,6 +228,9 @@ export class LiveSession {
     const margin = r?.gate?.nbest_margin_per_token;
     const phrase = reason ? null : phraseMatch(r?.phrase);
     const alts = reason ? [] : alternatives(r?.alternatives, text);
+    const profile = profileTag(r?.profile);
+    // Per-result enforcement: an experimental profile switches Live out of real-time before this result is broadcast.
+    if (profile?.reviewRequired && !this.reviewOnly) this.setReviewRequired(true);
     const h: RecognitionHypothesis = {
       utteranceId: msg.utteranceId, authorizationId: msg.authorizationId, rawText: reason ? '' : text,
       final: true, stable: false,
@@ -200,6 +238,7 @@ export class LiveSession {
       model: r?.model ?? 'unavailable', source: 'visual-model', decision: reason ? 'abstained' : 'shown', reason,
       recognitionMs: ms, stages: r?.ms || Object.keys(extra).length ? { ...(r?.ms ?? {}), ...extra } : null, gate: r?.gate ?? null, transmitted: false,
       phraseMatch: phrase,
+      ...(profile ? { recognizerProfile: profile } : {}),
       ...(generation !== undefined ? { generation } : {}),
       ...(reason ? {} : { alternatives: alts, reviewCandidates: reviewCandidates(text, alts, phrase), reviewExpiresAt: this.now() + REVIEW_TTL_MS }),
     };

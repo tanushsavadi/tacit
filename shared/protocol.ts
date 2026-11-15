@@ -313,6 +313,18 @@ export interface LiveRecognitionCapability {
   maxBytes: number;
   maxDurationMs: number;
 }
+/**
+ * Recognizer model profile (additive, 2026-11-15). 'base' = the unchanged pretrained model. Any other profile is a local,
+ * EXPERIMENTAL personal overlay (recognition/tacit_vsr/profiles.py): `reviewRequired` is then true and the server refuses
+ * real-time (unreviewed) speech — only the user's explicit Speak on a reviewed candidate can voice its words.
+ */
+export interface RecognizerProfileTag { id: string; experimental: boolean; reviewRequired: boolean }
+export interface RecognizerProfile extends RecognizerProfileTag {
+  label: string;
+  /** Set when the requested profile could not be applied and the recognizer fell back to the base model. */
+  error: string | null;
+  requested: string | null;
+}
 /** Raw model output for one utterance. `rawText` is never rewritten or completed by any language model. */
 export interface RecognitionHypothesis {
   utteranceId: string;
@@ -342,6 +354,8 @@ export interface RecognitionHypothesis {
   generation?: number;
   /** Other N-best decodes of the same video (raw model output, display-only, additive). Excludes `rawText`. */
   alternatives?: string[];
+  /** Profile of the recognizer that produced this result (additive). reviewRequired → never spoken without review. */
+  recognizerProfile?: RecognizerProfileTag;
   /**
    * Reviewed speech (additive): the EXACT texts the server will accept in `speak_reviewed` for this utterance — raw
    * text (index 0), N-best alternatives, and the phrase match only if accepted. Present only when decision 'shown'.
@@ -450,7 +464,7 @@ export interface ServiceStatus {
   gemini: { configured: boolean; model: string | null };
   logging?: TurnLogStatus;
   voicePolicy?: VoicePolicyStatus;
-  recognition: { reachable: boolean; model: string | null; device: string | null; checkedAt: number | null; live?: LiveRecognitionCapability };
+  recognition: { reachable: boolean; model: string | null; device: string | null; checkedAt: number | null; live?: LiveRecognitionCapability; profile?: RecognizerProfile };
   /** Present when the virtual-microphone route is configured on this server (macOS). */
   voiceRoute?: VoiceRouteStatus;
   voice: { listening: boolean; publicUrl: string | null; providers: Record<string, boolean> };

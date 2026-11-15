@@ -148,6 +148,8 @@ export class SpeechOutput extends EventEmitter {
     const no = (r: string) => r;
     // Real-time (unreviewed) is the user's explicit, per-activation choice; without it the reliability gate decides.
     const unreviewed = live.unreviewed === true && live.mode === 'automatic';
+    // An experimental (personal-overlay) recognizer is Review First: its words are voiced only through speakReviewed.
+    if (h.recognizerProfile?.reviewRequired) return no('Review First: an experimental recognizer profile produced this result; it is spoken only after you press Speak.');
     if (!this.gate.validated && !unreviewed) return no(UNVALIDATED_GATE.accept(h).reason);
     if (this.st.state !== 'ready') return no('Voice output is not enabled.');
     if (live.state !== 'active' || live.mode !== 'automatic') return no('Live is not in automatic mode.');

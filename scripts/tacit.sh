@@ -11,6 +11,9 @@
 #   ./scripts/tacit.sh preflight    PASS / FAIL / USER ACTION per dependency (works with or without a running server)
 #   ./scripts/tacit.sh open         open the private TACIT workspace in the default browser (token never printed)
 #   ./scripts/tacit.sh logs         follow the server log
+#   ./scripts/tacit.sh profile [status|base|personal-demo] [--force]  recognizer model profile; restarts only the
+#                                   recognition sidecar while TACIT is idle. personal-demo = EXPERIMENTAL personal
+#                                   overlay (Review First enforced); base = rollback to the unchanged model
 # Paths with spaces/apostrophes are fine; secrets are never printed.
 set -euo pipefail
 export PATH="$PATH:/usr/sbin:/sbin"   # lsof lives in /usr/sbin; GUI launches may not include it
@@ -145,5 +148,6 @@ case "${1:-help}" in
   preflight) (cd "$SERVER" && npx tsx scripts/preflight.ts) ;;
   open) (cd "$SERVER" && npx tsx scripts/open-workspace.ts) ;;
   logs) tail -f "$LOG" ;;
-  *) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
+  profile) shift; (cd "$SERVER" && npx tsx scripts/vsr-profile.ts "${@:-status}") ;;
+  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
 esac
