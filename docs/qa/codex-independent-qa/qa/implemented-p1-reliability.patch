@@ -1,0 +1,850 @@
+diff --git a/macos/TacitCompanion/Sources/TacitCompanion/Client.swift b/macos/TacitCompanion/Sources/TacitCompanion/Client.swift
+--- a/macos/TacitCompanion/Sources/TacitCompanion/Client.swift
++++ b/macos/TacitCompanion/Sources/TacitCompanion/Client.swift
+@@ -80,6 +80,13 @@
+     private var serverClockOffset: Double = 0
+     private var reviewExpiryWork: DispatchWorkItem?
+     private var pendingReviewedRequest: String?
++    private struct AuthoredApproval: Equatable {
++        let authorizationId: String
++        let generation: Int
++        let textHash: String
++    }
++    /// One pending operation per exact message and authorization, even if My Voice changes meanwhile.
++    private var pendingAuthored: [String: AuthoredApproval] = [:]
+     @Published private(set) var reviewExpired = false
+ 
+     let repoRoot: String?
+@@ -156,6 +163,7 @@
+         lastHypothesis = nil; lastDelivery = nil; reviewDraft = ReviewDraft(); reviewSubmittedID = nil
+         seenHypotheses.removeAll(); hypothesisOrder.removeAll()
+         pendingLiveGeneration = nil; pendingOutputGeneration = nil
++        pendingAuthored.removeAll()
+         reviewExpiryWork?.cancel(); reviewExpired = false; pendingReviewedRequest = nil
+         myVoice = nil; voicePreview = nil; voiceNotice = nil; pendingVoiceSelect = nil
+     }
+@@ -214,7 +222,7 @@
+                 let generation = st["generation"] as? Int ?? 0
+                 if generation != output?.generation { notice = nil }
+                 if auth != output?.authorizationId || generation != output?.generation || st["state"] as? String != "ready" {
+-                    lastDelivery = nil; reviewDraft = ReviewDraft()
++                    lastDelivery = nil; reviewDraft = ReviewDraft(); pendingAuthored.removeAll()
+                 }
+                 if let pending = pendingOutputGeneration, generation > pending { pendingOutputGeneration = nil }
+                 output = Output(state: st["state"] as? String ?? "?", authorizationId: st["authorizationId"] as? String,
+@@ -286,6 +294,11 @@
+                   dl["outputAuthorizationId"] as? String == auth, dl["generation"] as? Int == output?.generation,
+                   output?.state == "ready", pendingOutputGeneration == nil,
+                   ["typed", "reviewed-recognition", "user-corrected"].contains(dl["source"] as? String ?? "") else { return }
++            // The guard above already rejects revoked authorization/generation and untrusted sources.
++            if dl["source"] as? String == "typed", let id = dl["requestId"] as? String,
++               ["rendered", "failed", "refused", "interrupted"].contains(dl["state"] as? String ?? "") {
++                pendingAuthored.removeValue(forKey: id)
++            }
+             lastDelivery = Delivery(requestId: dl["requestId"] as? String ?? "", text: dl["text"] as? String ?? "",
+                                     state: dl["state"] as? String ?? "?", reason: dl["reason"] as? String, at: Date(),
+                                     firstAudioAt: (dl["timings"] as? [String: Any])?["firstAudioAt"] as? Double,
+@@ -435,9 +448,17 @@
+             notice = t.utf16.count > 500 ? "Keep typed speech within 500 characters." : "The virtual microphone is not ready."
+             return false
+         }
++        let approval = AuthoredApproval(authorizationId: auth, generation: output?.generation ?? -1,
++            textHash: Self.textHash(t))
++        guard !pendingAuthored.values.contains(approval) else {
++            notice = "That message is already pending. Check its delivery before repeating it."
++            return false
++        }
++        let requestID = UUID().uuidString
++        pendingAuthored[requestID] = approval // set before send, including synchronous fixture acknowledgments
+         notice = nil
+         // outputGeneration: if output was paused/interrupted after this was written, the server refuses it.
+-        var request: [String: Any] = ["type": "speak_typed", "requestId": UUID().uuidString, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1]
++        var request: [String: Any] = ["type": "speak_typed", "requestId": requestID, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1]
+         // voiceRevision: spoken only in the voice the user saw; a voice change in between is refused, never substituted.
+         if let revision = myVoice?.revision { request["voiceRevision"] = revision }
+         send(request)
+@@ -488,6 +509,7 @@
+             "candidate":reviewDraft.editing ? "edited" : candidate.kind, "index":candidate.index,
+             "text":text, "textHash":reviewDraft.editing ? Self.textHash(text) : candidate.textHash]
+         if let revision = myVoice?.revision { request["voiceRevision"] = revision }
++        if reviewDraft.editing { preservedCorrection = text } // RAM-only reference, never a new speech authorization
+         pendingReviewedRequest = requestID; reviewSubmittedID = h.id; reviewDraft = ReviewDraft()
+         send(request)
+         return true
+diff --git a/macos/TacitCompanion/Sources/TacitCompanion/CommunicationWorkspace.swift b/macos/TacitCompanion/Sources/TacitCompanion/CommunicationWorkspace.swift
+--- a/macos/TacitCompanion/Sources/TacitCompanion/CommunicationWorkspace.swift
++++ b/macos/TacitCompanion/Sources/TacitCompanion/CommunicationWorkspace.swift
+@@ -35,7 +35,7 @@
+                     VStack(alignment: .leading, spacing: 10) {
+                         Text("Previous correction").font(.system(size: 13, weight: .semibold))
+                         ScrollView { Text(client.preservedCorrection ?? "No previous correction.").font(.system(size: 18)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+-                        Text("Kept for reference only. Select current recognized words to write a new correction. This old review cannot be sent.")
++                        Text("Kept for reference only. If delivery was unconfirmed, some or all may have played. Nothing is retried automatically. Select current recognized words and explicitly press Speak for any new correction.")
+                             .font(.system(size: 11)).foregroundStyle(.white.opacity(0.72))
+                     }
+                 }
+@@ -104,10 +104,6 @@
+                     .fixedSize(horizontal: false, vertical: true).lineLimit(3)
+                 Text(detail).font(.system(size: 12)).foregroundStyle(.white.opacity(0.72)).lineLimit(3)
+                 Spacer(minLength: 0)
+-                if client.preservedCorrection != nil {
+-                    Button("View previous correction") { session.surface = .recovery }
+-                        .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(.mint)
+-                }
+                 HStack(spacing: 10) {
+                     if client.conn != .connected {
+                         IslandAction("Reconnect", symbol: "arrow.clockwise") { client.connect() }
+@@ -123,6 +119,10 @@
+                     }
+                 }
+             }
++        }
++        if client.preservedCorrection != nil {
++            Button("View previous correction") { session.surface = .recovery }
++                .font(.system(size: 11)).buttonStyle(.plain).foregroundStyle(.mint)
+         }
+     }
+     private var headline: String {
+diff --git a/macos/TacitCompanion/Sources/TacitCompanion/CompanionContent.swift b/macos/TacitCompanion/Sources/TacitCompanion/CompanionContent.swift
+--- a/macos/TacitCompanion/Sources/TacitCompanion/CompanionContent.swift
++++ b/macos/TacitCompanion/Sources/TacitCompanion/CompanionContent.swift
+@@ -45,7 +45,7 @@
+                 Text("Typed by you · \(client.typedDraft.utf16.count)/500").font(.system(size: 10)).foregroundStyle(.secondary)
+                 Spacer()
+                 if client.output?.state == "ready" {
+-                    Button("Speak") { if client.speakTyped(client.typedDraft) { client.typedDraft = "" } }
++                    Button("Speak") { _ = client.speakTyped(client.typedDraft) }
+                         .keyboardShortcut(.return, modifiers: .command)
+                         .disabled(client.typedDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || client.typedDraft.utf16.count > 500 || client.route?.state != "ready")
+                 } else {
+diff --git a/macos/TacitCompanion/Tests/TacitCompanionTests/AuthoredPendingAuditTests.swift b/macos/TacitCompanion/Tests/TacitCompanionTests/AuthoredPendingAuditTests.swift
+new file mode 100644
+--- /dev/null
++++ b/macos/TacitCompanion/Tests/TacitCompanionTests/AuthoredPendingAuditTests.swift
+@@ -0,0 +1,104 @@
++import XCTest
++@testable import TacitCompanion
++
++/// Candidate-fix verification: user actions plus observable protocol events, no private-field assertions.
++final class AuthoredPendingAuditTests: XCTestCase {
++    @MainActor private func emit(_ c:TacitClient,_ type:String,_ key:String,_ value:[String:Any]) {
++        c.handle(String(data:try! JSONSerialization.data(withJSONObject:["type":type,key:value]),encoding:.utf8)!)
++    }
++    @MainActor private func ready(_ c:TacitClient,_ generation:Int=1) {
++        emit(c,"output_status","status",["state":"ready","authorizationId":"QA-voice","generation":generation,"route":["state":"ready"]])
++    }
++    @MainActor private func delivery(_ c:TacitClient,_ id:String,_ state:String,auth:String="QA-voice",generation:Int=1) {
++        emit(c,"speech_delivery","delivery",["requestId":id,"source":"typed","state":state,"text":"same words",
++            "outputAuthorizationId":auth,"generation":generation,"timings":[:]])
++    }
++    @MainActor func testPendingMessageSurvivesProgressAndUnrelatedOrStaleDelivery() async {
++        var sent:[[String:Any]]=[]
++        let c=TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{sent.append($0)}))
++        ready(c); XCTAssertTrue(c.speakTyped("same words")); let id=sent[0]["requestId"] as! String
++        for state in ["queued","synthesizing","routing"] {
++            delivery(c,id,state); XCTAssertFalse(c.speakTyped("same words"))
++        }
++        delivery(c,"some-other-request","rendered"); XCTAssertFalse(c.speakTyped("same words"))
++        delivery(c,id,"rendered",auth:"stale"); XCTAssertFalse(c.speakTyped("same words"))
++        delivery(c,id,"rendered",generation:0); XCTAssertFalse(c.speakTyped("same words"))
++        XCTAssertEqual(sent.count,1)
++    }
++    @MainActor func testMatchingTerminalAllowsLaterDeliberateRepeatWithoutAutomaticRetry() async {
++        for terminal in ["rendered","failed","refused","interrupted"] {
++            var sent:[[String:Any]]=[]
++            let c=TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{sent.append($0)}))
++            ready(c); XCTAssertTrue(c.speakTyped("same words")); let id=sent[0]["requestId"] as! String
++            XCTAssertFalse(c.speakTyped("same words"))
++            delivery(c,id,terminal)
++            XCTAssertEqual(sent.count,1,"A terminal event must never automatically retry")
++            XCTAssertTrue(c.speakTyped("same words"),"A later explicit repeat remains possible")
++            XCTAssertNotEqual(sent[1]["requestId"] as? String,id)
++        }
++    }
++    @MainActor func testHoldThenDifferentMessageAndFreshGenerationRemainUsable() async {
++        var sent:[[String:Any]]=[]
++        let c=TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{sent.append($0)}))
++        ready(c); c.typedDraft="The longer message I am composing."
++        XCTAssertTrue(c.speakTyped("One moment, I'm responding."))
++        XCTAssertTrue(c.speakTyped(c.typedDraft))
++        XCTAssertFalse(c.speakTyped("One moment, I'm responding."))
++        c.output("pause")
++        emit(c,"output_status","status",["state":"paused","authorizationId":"QA-voice","generation":2,"route":["state":"ready"]])
++        c.output("resume"); ready(c,3)
++        XCTAssertTrue(c.speakTyped("One moment, I'm responding."))
++        let count=sent.count
++        c.disconnectIsolatedTransport(); c.connect(); ready(c,3)
++        XCTAssertEqual(sent.count,count,"Reconnection never replays unknown speech")
++        XCTAssertEqual(c.typedDraft,"The longer message I am composing.")
++    }
++    @MainActor func testVoiceChangeAndQueueStatusNeverCreateANewPendingOperation() async {
++        var sent:[[String:Any]]=[]
++        let c=TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{sent.append($0)}))
++        ready(c)
++        emit(c,"voice_status","status",["revision":7,"selected":["voiceId":"qa:A"],"effective":["voiceId":"qa:A"]])
++        XCTAssertTrue(c.speakTyped("same words"))
++        let id=sent[0]["requestId"] as! String
++        emit(c,"voice_status","status",["revision":8,"selected":["voiceId":"qa:B"],"effective":["voiceId":"qa:B"]])
++        ready(c) // unsolicited queue/voice status is not a terminal acknowledgement
++        XCTAssertFalse(c.speakTyped("  same words\n"))
++        XCTAssertEqual(sent.count,1)
++        XCTAssertEqual(sent[0]["voiceRevision"] as? Int,7)
++        delivery(c,id,"rendered")
++        XCTAssertTrue(c.speakTyped("same words"))
++        XCTAssertEqual(sent[1]["voiceRevision"] as? Int,8)
++        XCTAssertNotEqual(sent[1]["requestId"] as? String,id)
++        delivery(c,id,"rendered") // duplicate terminal from the earlier operation
++        XCTAssertFalse(c.speakTyped("same words"))
++    }
++    @MainActor func testSynchronousTerminalDoesNotLeaveAPhantomPendingOperation() async {
++        var sent:[[String:Any]]=[]
++        var c:TacitClient!
++        c=TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ request in
++            sent.append(request)
++            self.delivery(c,request["requestId"] as! String,"refused")
++        }))
++        ready(c)
++        XCTAssertTrue(c.speakTyped("same words"))
++        XCTAssertTrue(c.speakTyped("same words"))
++        XCTAssertEqual(sent.count,2,"Only explicit actions retry a refused operation")
++    }
++    @MainActor func testUnknownDeliverySurvivesReconnectWithoutReplayAndNeedsExplicitSpeak() async {
++        var sent:[[String:Any]]=[]
++        let c=TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{sent.append($0)}))
++        ready(c); c.typedDraft="same words"
++        XCTAssertTrue(c.speakTyped(c.typedDraft))
++        let first=sent[0]["requestId"] as! String
++        delivery(c,first,"routing")
++        c.disconnectIsolatedTransport(); c.connect()
++        XCTAssertFalse(c.speakTyped(c.typedDraft),"No authority until fresh server status")
++        ready(c,3)
++        XCTAssertEqual(sent.count,1)
++        XCTAssertEqual(c.typedDraft,"same words")
++        XCTAssertTrue(c.speakTyped(c.typedDraft),"Only this new explicit action retries")
++        XCTAssertEqual(sent[1]["outputGeneration"] as? Int,3)
++        delivery(c,first,"rendered")
++        XCTAssertFalse(c.speakTyped(c.typedDraft),"Old connection/generation must not unlock the new operation")
++    }
++}
+diff --git a/macos/TacitCompanion/Tests/TacitCompanionTests/ConversationAuditTests.swift b/macos/TacitCompanion/Tests/TacitCompanionTests/ConversationAuditTests.swift
+new file mode 100644
+--- /dev/null
++++ b/macos/TacitCompanion/Tests/TacitCompanionTests/ConversationAuditTests.swift
+@@ -0,0 +1,185 @@
++import XCTest
++import AppKit
++@testable import TacitCompanion
++
++/// Independent audit. Synthetic protocol events and recorder transport only; no real speech/recognition.
++final class ConversationAuditTests: XCTestCase {
++    @MainActor private func emit(_ c: TacitClient, _ type: String, _ key: String, _ body: [String: Any]) {
++        c.handle(String(data: try! JSONSerialization.data(withJSONObject: ["type": type, key: body]), encoding: .utf8)!)
++    }
++    @MainActor private func ready(_ c: TacitClient, generation: Int = 4, liveGeneration: Int = 2) {
++        emit(c, "output_status", "status", ["state":"ready", "authorizationId":"QA-output", "generation":generation,
++            "voice":"QA voice A", "voiceId":"qa:A", "voiceRevision":7, "queued":0, "route":["state":"ready"]])
++        emit(c, "live_status", "status", ["state":"active", "authorizationId":"QA-live", "generation":liveGeneration])
++    }
++    @MainActor private func result(_ c: TacitClient, _ id: String, generation: Int = 2) {
++        let text = "QA exact words for " + id
++        emit(c, "recognition_hypothesis", "hypothesis", ["utteranceId":id,"authorizationId":"QA-live","generation":generation,
++            "decision":"shown","rawText":text,"reviewExpiresAt":Date().timeIntervalSince1970 * 1000 + 60000,
++            "reviewCandidates":[["index":0,"kind":"raw","text":text,"textHash":TacitClient.textHash(text)]]])
++    }
++
++    @MainActor func testRepeatedRecognitionDoesNotOverwriteEditingAndNewHeaderPreservesReference() async {
++        var sent: [[String: Any]] = []
++        let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ sent.append($0) }))
++        ready(c); result(c,"A")
++        c.chooseReview(c.lastHypothesis!.candidates[0],of:"A",editing:true)
++        c.reviewDraft.text = "My unfinished correction"
++        result(c,"A")
++        XCTAssertEqual(c.reviewDraft.text,"My unfinished correction")
++        c.handle("{\"type\":\"review_invalidated\",\"authorizationId\":\"QA-live\",\"generation\":2,\"utteranceId\":\"B\"}")
++        XCTAssertFalse(c.speakReviewed())
++        XCTAssertEqual(c.preservedCorrection,"My unfinished correction")
++        result(c,"B")
++        XCTAssertNil(c.reviewDraft.candidate)
++        XCTAssertTrue(sent.isEmpty)
++    }
++
++    @MainActor func testRapidPauseResumeRejectsOldResultsAndKeepsTypedDraftAcrossReconnect() async {
++        var sent: [[String: Any]] = []
++        let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ sent.append($0) }))
++        ready(c); c.typedDraft = "My draft must survive."
++        for i in 0..<20 {
++            c.pauseEverything()
++            XCTAssertFalse(c.speakTyped("must not leave"))
++            emit(c,"output_status","status",["state":"paused","authorizationId":"QA-output","generation":5+i*2,"route":["state":"ready"]])
++            emit(c,"live_status","status",["state":"paused","authorizationId":"QA-live","generation":3+i*2])
++            c.output("resume")
++            c.live("resume")
++            ready(c,generation:6+i*2,liveGeneration:4+i*2)
++            XCTAssertTrue(c.canSpeakAuthored,"A real resume acknowledgment must restore authored speech")
++        }
++        c.disconnectIsolatedTransport()
++        XCTAssertFalse(c.speakTyped(c.typedDraft)); XCTAssertNil(c.output); XCTAssertNil(c.lastHypothesis)
++        c.connect(); XCTAssertFalse(c.canSpeakAuthored)
++        ready(c); result(c,"old",generation:1)
++        XCTAssertFalse(c.canReviewCurrent)
++        XCTAssertEqual(c.typedDraft,"My draft must survive.")
++        XCTAssertFalse(sent.contains { $0["type"] as? String == "speak_typed" })
++    }
++
++    @MainActor func testNativeWireContractsExportForBackendReplay() async throws {
++        var sent: [[String: Any]] = []
++        let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ sent.append($0) }))
++        let s = CommunicationSession(defaults:nil)
++        ready(c); result(c,"A")
++        let draft = "A longer approved user message that I was writing before holding my turn."
++        c.typedDraft = draft
++        XCTAssertTrue(s.holdTurn(using:c)); XCTAssertEqual(c.typedDraft,draft)
++        XCTAssertTrue(s.speakDraft(using:c))
++        s.phraseSelection = s.phrases[1].id
++        XCTAssertTrue(s.speakSelection(using:c)); XCTAssertNil(c.reviewDraft.candidate)
++        c.chooseReview(c.lastHypothesis!.candidates[0],of:"A")
++        XCTAssertTrue(c.speakReviewed()); XCTAssertFalse(c.speakReviewed())
++        let count = sent.count
++        c.stopEverything(); XCTAssertFalse(c.speakTyped("revoked")); XCTAssertFalse(c.speakReviewed())
++        XCTAssertEqual(sent.count,count+2)
++        if let path = ProcessInfo.processInfo.environment["TACIT_QA_WIRE_PATH"] {
++            try JSONSerialization.data(withJSONObject:["source":"SYNTHETIC native action recorder; no audio", "requests":sent],options:[.sortedKeys,.prettyPrinted]).write(to:URL(fileURLWithPath:path))
++        }
++    }
++
++    @MainActor func testAdversarialRapidAuthoredSpeakMustNotDuplicatePendingMessage() async {
++        var captures: [String: [[String:Any]]] = [:]
++        for mode in ["draft", "hold", "phrase"] {
++            var sent: [[String: Any]] = []
++            let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ sent.append($0) }))
++            let s = CommunicationSession(defaults:nil)
++            ready(c); c.typedDraft = "One intended message"; s.phraseSelection = s.phrases[0].id
++            for _ in 0..<3 {
++                if mode == "draft" { s.speakDraft(using:c) }
++                if mode == "hold" { s.holdTurn(using:c) }
++                if mode == "phrase" { s.speakSelection(using:c) }
++            }
++            XCTAssertEqual(sent.filter { $0["type"] as? String == "speak_typed" }.count,1,
++                "P1 QA-01: \(mode) accepts repeated clicks before any acknowledgment")
++            captures[mode] = sent
++        }
++        if let path = ProcessInfo.processInfo.environment["TACIT_QA_WIRE_PATH"] {
++            try! JSONSerialization.data(withJSONObject:captures,options:[.sortedKeys,.prettyPrinted]).write(to:URL(fileURLWithPath:path+".rapid.json"))
++        }
++    }
++
++    @MainActor func testVoiceRevisionMustAccompanyApprovalAfterVoiceStatus() async {
++        var sent: [[String: Any]] = []
++        let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ sent.append($0) }))
++        ready(c)
++        emit(c,"voice_status","status",["revision":7,"selected":["voiceId":"qa:A"],"effective":["voiceId":"qa:A","label":"QA voice A"]])
++        XCTAssertTrue(c.speakTyped("Voice-bound typed approval"))
++        result(c,"A"); c.chooseReview(c.lastHypothesis!.candidates[0],of:"A"); XCTAssertTrue(c.speakReviewed())
++        for r in sent {
++            XCTAssertEqual(r["voiceRevision"] as? Int,7,"P1 QA-02: approval omits the voice revision displayed to the user")
++        }
++    }
++
++    @MainActor func testSubmittedCorrectionSurvivesDisconnectionAsReadOnlyReference() async {
++        var sent: [[String: Any]] = []
++        let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ sent.append($0) }))
++        ready(c); result(c,"A")
++        c.chooseReview(c.lastHypothesis!.candidates[0],of:"A",editing:true)
++        c.reviewDraft.text = "This correction cost real effort to write."
++        XCTAssertTrue(c.speakReviewed())
++        c.disconnectIsolatedTransport(); c.connect()
++        XCTAssertEqual(c.preservedCorrection,"This correction cost real effort to write.",
++            "P1 QA-03: a requested correction vanishes if the connection fails before delivery is known")
++        XCTAssertTrue(c.typedDraft.isEmpty,"Never reclassify recognition as typed speech")
++        XCTAssertFalse(c.speakReviewed(),"Recovery is reference only; never authorize stale speech")
++    }
++
++    @MainActor func testDisconnectDuringDeliveryClearsSpeakingStateAndNeverResends() async {
++        var sent: [[String: Any]] = []
++        let c = TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{ sent.append($0) }))
++        ready(c); c.typedDraft = "An intentionally retained draft."
++        XCTAssertTrue(c.speakTyped(c.typedDraft))
++        let id = sent[0]["requestId"] as! String
++        emit(c,"speech_delivery","delivery",["requestId":id,"text":c.typedDraft,"source":"typed","state":"routing",
++            "outputAuthorizationId":"QA-output","generation":4,"timings":["firstAudioAt":1]])
++        XCTAssertNotNil(c.lastDelivery?.firstAudioAt)
++        c.disconnectIsolatedTransport(); XCTAssertNil(c.lastDelivery)
++        c.stopEverything(); XCTAssertTrue(c.notice?.contains("could not be confirmed") == true)
++        c.connect(); ready(c)
++        XCTAssertEqual(sent.count,1,"No automatic resend when delivery outcome is unknown")
++        XCTAssertEqual(c.typedDraft,"An intentionally retained draft.")
++    }
++
++    @MainActor func testCorrectionPreservedAtEveryDeliveryStageAndReauthorizedOnlyForCurrentUtterance() async throws {
++        var wire:[String:[[String:Any]]]=[:]
++        for stage in ["unacknowledged","queued","synthesizing","routing","rendered","failed","refused","interrupted"] {
++            var sent:[[String:Any]]=[]
++            let c=TacitClient(registerHotKey:false,connectOnInit:false,isolatedTransport:.init(send:{sent.append($0)}))
++            ready(c); result(c,"A")
++            emit(c,"voice_status","status",["revision":7,"selected":["voiceId":"qa:A"],"effective":["voiceId":"qa:A"]])
++            c.chooseReview(c.lastHypothesis!.candidates[0],of:"A",editing:true)
++            let correction="  My exact correction, café 👋.  "
++            c.reviewDraft.text=correction
++            XCTAssertTrue(c.speakReviewed())
++            XCTAssertFalse(c.speakReviewed())
++            XCTAssertEqual(c.preservedCorrection,correction,"Retain before any delivery acknowledgement")
++            let id=sent[0]["requestId"] as! String
++            if stage != "unacknowledged" {
++                emit(c,"speech_delivery","delivery",["requestId":id,"text":correction,"source":"user-corrected","state":stage,
++                    "outputAuthorizationId":"QA-output","generation":4,"review":["utteranceId":"A"],"timings":[:]])
++            }
++            c.disconnectIsolatedTransport(); c.connect(); ready(c,generation:6,liveGeneration:4)
++            XCTAssertEqual(c.preservedCorrection,correction)
++            XCTAssertEqual(sent.count,1,"Reconnect never retries, even with fresh authority")
++            XCTAssertFalse(c.speakReviewed(),"Old correction has no current review identity")
++            XCTAssertNil(c.reviewDraft.candidate); XCTAssertTrue(c.typedDraft.isEmpty)
++            result(c,"B",generation:4)
++            XCTAssertFalse(c.speakReviewed(),"A new result never preselects or restores the old approval")
++            c.chooseReview(c.lastHypothesis!.candidates[0],of:"B",editing:true)
++            c.reviewDraft.text=correction
++            emit(c,"voice_status","status",["revision":8,"selected":["voiceId":"qa:B"],"effective":["voiceId":"qa:B"]])
++            XCTAssertTrue(c.speakReviewed(),"Only a new explicit choice and Speak authorize the correction")
++            XCTAssertEqual(sent[1]["voiceRevision"] as? Int,8)
++            XCTAssertEqual(sent[1]["utteranceId"] as? String,"B")
++            XCTAssertEqual(sent[1]["text"] as? String,correction)
++            XCTAssertEqual(sent[1]["textHash"] as? String,TacitClient.textHash(correction))
++            XCTAssertFalse(sent.contains { $0["type"] as? String == "speak_typed" })
++            wire[stage]=sent
++        }
++        if let path=ProcessInfo.processInfo.environment["TACIT_QA_WIRE_PATH"] {
++            try JSONSerialization.data(withJSONObject:wire,options:[.sortedKeys,.prettyPrinted]).write(to:URL(fileURLWithPath:path+".correction.json"))
++        }
++    }
++}
+diff --git a/docs/qa/conversation.test.ts b/docs/qa/conversation.test.ts
+new file mode 100644
+--- /dev/null
++++ b/docs/qa/conversation.test.ts
+@@ -0,0 +1,239 @@
++// SYNTHETIC integration fixtures. Real production state machines; fake inference, synthesis and output route.
++import { EventEmitter } from 'node:events';
++import { readFileSync } from 'node:fs';
++import { describe, expect, it } from '../../server/node_modules/vitest/dist/index.js';
++import { LiveSession, sha256Hex, type RecognizerResult } from '../../server/src/live.ts';
++import { SpeechOutput } from '../../server/src/speech.ts';
++import { buildReviewedRequest } from '../../server/src/reviewed.ts';
++import type { VoiceBinding } from '../../server/src/voices.ts';
++import type { VoiceRouteStatus, SpeechDelivery, ServerMessage } from '../../shared/protocol.ts';
++import type { PlayOutcome } from '../../server/src/route.ts';
++
++const tick = () => new Promise<void>(r => setImmediate(r));
++const ready: VoiceRouteStatus = { state:'ready',deviceName:'SYNTHETIC ROUTE',deviceUid:'fixture',sampleRate:48000,
++  gainDb:0,calibrated:true,readers:[],warnings:[],reason:null };
++class RecorderRoute extends EventEmitter {
++  pending = new Map<string,(r:PlayOutcome)=>void>();
++  reached: string[] = [];
++  status() { return ready; }
++  play(id:string) { this.reached.push(id); return new Promise<PlayOutcome>(r => this.pending.set(id,r)); }
++  stop(reason:string) { for (const r of this.pending.values()) r({state:'interrupted',reason}); this.pending.clear(); }
++  finish() { for (const r of this.pending.values()) r({state:'rendered',startedAt:1,renderedAt:2}); this.pending.clear(); }
++}
++function rig(hold = false) {
++  const route = new RecorderRoute(), deliveries: SpeechDelivery[] = [], messages: ServerMessage[] = [];
++  const inference: ((r:RecognizerResult)=>void)[] = [], synth: {text:string;signal?:AbortSignal;voice?:VoiceBinding}[] = [];
++  const releases: (()=>void)[] = [];
++  let revision = 1;
++  const binder = {
++    status: () => ({ revision,effective:{voiceId:`qa:${revision}`,label:`QA voice ${revision}`} }),
++    bind: (seen:unknown) => seen !== undefined && seen !== revision ? {ok:false as const,reason:'Your voice changed'} :
++      {ok:true as const,binding:{voiceId:`qa:${revision}`,label:`QA voice ${revision}`} as VoiceBinding},
++  };
++  const speech = new SpeechOutput({label:'QA synthetic',synth:async (text,_format,signal,voice) => {
++    synth.push({text,signal,voice}); if (hold) await new Promise<void>(r=>releases.push(r));
++    return {audio:Buffer.from('FAKE'),mime:'audio/wav',voice:voice?.label ?? 'QA',requestTs:0,firstByteTs:0};
++  }},()=>route,()=>ready,undefined,undefined,binder);
++  speech.on('delivery',(d:SpeechDelivery)=>deliveries.push(d));
++  const live = new LiveSession(()=>new Promise(r=>inference.push(r)),m=> {
++    messages.push(m);
++    if (m.type === 'review_invalidated') speech.invalidateReviewed(); // same composition as index.ts
++  });
++  speech.control('enable'); live.control({type:'live_control',action:'activate'});
++  const header = (id:string,auth=live.current.authorizationId!) => live.utterance({type:'visual_utterance',utteranceId:id,
++    authorizationId:auth,startMs:0,endMs:40,endpointMs:50,frameTimesMs:[0]});
++  const submit = (id:string) => { header(id); live.frame(Buffer.from('SYNTHETIC—not an image')); };
++  const shown = async (id='A') => { submit(id); inference.at(-1)!({text:`QA words ${id}`}); await tick(); };
++  const request = (id:string,edited?:string) => {
++    const req = buildReviewedRequest(live.reviewTarget()!,edited===undefined?{index:0}:{index:0,edited},speech.status(),live.current,id);
++    if (typeof req === 'string') throw new Error(req);
++    return req;
++  };
++  const terminal = (id:string) => deliveries.filter(d=>d.requestId===id&&['refused','interrupted','rendered','failed'].includes(d.state));
++  const typed = (id:string,text=id) => speech.speakTyped({requestId:id,text,outputAuthorizationId:speech.status().authorizationId,
++    outputGeneration:speech.status().generation,voiceRevision:revision});
++  const close = () => { live.close(); speech.control('stop'); };
++  return {route,speech,live,inference,messages,deliveries,synth,releases,header,submit,shown,request,typed,terminal,close,
++    changeVoice:()=>++revision};
++}
++
++describe('independent adversarial conversation sequences',()=> {
++  it('repeated recognition and reversed completion never publish stale words',async()=> {
++    const r=rig();
++    try {
++      r.submit('A'); r.submit('B'); r.inference[1]!({text:'Current B'}); await tick();
++      r.inference[0]!({text:'Old A'}); await tick();
++      r.submit('B');
++      expect(r.live.reviewTarget()?.utteranceId).toBe('B');
++      expect(r.messages.filter(m=>m.type==='recognition_hypothesis'&&m.hypothesis.decision==='shown')).toHaveLength(1);
++      expect(r.synth).toEqual([]); expect(r.live.current.autoTransmitAllowed).toBe(false);
++    } finally {r.close();}
++  });
++  it.each(['synthesis','playback'] as const)('new utterance revokes approved review during %s',async phase=> {
++    const r=rig(phase==='synthesis');
++    try {
++      await r.shown(); r.speech.speakReviewed(r.request('approved'),r.live.current,r.live.reviewTarget()); await tick();
++      r.header('B'); r.releases[0]?.(); await tick();
++      expect(r.terminal('approved')).toMatchObject([{state:'interrupted'}]);
++      expect(r.route.pending.size).toBe(0);
++      if(phase==='synthesis') expect(r.route.reached).toEqual([]);
++    } finally {r.close();}
++  });
++  it.each(['synthesis','playback'] as const)('Stop during %s cancels active and queued messages without resurrection',async phase=> {
++    const r=rig(phase==='synthesis');
++    try {
++      r.typed('first'); r.typed('queued'); await tick(); r.speech.control('stop');
++      r.releases[0]?.(); await tick(); r.speech.control('enable'); await tick();
++      for(const id of ['first','queued']) expect(r.terminal(id)).toMatchObject([{state:'interrupted'}]);
++      expect(r.route.pending.size).toBe(0); expect(r.speech.status().queued).toBe(0);
++    } finally {r.close();}
++  });
++  it('20 rapid Pause/Resume cycles refuse every earlier output generation',async()=> {
++    const r=rig();
++    try {
++      for(let i=0;i<20;i++) {
++        const old=r.speech.status(); r.speech.control('pause'); r.speech.control('resume');
++        r.speech.speakTyped({requestId:`old-${i}`,text:'revoked',outputAuthorizationId:old.authorizationId,outputGeneration:old.generation});
++        expect(r.terminal(`old-${i}`)).toMatchObject([{state:'refused'}]);
++      }
++      expect(r.synth).toEqual([]);
++    } finally {r.close();}
++  });
++  it('Hold followed by longer authored message and expressive phrase preserves order and review identity',async()=> {
++    const r=rig();
++    try {
++      await r.shown();
++      r.typed('hold',"One moment, I'm responding.");
++      r.typed('long','Here is the longer message I deliberately finished and approved.');
++      r.typed('phrase','Could you repeat that?'); await tick();
++      expect(r.route.reached).toEqual(['hold','long','phrase']);
++      expect(r.live.reviewTarget()?.utteranceId).toBe('A');
++      r.route.finish(); await tick();
++      expect(r.terminal('long')).toMatchObject([{state:'rendered',source:'typed',remoteAudibility:'unknown'}]);
++    } finally {r.close();}
++  });
++  it('voice switch binds queued requests to approval-time voice and refuses stale voice approval',async()=> {
++    const r=rig(true);
++    try {
++      r.typed('A'); r.typed('B'); r.changeVoice();
++      r.speech.speakTyped({requestId:'stale',text:'stale',outputAuthorizationId:r.speech.status().authorizationId,
++        outputGeneration:r.speech.status().generation,voiceRevision:1});
++      expect(r.terminal('stale')).toMatchObject([{state:'refused'}]);
++      r.releases[0]!(); await tick(); r.releases[1]!(); await tick();
++      expect(r.synth.map(c=>c.voice?.voiceId)).toEqual(['qa:1','qa:1']);
++    } finally {r.close();}
++  });
++  it('ten rapid reviewed Speak clicks with different IDs send one approved utterance',async()=> {
++    const r=rig();
++    try {
++      await r.shown(); for(let i=0;i<10;i++) r.speech.speakReviewed(r.request(`s${i}`),r.live.current,r.live.reviewTarget());
++      await tick(); expect(r.synth).toHaveLength(1); expect(r.route.reached).toHaveLength(1);
++      for(let i=1;i<10;i++) expect(r.terminal(`s${i}`)).toMatchObject([{state:'refused'}]);
++    } finally {r.close();}
++  });
++  it.each(['utteranceId','text','textHash','liveGeneration','liveAuthorizationId','outputGeneration','outputAuthorizationId'])(
++    'tampered %s reaches no synthesis',async field=> {
++      const r=rig();
++      try {
++        await r.shown(); const req:Record<string,unknown>={...r.request('tamper')};
++        req[field]=typeof req[field]==='number'?-100:'wrong';
++        r.speech.speakReviewed(req,r.live.current,r.live.reviewTarget()); await tick();
++        expect(r.terminal('tamper')).toMatchObject([{state:'refused'}]); expect(r.synth).toEqual([]);
++      } finally {r.close();}
++    });
++  it('capture-owner disconnect composition cancels pending review and late inference',async()=> {
++    const r=rig(true);
++    try {
++      await r.shown(); r.speech.speakReviewed(r.request('approved'),r.live.current,r.live.reviewTarget());
++      // Mirrors index.ts capture-owner close, without touching a live WebSocket.
++      r.live.disconnect(null); r.live.close(); r.speech.interrupt('Live ended: the capturing client disconnected.');
++      r.releases[0]!(); await tick();
++      expect(r.terminal('approved')).toMatchObject([{state:'interrupted'}]); expect(r.route.reached).toEqual([]);
++    } finally {r.close();}
++  });
++  it('native recorded requests are accepted by backend contracts, then Stop cuts them',async()=> {
++    const path=process.env.TACIT_QA_WIRE_PATH;
++    if(!path) throw new Error('Run docs/qa/acceptance.mjs with --native-root; native recorder artifact is required');
++    const fixture=JSON.parse(readFileSync(path,'utf8'));
++    const requests=fixture.requests as Record<string,unknown>[];
++    expect(requests.map(m=>m.type)).toEqual(['speak_typed','speak_typed','speak_typed','speak_reviewed','live_control','output_control']);
++    const r=rig();
++    try {
++      await r.shown('A');
++      // Translate session identities between independent native/backend fixture sessions. Text, kind, hash, index,
++      // request IDs and optional voiceRevision stay exactly as the native action emitted them.
++      for(const original of requests) {
++        if(original.type==='speak_typed'||original.type==='speak_reviewed') {
++          expect(original.outputAuthorizationId).toBe('QA-output'); expect(original.outputGeneration).toBe(4);
++          const m: Record<string,unknown>={...original,outputAuthorizationId:r.speech.status().authorizationId,outputGeneration:r.speech.status().generation};
++          if(m.type==='speak_typed') r.speech.speakTyped(m as Parameters<SpeechOutput['speakTyped']>[0]);
++          else {
++            expect(original.liveAuthorizationId).toBe('QA-live'); expect(original.liveGeneration).toBe(2);
++            // Match the native synthetic candidate, independently hashing the actual recorded string.
++            const text=String(original.text), target={...r.live.reviewTarget()!,rawText:text,
++              reviewCandidates:[{index:0,kind:'raw' as const,text,textHash:sha256Hex(text)}]};
++            r.speech.speakReviewed({...m,liveAuthorizationId:r.live.current.authorizationId,liveGeneration:r.live.current.generation},r.live.current,target);
++          }
++          await tick();
++        }
++      }
++      expect(r.synth).toHaveLength(4); expect(r.route.reached).toHaveLength(4);
++      r.live.close(); r.speech.control('stop'); await tick();
++      expect(r.route.pending.size).toBe(0); expect(r.speech.status().state).toBe('off');
++    } finally {r.close();}
++  });
++  it.each(['draft','hold','phrase'])('native rapid %s Speak must reach output once, not three times',async mode=> {
++    const fixture=JSON.parse(readFileSync(process.env.TACIT_QA_WIRE_PATH!+'.rapid.json','utf8'));
++    const r=rig();
++    try {
++      for(const m of fixture[mode]) {
++        expect(m.type).toBe('speak_typed'); expect(m.outputAuthorizationId).toBe('QA-output');
++        r.speech.speakTyped({...m,outputAuthorizationId:r.speech.status().authorizationId,outputGeneration:r.speech.status().generation});
++      }
++      await tick();
++      expect(r.route.reached,'P1 QA-01: independent native actions reach real SpeechOutput three times').toHaveLength(1);
++    } finally {r.close();}
++  });
++});
++
++describe('native correction recovery through production speech and My Voice contracts',()=> {
++  it.each(['unacknowledged','queued','synthesizing','routing','rendered','failed','refused','interrupted'])(
++    'preserves exact correction and requires fresh explicit approval after %s',async stage=> {
++      const fixture=JSON.parse(readFileSync(process.env.TACIT_QA_WIRE_PATH!+'.correction.json','utf8'));
++      const requests=fixture[stage] as Record<string,unknown>[];
++      expect(requests).toHaveLength(2);
++      expect(requests.every(m=>m.type==='speak_reviewed'&&m.candidate==='edited')).toBe(true);
++      expect(requests.map(m=>m.utteranceId)).toEqual(['A','B']);
++      expect(requests.map(m=>m.voiceRevision)).toEqual([7,8]);
++      const r=rig();
++      try {
++        for(let n=1;n<7;n++) r.changeVoice();
++        await r.shown('A');
++        const translate=(m:Record<string,unknown>)=>({...m,outputAuthorizationId:r.speech.status().authorizationId,
++          outputGeneration:r.speech.status().generation,liveAuthorizationId:r.live.current.authorizationId,
++          liveGeneration:r.live.current.generation});
++        const original=requests[0]!;
++        expect(original.outputGeneration).toBe(4); expect(original.liveGeneration).toBe(2);
++        r.speech.speakReviewed(translate(original),r.live.current,r.live.reviewTarget()); await tick();
++        expect(r.synth).toHaveLength(1);
++        expect(r.synth[0]!.text).toBe(original.text);
++        expect(r.synth[0]!.voice?.voiceId).toBe('qa:7');
++        r.live.close(); r.speech.control('stop'); await tick();
++        r.live.control({type:'live_control',action:'activate'}); r.speech.control('enable');
++        await r.shown('B'); r.changeVoice(); await tick();
++        expect(r.synth,'Fresh authorization/recognition never replays an old correction').toHaveLength(1);
++        // A replay of the original identity is still refused, even with fresh session fields.
++        r.speech.speakReviewed(translate(original),r.live.current,r.live.reviewTarget()); await tick();
++        expect(r.synth).toHaveLength(1);
++        const next=requests[1]!;
++        expect(next.requestId).not.toBe(original.requestId);
++        expect(next.outputGeneration).toBe(6); expect(next.liveGeneration).toBe(4);
++        expect(next.textHash).toBe(sha256Hex(String(next.text)));
++        r.speech.speakReviewed(translate(next),r.live.current,r.live.reviewTarget()); await tick();
++        expect(r.synth.map(s=>s.text)).toEqual([original.text,next.text]);
++        expect(r.synth.map(s=>s.voice?.voiceId)).toEqual(['qa:7','qa:8']);
++        expect(r.deliveries.filter(d=>d.state==='queued').every(d=>d.source==='user-corrected')).toBe(true);
++        expect(r.live.current.autoTransmitAllowed).toBe(false);
++      } finally {r.close();}
++    });
++});
+diff --git a/docs/qa/vitest.config.mjs b/docs/qa/vitest.config.mjs
+new file mode 100644
+--- /dev/null
++++ b/docs/qa/vitest.config.mjs
+@@ -0,0 +1,2 @@
++import { defineConfig } from '../../server/node_modules/vitest/dist/config.js';
++export default defineConfig({ test: { include: ['docs/qa/*.test.ts'], testTimeout: 10000 } });
+diff --git a/docs/qa/verify-p1.mjs b/docs/qa/verify-p1.mjs
+new file mode 100644
+--- /dev/null
++++ b/docs/qa/verify-p1.mjs
+@@ -0,0 +1,64 @@
++#!/usr/bin/env node
++// Silent verification in the isolated QA checkout. Never connects to or controls the demo runtime.
++import {spawn, spawnSync} from 'node:child_process';
++import {existsSync,mkdirSync,writeFileSync,openSync,closeSync,mkdtempSync,rmSync} from 'node:fs';
++import {createServer} from 'node:net';
++import {dirname,join,resolve} from 'node:path';
++import {fileURLToPath} from 'node:url';
++const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
++if(existsSync(join(root,'server/.env'))) throw new Error('Use the isolated QA checkout without a server/.env.');
++const output=join(root,'server/data/p1-reliability',new Date().toISOString().replace(/[:.]/g,'-'));
++mkdirSync(join(output,'tmp'),{recursive:true,mode:0o700});
++const env={...process.env,DEVELOPER_DIR:'/Applications/Xcode.app/Contents/Developer',
++  TACIT_QA_WIRE_PATH:join(output,'native-wire.json')};
++const results=[];
++function run(name,bin,args,cwd=root,vars=env) {
++  const r=spawnSync(bin,args,{cwd,env:vars,encoding:'utf8',timeout:240000,maxBuffer:16*1024*1024});
++  writeFileSync(join(output,name+'.log'),(r.stdout??'')+(r.stderr??''),{mode:0o600});
++  results.push({name,exit:r.status,signal:r.signal,error:r.error?.message});
++  console.log(`${r.status===0?'PASS':'FAIL'} ${name}`);
++  return r.status===0;
++}
++run('native','swift',['test','--package-path','macos/TacitCompanion']);
++run('native-release','swift',['build','-c','release','--package-path','macos/TacitCompanion']);
++run('offline-selftest',join(root,'macos/TacitCompanion/.build/release/TacitCompanion'),['--offline-selftest']);
++run('route','swift',['test','--package-path','macos/TacitRoute']);
++run('voice','swift',['test','--package-path','macos/TacitVoice']);
++run('backend-typecheck','npm',['run','typecheck'],join(root,'server'));
++run('backend','npm',['test'],join(root,'server'));
++run('integration-typecheck',join(root,'server/node_modules/.bin/tsc'),['--noEmit','--strict','--allowImportingTsExtensions',
++ '--module','NodeNext','--moduleResolution','NodeNext','--target','ES2022','--esModuleInterop','--skipLibCheck','../docs/qa/conversation.test.ts'],join(root,'server'));
++run('integration',join(root,'server/node_modules/.bin/vitest'),['run','--config','docs/qa/vitest.config.mjs']);
++for(const task of ['typecheck','test','build']) run('web-'+task,'npm',['run',task],join(root,'web'));
++run('preflight-helper-tests',process.execPath,['--test','docs/demo-preflight-codex.test.mjs']);
++// Independent server: no credentials/config inherited, no recognizer, no voice helper or audio route.
++// An unreachable STT endpoint enables the stream-auth path; invalid tokens are rejected before transcription.
++// A private TMPDIR also isolates the server's stale-audio sweep from the live runtime.
++const probe=createServer(); await new Promise(r=>probe.listen(0,'127.0.0.1',r));
++const port=probe.address().port; await new Promise(r=>probe.close(r));
++const securityTmp=mkdtempSync('/tmp/tacit-p1-');
++const securityEnv={PATH:process.env.PATH,HOME:process.env.HOME,TMPDIR:securityTmp,
++  PORT:String(port),TACIT_HOST:'127.0.0.1',TACIT_ROUTE:'off',TACIT_VOICE:'off',WHISPER_SERVER:'off',WHISPER_SERVER_URL:'http://127.0.0.1:1',
++  RECOGNITION_AUTOSTART:'off',RECOGNITION_URL:'http://127.0.0.1:1',TACIT_HTTP:`http://127.0.0.1:${port}`};
++const log=openSync(join(output,'security-server.log'),'w',0o600);
++const server=spawn(process.execPath,['--import','tsx',join(root,'server/src/index.ts')],
++  {cwd:join(root,'server'),env:securityEnv,stdio:['ignore',log,log]});
++try {
++  let ready=false;
++  for(let i=0;i<100;i++) {
++    if(server.exitCode!==null) break;
++    try { const r=await fetch(securityEnv.TACIT_HTTP+'/api/health'); if(r.ok) {ready=true;break;} } catch {}
++    await new Promise(r=>setTimeout(r,100));
++  }
++  if(!ready) {results.push({name:'security',exit:1,error:'Isolated server did not become ready'});console.log('FAIL security startup');}
++  else run('security','npm',['run','security:check'],join(root,'server'),securityEnv);
++} finally {
++  server.kill('SIGTERM');
++  await new Promise(r=>server.exitCode!==null?r():server.once('exit',r));
++  closeSync(log);
++  rmSync(securityTmp,{recursive:true,force:true});
++}
++writeFileSync(join(output,'report.json'),JSON.stringify({at:new Date().toISOString(),root,output,
++ scope:'Offline/synthetic speech and recognition; security uses a separate loopback server with audio disabled',results},null,2));
++console.log('Evidence: '+output);
++process.exitCode=results.some(r=>r.exit!==0)?1:0;
+diff --git a/docs/P1_RELIABILITY_HANDOFF_CODEX.md b/docs/P1_RELIABILITY_HANDOFF_CODEX.md
+new file mode 100644
+--- /dev/null
++++ b/docs/P1_RELIABILITY_HANDOFF_CODEX.md
+@@ -0,0 +1,107 @@
++# TACIT P1 reliability — Claude integration handoff
++
++**STABLE — READY FOR CLAUDE INTEGRATION**
++
++Verified 2026-11-15 03:08:02 UTC. Implemented in `../tacit-independent-qa`; the live demo checkout, server, companion and audio route were not changed or restarted. No camera, microphone or remote call was used.
++
++Baseline: current `main` = `4920946590657144e286d7387d23f2006201802c`, checked before work and after verification. The QA worktree had detached HEAD `e5c86e51a1832adaa32416b7a596c00e32dd1388` and only untracked QA artifacts. Its tracked files were advanced with a read-only `git archive` filesystem export; no Git metadata or index was changed. All preexisting untracked QA artifacts remain. The actual filesystem was compared against every baseline file: only the three production files below differ; no baseline files are missing. **Do not use an unrestricted `git diff main`, stage the entire QA tree, or copy the entire native directory:** its older index does not track the unified-release additions.
++
++Branch / commit: **none created**. `AGENTS.md` reserves all Git writes for Claude: “Other agents (Sol/Codex, Gemini) ... never run Git write commands.” The user explicitly requested the patch/worktree fallback if this restriction applies. Requested integration branch: `fix/tacit-p1-reliability`. No merge or deployment is authorized by this handoff.
++
++## Files in the integration patch
++
++Production:
++- `macos/TacitCompanion/Sources/TacitCompanion/Client.swift`
++- `macos/TacitCompanion/Sources/TacitCompanion/CommunicationWorkspace.swift`
++- `macos/TacitCompanion/Sources/TacitCompanion/CompanionContent.swift`
++
++Regression tests / repeatable isolated verification:
++- `macos/TacitCompanion/Tests/TacitCompanionTests/AuthoredPendingAuditTests.swift` (new)
++- `macos/TacitCompanion/Tests/TacitCompanionTests/ConversationAuditTests.swift` (new)
++- `docs/qa/conversation.test.ts` (new on main; extends the preserved independent QA harness)
++- `docs/qa/vitest.config.mjs` (new on main)
++- `docs/qa/verify-p1.mjs` (new)
++- This handoff, `docs/P1_RELIABILITY_HANDOFF_CODEX.md` (new)
++
++Local coordination notes in `docs/HANDOFF.md`, `docs/WORKSTREAM_SOL.md`, `docs/QA_HANDOFF_CODEX.md` and `docs/qa/README.md` point here. They are not in the integration patch, to avoid overwriting Claude's current coordination notes. The historical `proposed-native-reliability.patch` remains intact; integrate **`docs/qa/implemented-p1-reliability.patch`** instead. Its SHA-256 and the exact integrated-file hashes are in `docs/qa/p1-reliability-manifest.json`.
++
++## Root causes and behavior
++
++1. Every native authored Speak, Hold and phrase action minted a fresh request ID. The backend correctly deduplicates IDs but cannot tell that three different IDs came from one pending message. A native pending-operation record now binds request ID to output authorization, generation and the hash of the exact trimmed transmitted text. It is installed before sending, including synchronous acknowledgments. Identical pending text is suppressed across all authored entry points and across My Voice changes. Distinct messages still queue. Only a matching typed terminal delivery under the current authorization/generation releases that operation. Progress, unrelated/stale deliveries, queue-status refreshes and an earlier operation's duplicate terminal cannot unlock it. Pause/stop, changed authorization/generation and disconnect discard the obsolete pending guard; they never resend anything. Each later explicit Speak creates a fresh operation with current authorization and voice revision.
++
++2. Submitting an edited review set `reviewSubmittedID` before clearing `reviewDraft`. The draft-preservation observer intentionally skips submitted drafts, so the only corrected copy was lost. The client now retains the exact correction in RAM **before** clearing the editor or sending. It survives unacknowledged delivery, progress, every terminal outcome, invalidation and reconnection. The correction stays a read-only reference; it never populates `typedDraft`, preselects a candidate, or creates an authorization. The previous-correction link remains available even when a new current hypothesis is shown. Recovery copy explicitly explains uncertain delivery and no automatic retry. The legacy native typed composer also keeps its draft after a request, matching the unified composer.
++
++My Voice keeps its existing acceptance-time binding and revision checks. The pending duplicate key intentionally excludes voice revision: a voice switch cannot turn an in-flight identical message into another operation. A later deliberate repeat after terminal acknowledgment uses the newly displayed revision. Corrected speech retains its dedicated `speak_reviewed` request with exact text/hash, output authorization/generation, Live authorization/generation, utterance ID, candidate basis and voice revision. No backend/protocol change, LLM rewrite, voice substitution, or automatic recognized speech was added.
++
++## Reproduction and regression evidence
++
++On unmodified `4920946` source, run the added native tests before the production change:
++
++```sh
++DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path macos/TacitCompanion --filter 'ConversationAuditTests.testAdversarialRapidAuthoredSpeakMustNotDuplicatePendingMessage|ConversationAuditTests.testSubmittedCorrectionSurvivesDisconnectionAsReadOnlyReference'
++```
++
++Observed: 2 tests failed, 4 assertions. Three rapid actions emitted **3** `speak_typed` requests for each of draft, Hold and phrase; submitted correction became **nil** after disconnect/reconnect. Preserved log: `server/data/p1-reliability/before.log` (ignored; do not stage).
++
++Manual reproduction for later physical rehearsal:
++1. With voice output authorized, type a draft and click Speak three times before terminal delivery; repeat with Hold and a selected phrase. Before: three requests/audio queue entries; after: one, with pending-message feedback. A different message remains usable while the first is pending.
++2. Choose Edit for a current recognized candidate, type a correction and press Speak; lose the connection before terminal status. Before: correction lost. After: View previous correction shows the exact text, and reconnect sends no speech. With a fresh current utterance, the user must explicitly select/edit and press Speak again. Uncertain delivery may already have played partly or fully; never retry automatically.
++
++Regression coverage also exercises queued/synthesizing/routing and rendered/refused/failed/interrupted events; unrelated/stale/duplicate acknowledgments; synchronous refusal; trimmed authored input; voice changes while pending; distinct Hold + draft; repeated Pause/Resume; stop/disconnect; fresh session generation; exact Unicode/whitespace correction hashes; no preselection after reconnection; no corrected-to-typed conversion; native wire replay through production LiveSession, SpeechOutput and voice-binding contracts.
++
++## Fresh verification
++
++Command (Node 22; isolated QA checkout with no `server/.env`):
++
++```sh
++PATH=/opt/homebrew/opt/node@22/bin:$PATH node docs/qa/verify-p1.mjs
++```
++
++Final evidence: `server/data/p1-reliability/2026-11-15T03-05-50-491Z/report.json` and its per-gate logs (ignored, local only). All **14 gates exit 0**:
++
++| Gate | Result |
++|---|---|
++| Companion `swift test` | **54/54**, including 14 added regression/audit cases and the existing 4 My Voice cases |
++| Companion release build | PASS |
++| Release binary `--offline-selftest` | **10/10** |
++| TacitRoute Swift tests | **4/4** |
++| TacitVoice Swift tests | **5/5** |
++| Backend typecheck + full tests | PASS, **167/167** in 15 files (includes speech, reviewed, review-race, My Voice, preview, route, auth/security and voice-policy cases) |
++| Integration harness strict typecheck + native wire replay | PASS, **29/29** |
++| Web typecheck + tests + production build | PASS, **80/80** |
++| Passive preflight helper tests | **3/3** |
++| `npm run security:check` | **13/13**, separate ephemeral loopback server, route/voice/recognizer disabled, separate temporary directory and QA-only secrets |
++
++Earlier failed harness runs are preserved in the same ignored evidence folder: one invalid assertion signature, one macOS Unix-socket path limit, and the security fixture initially lacked an STT adapter (closing invalid Twilio streams before the script's expected token-check path). These were harness/configuration issues. The final fixture uses an unreachable local STT endpoint so invalid stream tokens are checked before any transcription; no inference occurs. All failures are resolved in the final gate.
++
++## Limits / unresolved issues
++
++No unresolved P1 implementation or automated-test failure remains. The tests use real product state machines with **synthetic recognition, synthesis and routing**, not measured silent recognition or remote audibility. The separate security server uses the real HTTP/WebSocket handlers with audio disabled.
++
++Physical `speech:check`, `myvoice:check --preview`, `route:check`, live recognition/stress and the connected companion `--selftest` were deliberately **not run**: those can emit audio into the same Mac's virtual microphone, alter calibration, or control the live session even from a separate server. Human Meet-listener checks (exact words once, selected voices, reviewed/corrected speech, Hold, phrase and Stop), camera recognition and accessibility rehearsal remain required after Claude's review and an explicitly scheduled demo-runtime change. Do not read this status as permission to restart or deploy. Automatic recognized-speech transmission remains disabled by the existing reliability gate.
++
++## Exact integration instructions — Claude, sole Git writer
++
++1. Keep the live checkout unchanged. Inspect current `main` and the working trees; preserve every existing change. Create a separate integration worktree on a dedicated branch from `4920946` or newer. For example, from the repository (only Claude executes these Git writes):
++
++```sh
++git worktree add -b fix/tacit-p1-reliability ../tacit-p1-integration main
++cd ../tacit-p1-integration
++```
++
++2. Review `../tacit-independent-qa/docs/qa/implemented-p1-reliability.patch` and its SHA-256 manifest. Apply **only this patch**, not the QA worktree's broad diff or old proposed patch:
++
++```sh
++git apply --check ../tacit-independent-qa/docs/qa/implemented-p1-reliability.patch
++git apply ../tacit-independent-qa/docs/qa/implemented-p1-reliability.patch
++```
++
++If current main has changed these files, resolve the small targeted changes against the current native/My Voice code; never replace whole directories. The artifact was validated by applying it to a clean `4920946` source export and comparing all patched file hashes with the verified QA source.
++
++3. Install worktree-local dependencies if absent (`npm ci` in `server` and `web`; do not copy demo `.env`/data or change the running app). Run the isolated verification command above. It refuses a checkout containing `server/.env`, uses a random loopback port, and shuts down only the security server it starts. Review all 14 results. No live audio checks are included.
++
++4. Review the exact file list above. Add the nine explicit paths (three production, two native tests, three QA harness files, this report); run `git diff --cached --check`, `git diff --cached --stat`, and read `git diff --cached`. Commit one cohesive change, suggested subject: `fix(companion): suppress pending duplicate speech and preserve corrections`. Record the branch/commit and verification result in the canonical HANDOFF. No recordings, QA evidence/data, secrets, build output, old QA reports, or broad baseline-export changes belong in that commit.
++
++5. Leave the branch for review. **Do not merge into main, restart the demo, or launch physical audio checks automatically.** Schedule the physical checks only when the live session can be deliberately controlled. There is no automatic retry on uncertain delivery at any stage.
++
++The QA source and patch are yielded at this stable checkpoint for Claude's integration; no Git write was performed by Codex.

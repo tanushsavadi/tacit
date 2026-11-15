@@ -1,0 +1,26 @@
+{
+  "status": "STABLE \u2014 READY FOR CLAUDE INTEGRATION",
+  "at": "2026-11-15T03:08:29.128316+00:00",
+  "baseline": "4920946590657144e286d7387d23f2006201802c",
+  "gitHEAD": "e5c86e51a1832adaa32416b7a596c00e32dd1388",
+  "branch": null,
+  "commit": null,
+  "gitRestriction": "Claude is sole Git writer; Codex did no Git writes",
+  "patch": "docs/qa/implemented-p1-reliability.patch",
+  "patchSHA256": "cd67ff91b88f16725a69d9cd34c404af83b2893ac06be6716d656ddcead24c71",
+  "files": {
+    "macos/TacitCompanion/Sources/TacitCompanion/Client.swift": "46e977d99fafe1de75b924285982d5b57a154b945d908adfb632a80216fc7ccf",
+    "macos/TacitCompanion/Sources/TacitCompanion/CommunicationWorkspace.swift": "9322036205451ea1e521b2437a64dd720454585845b3e0368d54c282601cf068",
+    "macos/TacitCompanion/Sources/TacitCompanion/CompanionContent.swift": "c86181f56815a7ea46f1f1093d0bbec086b9e569fb1e2bd7f55a57f6ac5f1a39",
+    "macos/TacitCompanion/Tests/TacitCompanionTests/AuthoredPendingAuditTests.swift": "14ff2fe67dda935771960bafd6e270b0fee970e29794bd45e5a6d80a48910444",
+    "macos/TacitCompanion/Tests/TacitCompanionTests/ConversationAuditTests.swift": "5a09c96736f42570114bd1b946e65af4e0c81b279c96249b514fb5d20c78c732",
+    "docs/qa/conversation.test.ts": "cbe6afa65e2d6da69c8de544461af0119b99259b5898532591238f838964bc91",
+    "docs/qa/vitest.config.mjs": "4f3082e0ca4c3e6877126def00269ae87189a60d55696839329e79b75cb842c3",
+    "docs/qa/verify-p1.mjs": "a906b3bf42dd851a2d9e3f5c3b657e612b50893ea74dfed8741f4f2b5f9cabba",
+    "docs/P1_RELIABILITY_HANDOFF_CODEX.md": "1765a60be4f16effeedb7402374823fde954b20590fa1a01c5f7ece8e04d19ff"
+  },
+  "validation": {
+    "roundtrip": "PASS: dry-run/apply to clean baseline export; all nine patched file hashes and full exported source checked",
+    "report": "server/data/p1-reliability/2026-11-15T03-05-50-491Z/report.json"
+  }
+}
