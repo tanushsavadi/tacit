@@ -14,7 +14,7 @@ struct ReviewDraft: Equatable {
 }
 
 /// Compact review: exact backend candidates, no preselection, one deliberate Speak.
-/// The correction editor is a separate surface opened only by Edit.
+/// The correction editor remains in the same surface and takes focus only after Edit.
 struct RecognitionReview: View {
     @ObservedObject var client: TacitClient
     var onEdit: (() -> Void)?
@@ -22,30 +22,40 @@ struct RecognitionReview: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(client.reviewDraft.editing ? "Your correction" : "Review").font(.system(size: 13, weight: .semibold))
+                Text(client.reviewDraft.editing ? "Your correction" : "Silent speech · choose what you mean")
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.72))
                 Spacer()
-                Button { client.pauseEverything() } label: { Image(systemName: "pause.fill") }.accessibilityLabel("Pause Live and voice")
-                Button { client.stopEverything() } label: { Image(systemName: "stop.fill") }.accessibilityLabel("Emergency stop everything")
-            }.buttonStyle(.plain)
+                if onEdit == nil { Button { client.pauseEverything() } label: { Image(systemName: "pause.fill") }.accessibilityLabel("Pause Live and voice")
+                Button { client.stopEverything() } label: { Image(systemName: "stop.fill") }.accessibilityLabel("Emergency stop everything") }
+            }.buttonStyle(CommunicationButtonStyle())
             if client.canReviewCurrent, let h = client.lastHypothesis {
                 if client.reviewDraft.editing {
                     TextField("Your exact words", text: $client.reviewDraft.text, axis: .vertical)
-                        .lineLimit(3...5).font(.system(size: 18)).textFieldStyle(.plain).focused($editing)
-                        .accessibilityLabel("Your correction, user-authored text")
+                        .lineLimit(2...3).font(.system(size: 18)).textFieldStyle(.plain).focused($editing)
+                        .accessibilityLabel("Your correction, user-authored text").defaultFocus($editing, true)
                     Text("Written by you · \(client.reviewDraft.text.utf16.count)/500").font(.system(size: 10)).foregroundStyle(.secondary)
                 } else {
-                    Text(client.reviewDraft.candidate?.text ?? h.text).font(.system(size: 20, weight: .medium))
-                        .tracking(-0.4).lineLimit(onEdit == nil ? 6 : 3).textSelection(.enabled)
+                    ScrollView {
+                        Text(client.reviewDraft.candidate?.text ?? h.text).font(.system(size: 20, weight: .medium))
+                            .tracking(-0.4).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }.frame(maxHeight: onEdit == nil ? 120 : 78)
+                        .accessibilityLabel("Exact words to review")
                     HStack(spacing: 8) {
-                        Button(client.reviewDraft.candidate?.kind == "raw" ? "✓ Raw words" : "Choose raw words") {
+                        Button {
                             if let raw = h.candidates.first(where: { $0.kind == "raw" }) { client.chooseReview(raw, of: h.id) }
-                        }
+                        } label: {
+                            Label(client.reviewDraft.candidate?.kind == "raw" ? "Raw words selected" : "Choose raw words",
+                                  systemImage: client.reviewDraft.candidate?.kind == "raw" ? "checkmark.circle.fill" : "circle")
+                                .padding(.horizontal, 9).frame(height: 30)
+                                .background(.white.opacity(0.10), in: Capsule())
+                        }.buttonStyle(CommunicationButtonStyle())
                         if h.candidates.count > 1 {
                             Menu("Alternatives") {
                                 ForEach(h.candidates.filter { $0.kind != "raw" }) { c in
                                     Button("\(c.kind == "phrase" ? "Phrase list" : "Decoder alternative"): \(c.text)") { client.chooseReview(c, of: h.id) }
                                 }
-                            }.fixedSize()
+                            }.menuStyle(.borderlessButton).fixedSize().padding(.horizontal, 6).frame(height: 30)
+                                .background(.white.opacity(0.08), in: Capsule())
                         }
                         Spacer(minLength: 0)
                     }.font(.system(size: 10)).controlSize(.small)
@@ -56,17 +66,16 @@ struct RecognitionReview: View {
                         .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
                     Spacer(minLength: 0)
                     if !client.reviewDraft.editing {
-                        Button("Edit") {
+                        IslandAction("Edit", symbol: "pencil") {
                             guard let base = client.reviewDraft.candidate ?? h.candidates.first else { return }
                             client.chooseReview(base, of: h.id, editing: true)
                             if let onEdit { onEdit() } else { editing = true }
-                        }.font(.system(size: 11))
+                        }
                     }
                     if client.output?.state != "ready" {
-                        Button(client.output?.state == "paused" ? "Resume voice" : "Enable voice") { client.output(client.output?.state == "paused" ? "resume" : "enable") }
-                            .disabled(client.route?.state != "ready")
+                        OutputAuthorizationButton(client: client)
                     } else {
-                        Button("Speak") { _ = client.speakReviewed() }
+                        IslandAction("Speak", symbol: "arrow.up", prominent: true) { _ = client.speakReviewed() }
                             .keyboardShortcut(.return, modifiers: .command)
                             .disabled(client.reviewDraft.candidate == nil || client.reviewDraft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || client.reviewDraft.text.utf16.count > 500 || client.route?.state != "ready")
                     }
@@ -82,6 +91,9 @@ struct RecognitionReview: View {
                 Spacer()
             }
         }.tint(.mint).preferredColorScheme(.dark)
-        .onAppear { editing = client.reviewDraft.editing }
+        .task(id: client.reviewDraft.editing) {
+            await Task.yield()
+            editing = client.reviewDraft.editing
+        }
     }
 }

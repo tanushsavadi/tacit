@@ -34,7 +34,16 @@ final class TacitClient: ObservableObject {
     @Published private(set) var lastDelivery: Delivery?
     @Published var notice: String?
     @Published var typedDraft = ""
-    @Published var reviewDraft = ReviewDraft()
+    @Published private(set) var preservedCorrection: String?
+    @Published var reviewDraft = ReviewDraft() {
+        willSet {
+            if reviewDraft.editing, !reviewDraft.text.isEmpty,
+               newValue.utteranceID != reviewDraft.utteranceID,
+               reviewSubmittedID != reviewDraft.utteranceID {
+                preservedCorrection = reviewDraft.text
+            }
+        }
+    }
     @Published private(set) var reviewSubmittedID: String?
     private var serverClockOffset: Double = 0
     private var reviewExpiryWork: DispatchWorkItem?
@@ -56,12 +65,18 @@ final class TacitClient: ObservableObject {
     private var hotKey: HotKey?
     @Published private(set) var hotKeyRegistered = false
 
-    init(registerHotKey: Bool = true, connectOnInit: Bool = true) {
+    /// Dependency injection for offline tests/lab. This transport never opens a socket or reads credentials.
+    struct IsolatedTransport { var send: ([String: Any]) -> Void }
+    private let isolatedTransport: IsolatedTransport?
+    var isIsolated: Bool { isolatedTransport != nil }
+    init(registerHotKey: Bool = true, connectOnInit: Bool = true, isolatedTransport: IsolatedTransport? = nil) {
+        self.isolatedTransport = isolatedTransport
+        if isolatedTransport != nil { conn = .connected }
         repoRoot = Bundle.main.object(forInfoDictionaryKey: "TACITRepoRoot") as? String
             ?? ProcessInfo.processInfo.environment["TACIT_REPO_ROOT"]
         // Ctrl-Shift-Cmd-. = Stop everything, from any app, registered at launch (not when the menu first opens).
         // (Ctrl-Opt-Cmd-. is taken by macOS "Increase contrast".)
-        if registerHotKey {
+        if registerHotKey && isolatedTransport == nil {
             hotKey = HotKey(keyCode: UInt32(kVK_ANSI_Period), modifiers: UInt32(controlKey | shiftKey | cmdKey)) { [weak self] in
                 Task { @MainActor in self?.stopEverything() }
             }
@@ -82,6 +97,7 @@ final class TacitClient: ObservableObject {
     }
 
     func connect() {
+        if isolatedTransport != nil { resetServerState(); conn = .connected; return }
         reconnectWork?.cancel(); connectGeneration += 1
         task?.cancel(with: .goingAway, reason: nil); task = nil
         resetServerState(); cachedToken = nil; conn = .connecting
@@ -96,6 +112,11 @@ final class TacitClient: ObservableObject {
             let t = self.session.webSocketTask(with: url)
             self.task = t; t.resume(); self.receive(t, gen)
         }
+    }
+
+    func disconnectIsolatedTransport() {
+        guard isolatedTransport != nil else { return }
+        resetServerState(); conn = .disconnected("Offline lab connection-loss fixture")
     }
 
     private func resetServerState() {
@@ -250,6 +271,7 @@ final class TacitClient: ObservableObject {
     }
 
     private func send(_ obj: [String: Any]) {
+        if let isolatedTransport { isolatedTransport.send(obj); return }
         guard conn == .connected, let t = task, let d = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: d, encoding: .utf8) else { notice = "Not connected to TACIT."; return }
         t.send(.string(s)) { [weak self] e in
@@ -277,7 +299,20 @@ final class TacitClient: ObservableObject {
         if output?.state == "ready" { output("pause") }
     }
 
-    /// User-authored typed text only. Never fed from recognised text.
+    var canSpeakAuthored: Bool {
+        conn == .connected && output?.state == "ready" && output?.authorizationId != nil
+            && pendingOutputGeneration == nil && route?.state == "ready"
+    }
+    var authoredUnavailableReason: String? {
+        if conn != .connected { return "Reconnect to use voice output." }
+        if route?.state != "ready" { return "Voice output unavailable. Check your call microphone in settings." }
+        if pendingOutputGeneration != nil { return "Waiting for voice authorization…" }
+        if output?.state == "paused" { return "Voice is paused. Resume it deliberately to speak." }
+        if output?.state != "ready" { return "Enable voice for this session before speaking." }
+        return nil
+    }
+
+    /// User-authored or deliberately selected saved text only. Never fed from recognised text.
     @discardableResult
     func speakTyped(_ text: String) -> Bool {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -287,6 +322,7 @@ final class TacitClient: ObservableObject {
             notice = t.utf16.count > 500 ? "Keep typed speech within 500 characters." : "The virtual microphone is not ready."
             return false
         }
+        notice = nil
         // outputGeneration: if output was paused/interrupted after this was written, the server refuses it.
         send(["type": "speak_typed", "requestId": UUID().uuidString, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1])
         return true
@@ -328,6 +364,7 @@ final class TacitClient: ObservableObject {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf16.count <= 500 else {
             notice = "Keep your words within 500 characters."; return false
         }
+        notice = nil
         let requestID = UUID().uuidString
         let request: [String: Any] = ["type":"speak_reviewed", "requestId":requestID,
             "outputAuthorizationId":outputAuth, "outputGeneration":output.generation,
@@ -356,6 +393,7 @@ final class TacitClient: ObservableObject {
     // MARK: - local runtime
 
     func startServer() {
+        guard isolatedTransport == nil else { notice = "Offline lab · runtime controls disabled."; return }
         guard let root = repoRoot else { notice = "Unknown TACIT folder (rebuild the app with build-app.sh)."; return }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -379,6 +417,7 @@ final class TacitClient: ObservableObject {
 
     /// Opens the detailed workspace in the browser. The token goes straight to NSWorkspace (no child process argv).
     func openWorkspace() {
+        guard isolatedTransport == nil else { notice = "Offline lab · no camera or workspace connection."; return }
         guard let tok = cachedToken, var c = URLComponents(string: "http://127.0.0.1:\(port)/") else { notice = "No access token found."; return }
         c.queryItems = [URLQueryItem(name: "token", value: tok)]
         if let u = c.url { NSWorkspace.shared.open(u) }
