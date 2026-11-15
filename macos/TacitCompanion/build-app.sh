@@ -11,6 +11,8 @@ BIN="$(swift build -c release --show-bin-path)/TacitCompanion"
 APP=".build/TACIT.app"
 rm -rf "$APP"; mkdir -p "$APP/Contents/MacOS"
 cp "$BIN" "$APP/Contents/MacOS/TacitCompanion"
+mkdir -p "$APP/Contents/Resources"
+cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
 NODE_DIR="$(dirname "$(command -v node)")"
 ROOT_XML="$(printf '%s' "$ROOT" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g')"
 cat > "$APP/Contents/Info.plist" <<PLIST

@@ -30,6 +30,10 @@ enum SelfTest {
         guard await wait("connection + status", 15, { c.conn == .connected && c.output != nil && c.live != nil && c.route != nil }) else { return false }
         ok = check(true, "connected; Live \(c.live!.state), voice output \(c.output!.state), virtual mic \(c.route!.state) \(c.route!.device ?? "")") && ok
 
+        guard c.live?.state == "off", c.output?.state == "off" else {
+            return check(false, "Selftest requires idle Live and voice output; no active session was changed")
+        }
+
         // Voice output buttons
         c.output("enable")
         ok = await wait("voice output ready") { c.output?.state == "ready" } && ok

@@ -1,4 +1,120 @@
-> **Latest checkpoint: STABLE · 2026-11-14 ~11:55 UTC. Frontend scope frozen.** The web app is setup, calibration, typed fallback, and judge demonstration. It is not the everyday call interface. Display-only Live, readiness, and recovery are verified against 127.0.0.1:8790. Automatic transmission stays off. No further dashboard work. Yielded for Claude. Human steps are in `web/HUMAN_TEST.md`.
+# STABLE — yielded for Claude
+
+**Native notch + reviewed-speech checkpoint · 2026-11-14 21:09 UTC. Sol has stopped editing all files listed below and explicitly yields them to Claude for review, atomic staging/commit and push. Claude remains the sole Git writer.** No Git writes by Sol. All earlier frontend checkpoints below are historical; this section is authoritative for the companion.
+
+## Delivered native experience
+
+- Primary island **420 × 258 points**, no scrolling. Small identity/status, at most three lines of exact raw text, one context-dependent action, typed fallback, secondary menu and immediate Stop. No settings dashboard, route jargon, large empty card or permanent text editor in the notch.
+- Collapsed island measures the physical notch from NSScreen safe-area/auxiliary areas; tiny genuine activity dot and Pause when Live/voice is enabled. No idle waveform or animation loop. Non-notch fallback, selectable display and screen/wake repositioning implemented. Normal launch is menu-bar only; no automatic keyboard focus. Hover dwell 180 ms, leave delay 550 ms, measured-result reveal five seconds; actual NSPanel frame shrinks on collapse.
+- Deep black shell, restrained mint activity, soft notch shoulders. Motion respects Reduced Motion; high-contrast mode strengthens the silhouette outline. Real native accessibility tree inspected. Editors take keyboard focus only after an explicit action; Escape dismisses them/collapses keyboard-opened island.
+- Typed AAC opens separately in a **440 × 285 pt** editor. Correction editor uses the same compact size. Text is user-authored, retained in RAM only, limited to 500 UTF-16 code units. Cmd-Return Speak and Command-A editing verified in the real native editor. Diagnostics/route controls open in a separate intentional utility window. Menu-bar fallback has the same compact controls.
+- Raw text remains exact. Real mouth brightness <90 produces a concise lighting warning; exact phrase result/rejection, model, actual voice, route/readers/warnings and detailed timing are in the transcript/diagnostics surfaces. Compact latency appears only when all published timing fields exist. Local render never means remote audibility.
+- Pause, End Live, voice Enable/Pause/Resume/Off, Stop and global shortcut registration preserved. Open/Stop hotkeys now dispatch only their own Carbon event IDs (a real bug found when adding the second shortcut). Stop is always available in the compact surface and editors.
+
+## Reviewed speech — integrated with Claude's published contract
+
+Consumed HANDOFF's dedicated `speak_reviewed` contract (`7853bd8`); no shared/backend edits. Review is offered ONLY for actual, current `reviewCandidates` with valid exact hashes, matching Live authorization/generation and unexpired server deadline. No preselection. User chooses exact raw/decoder/phrase candidate, or deliberately opens Edit. No AI suggestion invented; alternatives are labelled decoder alternatives or phrase-list candidates.
+
+Speak sends only `speak_reviewed`: exact candidate kind/index/text/hash, utterance ID, Live authorization/generation and current output authorization/generation. Edits get their own SHA-256 and `candidate: edited`; the server labels them `user-corrected`. Never routed through `speak_typed`. New hypotheses, pause, generation changes, replacement, reconnect and expiry clear review selection; submission is locally locked until a refusal or new utterance. No automatic transmission or timeout send.
+
+Native receiver rejects nil/wrong authorization, paused or stale-generation results, duplicate utterances and old output deliveries. Reconnect clears all server-derived state. Send errors no longer expose potentially credential-bearing localized URLs. Credential reading happens off the UI thread, so macOS Documents access cannot freeze the shell at startup.
+
+## Exact files yielded
+
+All paths below are the complete cohesive native change; tests/notices/tools belong with it:
+
+- `macos/TacitCompanion/Package.swift`
+- `macos/TacitCompanion/build-app.sh`
+- `macos/TacitCompanion/THIRD_PARTY_NOTICES.md`
+- `macos/TacitCompanion/Sources/TacitCompanion/App.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/Client.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/HotKey.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/SelfTest.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/IslandController.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/IslandGeometry.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/IslandView.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/CompanionContent.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/Presentation.swift`
+- `macos/TacitCompanion/Sources/TacitCompanion/ReviewedTextView.swift`
+- `macos/TacitCompanion/Tests/TacitCompanionTests/CompanionTests.swift`
+- `macos/TacitCompanion/tools/open-companion.mjs`
+- `macos/TacitCompanion/tools/recognition-check.mjs`
+- `docs/WORKSTREAM_SOL.md`
+
+No web source changes in this sprint. Local screenshots under `web/evidence/native/` are ignored and must NOT be committed. No edits by Sol to server/shared/recognition/TacitRoute, root notices, AGENTS or HANDOFF; concurrent Claude work preserved. Suggested coherent commit subject: `feat(macos): add compact notch and explicit reviewed speech`.
+
+## Actual verification
+
+| Check | Result |
+|---|---|
+| `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path macos/TacitCompanion` | **16/16 PASS**, 0 failures, final run 2026-11-14 21:03 UTC |
+| `macos/TacitCompanion/build-app.sh` | **PASS**, release `swift build -c release`, app assembled, ad-hoc signing + `codesign --verify --strict` passed; final package 21:05 UTC |
+| `node macos/TacitCompanion/tools/open-companion.mjs --selftest` | **7/7 PASS**, exit 0, final run 21:05 UTC: typed local render, paused-send block, voice pause/resume, Live pause/resume, Stop to off/off |
+| Native reviewed selection → Speak | Actual UI Choose raw words → Speak; real existing silent video → real Auto-AVSR → 5 actual candidates → `reviewed-recognition` queued/synthesizing/routing/**rendered** at BlackHole, remoteAudibility unknown |
+| Native correction → Speak | Actual Edit, Command-A, entered test correction, Cmd-Return; dedicated endpoint produced `user-corrected` → **rendered**, no raw-to-typed shortcut |
+| Native Pause and stale review | Actual Pause cleared review/words, Live paused, voice paused; no prior candidate selected on next utterance |
+| Native emergency interruption | Actual 287-character typed test reached routing/first audio; native Stop button produced **interrupted**, Live off and voice off |
+| Actual visual inspection | Collapsed, compact Ready, Live/raw result, compact Review with no preselection, Paused, separate typed/correction editor, longer two-line incorrect raw output and genuine low-light warning inspected using CUA |
+| Safety/geometry tests | Active authorization, duplicate rejection, generation/expiry, hash mismatch, output-scoped delivery, reconnect clearing, exact correction/hash, paused typed block, stale notice, notch/negative/offset/non-notch geometry and 420×258 bounds passed |
+| Tools | Both `.mjs` files `node --check` PASS |
+| Whitespace | `git diff --check -- macos/TacitCompanion docs/WORKSTREAM_SOL.md` PASS |
+
+Integration inputs were EXISTING private silent recordings (development sessions B/C), replayed as timestamped JPEGs into the real backend by the companion-owned QA harness. They are **recorded input**, not a fresh live-camera/human evaluation, independent accuracy test or demo of browser capture. No accuracy claim, no reference-based correction, no private transcript written here. Wrong longer raw output was preserved and visually inspected, alongside genuine measured lighting feedback. Timings on these protocol replays are not physical human end-to-text measurements. Automatic transmitted remained false.
+
+All shared-runtime test runs checked Live/output off and known zero route readers before activation. QA ended its own sessions; final selftest left Live and output off. Existing backend was not restarted by Sol. App is left running in **normal menu-bar mode**, final release, connected and collapsed, no camera activated by the companion. No QA harness left running.
+
+## Real screenshots and provenance
+
+Actual final release screenshots saved via CUA, not renders/mockups:
+
+- `web/evidence/native/final-collapsed.png` — normal menu-bar release, real Ready state, measured physical-notch shell (522×80 raster at 2×).
+- `web/evidence/native/final-expanded.png` — normal release, compact Ready state (840×516 raster = **420×258 pt**), all basic controls visible.
+
+Live, Review, Paused, correction and longer/low-light states were also captured and inspected in this session's CUA tool output. Those additional images are not claimed as saved local artifacts. Some screenshot calls during resizing returned stale partial compositor images; re-binding the current native app and capturing the settled state showed the complete correct panel. Final saved images are the settled normal-release states above.
+
+## Exact launch / check commands
+
+From the repository root, with the local runtime already running:
+
+```sh
+macos/TacitCompanion/build-app.sh
+node macos/TacitCompanion/tools/open-companion.mjs
+node macos/TacitCompanion/tools/open-companion.mjs --selftest
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path macos/TacitCompanion
+```
+
+The launcher supplies the existing user token via the child's environment, never argv/logs/bundle or new storage. This avoids requiring an ad-hoc GUI build to read the entire Documents folder. Plain `open macos/TacitCompanion/.build/TACIT.app` also works when that app has file access, but this machine exhibited a blocking macOS credential-file open under GUI launch; **use the Node launcher for the demo**. `--inspect-ui` is an optional development flag (temporary normal app/Dock presence, keyboard-opened/pinned island); normal launch does not use it.
+
+Optional QA, only while the shared runtime is idle/no route readers:
+
+```sh
+node macos/TacitCompanion/tools/recognition-check.mjs /absolute/path/to/existing-clip.mp4
+```
+
+Harness commands: `send`, `pause`, `resume`, `voice`, `end`. No audio automatically follows a recognition. Voice commands authorize output for explicit native Speak only. Harness closes after four minutes, owns its authorization, stops only output it enabled, prints metadata without transcripts/tokens, and deletes its temporary JPEG files. It refuses an already-active session.
+
+## Browser handoff and physical Meet procedure
+
+The browser STILL owns camera capture. Open workspace is an explicit private localhost URL handoff (no camera activation). Keep the **original camera workspace visible in its own browser window** beside Meet. Hiding the tab pauses capture; the native primary action then says **Resume in workspace**. A secondary menu retains server Resume, but that alone does not reacquire browser camera capture. No promise of background recognition, automatic capture restart or native webcam ownership.
+
+1. Launch with the Node command above. Open workspace, light face from front, Start Live preview once. Verify genuine current text appears in the notch; it must not speak automatically.
+2. In Google Meet select **BlackHole 16ch** as microphone. Open TACIT diagnostics to check real route/readers; enable voice once before the mouth-to-call test. Join a second device/person. A nonempty local reader list is not remote-audibility proof.
+3. Mouth a NEW silent sentence, wait for raw result. Review → deliberately choose an actual candidate, or Edit exact intended words → Speak. Ask the remote person what they actually heard; record success/failure separately. This new physical reviewed path has **not** been human-verified in this Sol sprint.
+4. During speech press native Stop; also physically check ⌃⇧⌘. before presenting. Pause must clear review/cut output. Resume capture in the original workspace, then mouth again; old results must remain unspeakable. Stop must not automatically reopen the camera.
+5. Typed AAC is one keyboard icon away. Compose your own fallback sentence; do not paste raw recognition into typed AAC to imply recognition-to-voice automation.
+
+## Limits / next priorities for Claude and human test
+
+- Physical Google Meet audibility of the NEW reviewed/corrected flow, whole-system stop latency, physical keyboard shortcut dispatch, full VoiceOver user navigation, Reduced Motion toggling, fullscreen/multi-monitor rearrangement/hotplug and prolonged conversation are **unverified** here. Native AX labels, standard editing/Cmd-Return, code-level reduced-motion behavior and geometry regression tests are verified as described above.
+- Recognition accuracy remains the frozen human baseline **44% WER, 2/5 exact**; the ≤5% / ≥90% release target is **NOT VALIDATED**. The notch does not improve recognition accuracy or false-trigger handling. Automatic transmission remains disabled.
+- No native articulation/capture-freshness/recognition-processing signal is published. UI says Live preview for the real server session, and Preparing voice/Speaking only for actual speech-delivery state/firstAudioAt. Minimal additive browser-capture status could improve the Resume handoff later.
+- No LLM suggestion schema used. Actual decoder alternatives/phrase candidates only. No speculative WRITE/ACT work.
+- Small MIT adaptations: NotchDrop `Ext+NSScreen.swift` at e70b3d715a99e47de6eb823540282eafc7401a3a (notch measurement), Cyclop `NotchPanel.swift` at 8d1b9b2045979dc7bbe742994d1cd89d51090d65 (nonactivating panel/edit dispatch). Full notices retained in companion-local THIRD_PARTY_NOTICES and bundled Resources. Coucou/CodeIsland were references; no GPL code copied. Claude may add root notice entries; root file was not edited by Sol.
+- Failures fixed in this sprint: initial oversized dashboard redesigned; Carbon hotkey cross-dispatch fixed (first fix briefly failed Swift C-callback compilation because of dynamic Self, corrected to concrete HotKey); GUI token read moved off UI thread + safe terminal launcher; stale notices/results/deliveries and malformed hash candidates rejected. All final checks above are after these fixes.
+
+**Explicit yield: Sol is finished editing the 17 listed files. Claude may commit them now.** Build output, private recordings and ignored screenshots must remain out of Git. No required source work remains for this native checkpoint.
+
+---
 
 ## Demo readiness · 2026-11-14 ~11:55 UTC
 

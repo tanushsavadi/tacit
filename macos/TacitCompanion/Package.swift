@@ -8,5 +8,6 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(name: "TacitCompanion", linkerSettings: [.linkedFramework("Carbon"), .linkedFramework("AppKit")]),
+        .testTarget(name: "TacitCompanionTests", dependencies: ["TacitCompanion"]),
     ]
 )
