@@ -25,6 +25,19 @@ struct CommunicationWorkspace: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if !session.isHome, session.surface != .compose, client.canReviewCurrent, !client.reviewDraft.editing {
+                Button { session.goHome() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "text.bubble.fill")
+                        Text("New words to review").font(.system(size: 12, weight: .semibold))
+                        Spacer(minLength: 0)
+                        Text("Show").font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                    }.padding(.horizontal, 12).frame(height: 32).foregroundStyle(.black)
+                        .background(Color.mint, in: Capsule())
+                }.buttonStyle(CommunicationButtonStyle()).accessibilityIdentifier("review-banner")
+                    .accessibilityLabel("New recognized words to review. Show them.")
+            }
             Group {
                 switch session.surface {
                 case .conversation: conversation
@@ -56,9 +69,18 @@ struct CommunicationWorkspace: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Button { session.surface = .conversation } label: {
+            if session.isHome {
                 Text("tacit").font(.system(size: 15, weight: .semibold, design: .rounded)).tracking(-0.5)
-            }.buttonStyle(CommunicationButtonStyle()).accessibilityLabel("TACIT conversation")
+                    .accessibilityAddTraits(.isHeader)
+            } else {
+                Button { session.goHome() } label: {
+                    Label("Camera", systemImage: "chevron.left").font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 10).frame(height: 28)
+                        .background(.white.opacity(0.14), in: Capsule())
+                }.buttonStyle(CommunicationButtonStyle()).foregroundStyle(.white)
+                    .accessibilityLabel("Back to camera").help("Back to camera · esc")
+                    .accessibilityIdentifier("back-to-camera")
+            }
             Text(client.isIsolated ? "OFFLINE · " + statusTitle : statusTitle).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(statusColor)
                 .accessibilityIdentifier("communication-state")
             Spacer(minLength: 0)
@@ -222,6 +244,18 @@ struct CommunicationWorkspace: View {
 
     private var dock: some View {
         HStack(spacing: 6) {
+            Button { session.goHome() } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "viewfinder").font(.system(size: 13))
+                        .overlay(alignment: .topTrailing) {
+                            if live.camera.state.running { Circle().fill(Color.green).frame(width: 6, height: 6).offset(x: 3, y: -2) }
+                        }
+                    Text("Camera").font(.system(size: 11, weight: .semibold))
+                }.padding(.horizontal, 10).frame(height: 36)
+                    .background(session.isHome ? .white.opacity(0.16) : .white.opacity(0.06), in: Capsule())
+            }.buttonStyle(CommunicationButtonStyle()).foregroundStyle(.white)
+                .accessibilityLabel(live.camera.state.running ? "Camera and recognized words, camera on" : "Camera and recognized words")
+                .accessibilityAddTraits(session.isHome ? .isSelected : []).accessibilityIdentifier("dock-camera")
             Button {
                 session.holdTurn(using: client)
             } label: {

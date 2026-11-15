@@ -58,11 +58,11 @@ struct PersonalPhrase: Codable, Equatable, Identifiable {
     }
     @discardableResult func speakSelection(using client: TacitClient) -> Bool {
         guard let phrase = phrases.first(where: { $0.id == phraseSelection }), client.speakTyped(phrase.text) else { return false }
-        recordRequest(phrase.text); return true
+        recordRequest(phrase.text); goHome(); return true
     }
     @discardableResult func speakDraft(using client: TacitClient) -> Bool {
         guard client.speakTyped(client.typedDraft) else { return false }
-        recordRequest(client.typedDraft); return true
+        recordRequest(client.typedDraft); goHome(); return true // the draft stays in the composer for reuse
     }
     @discardableResult func useAssistanceDraft(in client: TacitClient) -> Bool {
         let combined = client.typedDraft.isEmpty ? assistanceDraft : client.typedDraft + "\n" + assistanceDraft
@@ -71,6 +71,20 @@ struct PersonalPhrase: Codable, Equatable, Identifiable {
     }
 
     func recordRequest(_ text: String) { lastRequestedWords = text }
+
+    // Navigation: the camera / recognition view is home. Every other surface has a visible way back to it.
+    var isHome: Bool { surface == .conversation }
+    func goHome() { surface = .conversation }
+    /// Escape steps back toward home before it collapses the notch (customize → phrases → home → collapse).
+    enum EscapeResult: Equatable { case navigated, collapse }
+    func escape() -> EscapeResult {
+        switch surface {
+        case .conversation: return .collapse
+        case .customize: surface = .phrases
+        default: surface = .conversation
+        }
+        return .navigated
+    }
     func clearContext() { context = ""; assistanceDraft = ""; selectedPath = nil }
     func choosePath(_ path: ResponsePath) {
         selectedPath = path
