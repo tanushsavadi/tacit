@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="3.650 1.560 69.880 18.790" role="img" aria-label="TACIT">
+  <title>TACIT</title>
+  <path d="M5.377 9.051 A7.25 7.25 0 0 1 18.623 9.051" fill="none" stroke="#0A0D0C" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M18.623 14.949 A7.25 7.25 0 0 1 5.377 14.949" fill="none" stroke="#0A0D0C" stroke-width="2.200" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M14.45 12 A2.45 2.45 0 0 1 9.55 12 A2.45 2.45 0 0 1 14.45 12 Z" fill="#0B7D6B"/>
+  <g transform="matrix(0.900 0.000 0.000 0.900 24.350 -0.600)">
+  <path d="M3.6 4.6 L3.6 16.4 Q3.6 20 6.6 20" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M1.4 8 L6.6 8" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M23.6 14 A6 6 0 0 1 11.6 14 A6 6 0 0 1 23.6 14" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M23.6 8 L23.6 20" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M38.843 18.243 A6 6 0 1 1 38.843 9.757" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M43.44 8 L43.44 20" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M45.04 4 A1.6 1.6 0 0 1 41.84 4 A1.6 1.6 0 0 1 45.04 4 Z" fill="#0B7D6B"/>
+  <path d="M50.24 4.6 L50.24 16.4 Q50.24 20 53.24 20" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M48.04 8 L53.24 8" fill="none" stroke="#0A0D0C" stroke-width="2.800" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

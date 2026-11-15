@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Concept B — The Tacit T">
+  <title>Concept B — The Tacit T (exploration, not selected)</title>
+  <!-- A T whose crossbar is one soft articulation wave; the stem ends in the voice dot. -->
+  <path d="M3.8 8.4 C6.4 5.4 8.8 11.4 12 8.4 S17.6 5.4 20.2 8.4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M12 8.4 V16.4" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round"/>
+  <circle cx="12" cy="20.1" r="1.8" fill="#62E3C4"/>
+</svg>
