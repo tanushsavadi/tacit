@@ -11,6 +11,9 @@
 #   ./scripts/tacit.sh preflight    PASS / FAIL / USER ACTION per dependency (works with or without a running server)
 #   ./scripts/tacit.sh open         open the private TACIT workspace in the default browser (token never printed)
 #   ./scripts/tacit.sh logs         follow the server log
+#   ./scripts/tacit.sh flow [start|stop]  the separate TACIT Flow demo (simulated meeting input) INSTEAD of the notch:
+#                                   start quits the TACIT notch app (server stays up) and starts Flow with local audio;
+#                                   stop ends Flow and reopens the notch. `demo` also stops Flow (one notch at a time)
 #   ./scripts/tacit.sh profile [status|base|personal-demo] [--force]  recognizer model profile; restarts only the
 #                                   recognition sidecar while TACIT is idle. personal-demo = EXPERIMENTAL personal
 #                                   overlay (Review First enforced); base = rollback to the unchanged model
@@ -96,6 +99,35 @@ status() {
 
 APP="$ROOT/macos/TacitCompanion/.build/TACIT.app"
 companion_pids() { pgrep -f '/TACIT.app/Contents/MacOS/TacitCompanion' 2>/dev/null || true; }
+# Only ONE notch app may run: every TACIT build places its island at the same top-centre frame and window level, so a
+# second one (e.g. the separate "TACIT Flow Demo" app) sits invisibly over the first and takes its clicks and hover.
+FLOW_DIR="${TACIT_FLOW_DIR:-$HOME/Documents/TACIT-Flow-Development/2026-11-15/demo-ready}"
+flow_app_pids() { pgrep -f 'TACIT Flow [^/]*\.app/Contents/MacOS/TacitCompanion' 2>/dev/null || true; }
+live_state() { (cd "$SERVER" && npx tsx scripts/vsr-profile.ts status 2>/dev/null) | sed -n 's/^server: .*live \([a-z]*\)\/.*/\1/p'; }
+stop_flow_demo() {
+  [ -z "$(flow_app_pids)" ] && [ ! -f "$FLOW_DIR/data/processes.json" ] && return 0
+  if [ -x "$FLOW_DIR/stop.command" ]; then
+    say "· stopping the TACIT Flow demo (its own stop.command; demo-owned processes only)"; "$FLOW_DIR/stop.command" | sed 's/^/  /'
+    for i in $(seq 1 40); do [ -z "$(flow_app_pids)" ] && break; sleep 0.25; done
+  fi
+  [ -z "$(flow_app_pids)" ] || { say "✗ a TACIT Flow app is still running (pid $(flow_app_pids | tr '\n' ' ')) — quit it, then rerun"; exit 1; }
+}
+# The Flow demo (simulated meeting input, local speaker audio, own ports 19890/19892) in place of the TACIT notch.
+flow() {
+  case "${1:-start}" in
+    start)
+      [ -x "$FLOW_DIR/start.command" ] || { say "✗ Flow demo not found at $FLOW_DIR (set TACIT_FLOW_DIR)"; exit 1; }
+      local ls; ls="$(live_state)"
+      if [ -n "$ls" ] && [ "$ls" != off ]; then say "✗ TACIT Live is $ls — press Stop in the notch first"; exit 1; fi
+      for p in $(companion_pids); do say "· quitting the TACIT notch app (pid $p); the TACIT server keeps running"; kill "$p" 2>/dev/null || true; done
+      for i in $(seq 1 40); do [ -z "$(companion_pids)" ] && break; sleep 0.25; done
+      "$FLOW_DIR/start.command" --local-output ;;
+    stop)
+      stop_flow_demo
+      say "· reopening the TACIT notch app"; open "$APP" ;;
+    *) say "usage: tacit.sh flow [start|stop]"; exit 64 ;;
+  esac
+}
 
 # One entry point for a demo. Idempotent: healthy services are never restarted, so an active call is not disturbed.
 demo() {
@@ -111,6 +143,7 @@ demo() {
   if is_tacit; then say "✓ TACIT server already running (pid $(listener_pid "$PORT")) — left as is"
   else start | sed 's/^/  /'; is_tacit || { say "✗ TACIT server did not start — see ./scripts/tacit.sh logs"; exit 1; }; fi
   # 3. Exactly one TACIT app. Opening a running app only brings its notch forward (it never starts the camera).
+  stop_flow_demo
   local pids n
   pids="$(companion_pids)"; n=$(printf '%s' "$pids" | grep -c . || true)
   if [ "$n" -gt 1 ]; then say "! $n TACIT apps are running — quitting all but this checkout's"; fi
@@ -148,6 +181,7 @@ case "${1:-help}" in
   preflight) (cd "$SERVER" && npx tsx scripts/preflight.ts) ;;
   open) (cd "$SERVER" && npx tsx scripts/open-workspace.ts) ;;
   logs) tail -f "$LOG" ;;
+  flow) flow "${2:-start}" ;;
   profile) shift; (cd "$SERVER" && npx tsx scripts/vsr-profile.ts "${@:-status}") ;;
-  *) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
+  *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
 esac
