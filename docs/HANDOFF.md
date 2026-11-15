@@ -1,28 +1,32 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 01:55 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (backend/speech/integration, Git owner) — session "My Voice" (branch feat/my-voice).
+**Last updated:** 2026-11-15 02:46 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "unified release".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
 
-## My Voice — built on branch `feat/my-voice`, NOT merged (2026-11-15 01:19–01:55 UTC)
-Main (`e710dfe`) stays the verified demo release; the running :8790 was NOT touched or restarted. Worktree
-`../tacit-my-voice`, branch pushed (`4b00cb0` say fix · `3a84dac` tacit-voice helper · `f645e69` registry/selection/
-binding · `5d18cb9` private preview · `7e391de` myvoice:check · `5e12332` findings). Full report, measurements,
-integration + rollback: `git show feat/my-voice:docs/research/MY_VOICE.md`.
-- Users choose from the 180 installed macOS voices (stable ids, locale, quality, Apple novelty flag; no gender
-  attributes), optional rate/pitch, persisted in `server/data/voice-prefs.json`; private preview on the Mac speakers
-  with a leak guard; every approved request is bound to the voice effective at acceptance.
-- Measured on the real route (isolated :8799): request → sound at the BlackHole input p50 65–76 ms with tacit-voice vs
-  872 ms with `say` (n=10 each, 30/30 rendered); Stop 7–8 ms. Server 167/167, web 80/80 + build, security 13/13.
-- Apple Personal Voice: truthful disabled state (`usableInCalls: false`) — Apple forbids apps capturing it and macOS has
-  no app speech-into-call API; Apple's Live Speech is the compliant route (FaceTime documented, Meet unverified).
-- Fidelity fix on the branch: `say` executed `[[…]]` commands from user text (now spoken literally).
-- Not verified: remote human hearing My Voice in Meet; naturalness listening. Merge needs the user's go-ahead + a Sol
-  checkpoint (no Sol files were touched).
+## UNIFIED RELEASE — My Voice + Sol native experience, integrated and deployed (2026-11-15 02:10–02:45 UTC)
+User approved both for integration. **Rollback tag `demo-known-good-2026-11-15` = `e710dfe`** (verified ~01:00 UTC).
+Release gate, matrix, commands, exact rollback and the physical checklist: **`docs/RELEASE_RUNBOOK.md`** (rewritten).
+- Merges on main: `2435a1d` My Voice · `e5c86e5` preflight/health My Voice row · `03cb9a4` Sol native experience
+  (8cc130a feature, c793e1a docs) · `263e872` My Voice in the notch (3dc3a5d) · `35ec16a` lab real-snapshot render.
+- Runtime restarted 02:26 UTC while idle (Live off, output off, no BlackHole readers); companion rebuilt (ad-hoc signed,
+  verify OK) and relaunched from HEAD 02:36 UTC. Preflight 0 FAIL: "My Voice engine — speaking as Samantha".
+- Fresh gate: server 167/167, Swift companion 40/40, tacit-voice 5/5, TacitRoute 4/4, web 80/80 + build, recognition
+  40/40; live:check, live:stress --kill-recognizer, reviewed:check 13/13, speech:check, security 13/13, ui:check A+B,
+  myvoice:check --preview, companion --selftest 7/7, --offline-selftest 10/10. Latency to BlackHole p50 68–94 ms (say 945).
+- Unchanged vs the tag: recognition/, live.ts, reviewed.ts, route.ts, TacitRoute; gate UNVALIDATED; weights e740cef3….
+- Not verified: Meet listener (two voices, reviewed, corrected, Hold, phrase, Stop); live camera with a human.
+- **Sol coordination:** Sol's yielded files were copied by SHA-256 manifest into `feat/tacit-native-experience` and are
+  on main; the Codex worktree (`~/.codex/worktrees/564f`, detached `e710dfe`, uncommitted) was NOT modified and is now
+  superseded. **Before any further native work, Sol must start from current `main`** (its old worktree lacks
+  MyVoiceViews.swift and the Client/Workspace/Lab My Voice changes — editing there would overwrite them). Claude edited
+  companion files `Client.swift`, `CommunicationSession.swift`, `CommunicationWorkspace.swift`, `ExperienceLab.swift`,
+  new `MyVoiceViews.swift`, `Tests/MyVoiceTests.swift` with the user's explicit authorization for this integration.
+  Worktrees left: `../tacit-my-voice` (feat/my-voice), `../tacit-native` (fix/lab-real-voice-status, merged).
 
-## Interface contract — My Voice (PROPOSED for Sol; additive; on `feat/my-voice` only until merged)
+## Interface contract — My Voice (LIVE on main since 2026-11-15 02:26 UTC; additive; native UI implemented in `MyVoiceViews.swift`)
 Types in `shared/protocol.ts` on the branch: `VoiceOption`, `VoiceStatus`, `VoicePreviewState`. Nothing existing changes
 meaning; clients that ignore the new messages keep working (companion `default: break`, web if/else — checked).
 - **S→C `voice_status {status}`** on connect and after every change: `revision`, `selected {voiceId, rate?, pitch?,
@@ -42,6 +46,15 @@ meaning; clients that ignore the new messages keep working (companion `default: 
 - **UI rules:** choose by listening — no gender/personality copy; hide `novelty` voices behind "More voices"; show
   `kind:'apple-personal-voice'` voices disabled with `unavailableReason`; never present preview as call audio; previewing
   the ElevenLabs clone (`local:false`) uses the network. Voice choice never edits the user's words.
+- **Persistence:** the server stores the choice in `server/data/voice-prefs.json` (0600) and restores it on restart
+  (`selected.source:'saved'`); `persisted`/`persistError` say whether saving worked. Clients store nothing.
+- **Rate/pitch:** only when `controls.rate`/`controls.pitch` exist (Apple voices: rate 0.3–0.7 default 0.5, pitch ×0.8–1.25
+  default 1.0, step 0.05); send values inside the range or the selection is refused (never clamped).
+- **Error states to render:** `lastChange.ok:false` + reason (unknown/unavailable voice, out-of-range control) ·
+  `fallback` (saved voice missing/engine restarting → macOS default; show it) · `engine.state` `starting`/`unavailable`
+  (only the macOS default is usable) · preview `refused` (Mac output is/contains a virtual mic; cannot verify; unknown
+  voice; text > 200) or `failed` (render/playback) · speak refused "Your voice changed after this was shown" (press
+  Speak again; reviewed utterance not consumed) · disconnected (`voice_status` absent until reconnect).
 
 ## Integration pivot — release gate (2026-11-15 00:48–01:02 UTC)
 User decision: ML workstream FROZEN (no training, no heldout_v2, no new recordings; pretrained base stays default; no

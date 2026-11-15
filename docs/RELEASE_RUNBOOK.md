@@ -1,114 +1,113 @@
-# TACIT — release gate and demo runbook (2026-11-15 ~01:00 UTC)
+# TACIT — release gate and demo runbook (unified release, 2026-11-15 ~02:45 UTC)
 
-Integration owner: Claude (Git owner). Evidence below was produced on this Mac in this session against the running
-runtime unless marked otherwise. **PASS = the stated scope only.** Nothing here proves that a remote Google Meet
-participant heard anything — only a human listener can confirm that.
+Integration owner: Claude (Git owner). Evidence below was produced on this Mac against the running runtime (restarted
+02:26 UTC, idle, from the integrated code) unless marked otherwise. **PASS = the stated scope only.** Nothing here proves
+that a remote Google Meet participant heard anything — only a human listener can confirm that.
 
-ML workstream frozen: production recognizer = unmodified pretrained Auto-AVSR `LRS3_V_WER19.1` (weights sha256
-`e740cef3…`, matches the recorded base); no adaptation overlay is loaded (`tacit_vsr/` has no overlay loader; no
-`TACIT_*` env overrides). Personal overlays/recordings untouched in git-ignored `recognition/data/`. No training, no
-heldout_v2, no new recordings.
+Recognizer unchanged and frozen: unmodified pretrained Auto-AVSR `LRS3_V_WER19.1` (weights sha256 `e740cef3…`); no
+overlay; `recognition/`, `server/src/live.ts`, `reviewed.ts`, `route.ts` and `macos/TacitRoute` are byte-identical to the
+rollback tag. Automatic speech of recognised words stays DISABLED (`UNVALIDATED_GATE`, `recognizedSpeechAllowed:false`).
 
-## Integrated in this release (on `main`)
+## What this release adds (on `main`, integration merge `35ec16a`)
 
-| Commit | Change |
+| Merge / commit | Change |
 |---|---|
-| `d51d51a` | Sol's native notch + explicit reviewed speech (yielded 21:09 UTC, files unchanged since) |
-| `d3fa006` | Codex's review-race fix, cherry-picked from `fix/review-races` (`c2ae556`) after review |
-| `fc7027c` | Restores synthesis-only sentence casing of ALL-CAPS model candidates (words unchanged; corrections byte-exact) |
-| `b5991bc` | Notch: choices bound to the utterance they were rendered for; honours `review_invalidated` |
-| `4927244` | `live:stress` burst assertion aligned with the latest-accepted-header contract |
-| `a091ff3` | `reviewed:check`: live-server correction + invalidation checks; rerunnable request IDs |
+| `2435a1d` ← `feat/my-voice` | **My Voice**: `tacit-voice` helper (installed macOS voices, warm AVSpeechSynthesizer), voice registry + persisted selection (`server/data/voice-prefs.json`), voice bound to each approved request (`voiceRevision`), private preview with virtual-mic leak guard, `say` `[[…]]` fidelity fix, `npm run myvoice:check` |
+| `e5c86e5` | preflight + `/api/health` report the My Voice engine and effective voice |
+| `03cb9a4` ← `feat/tacit-native-experience` | **Sol's native experience** (yielded STABLE 01:47 UTC; Astra motion): inline review/correction, persistent typed draft, Hold My Turn (⌃⇧⌘H), four customizable phrases, local Help Me Respond (no AI/capture), recovery states, bounded spring motion + Reduce Motion, offline Experience Lab + `--offline-selftest`. Files copied by SHA-256 manifest; Sol's worktree untouched |
+| `263e872` ← `feat/native-my-voice` | **My Voice in the notch**: real voice list (current first; novelty under "More voices"), Listen privately, Use, Speed/Pitch only when reported, fallback/engine/disconnected/refused-preview states; every speak request (typed, Hold, phrase, reviewed) carries `voiceRevision` |
+| `35ec16a` | Lab can render a `voice_status` snapshot captured from a real server (evidence tool) |
 
-Races (original diagnostic `docs/demo-review-races-codex.mts`): all 3 REPRODUCED on main before integration; after,
-races 1–2 NOT REPRODUCED; race 3 is covered by `server/src/review-races.test.ts` (drives the real terminal script —
-the old diagnostic uses the removed bare `e 1` syntax and now crashes by design; it is kept untracked as history).
-
-## Integration matrix (fresh, 2026-11-15 00:49–01:00 UTC)
+## Integration matrix (fresh, 2026-11-15 02:26–02:41 UTC, live runtime)
 
 | # | Scenario | Result | Evidence |
 |---|---|---|---|
-| A | App launches, connects to backend | **PASS** | `tacit.sh restart` → recognizer ready; companion launched via node launcher, connected; reconnected by itself after a server stop/start |
-| B | Silent sentence → result in notch | **PASS (recorded input)** / **PHYSICAL PENDING** | `reviewed:check` real silent clip → shown + 5 candidates; `ui:check` production browser pipeline 2/2 shown. Live camera + notch display not exercised by a human this session |
-| C | Pick alternative / edit candidate | **PASS (unit + server)** | Swift 18/18 incl. delayed-closure + invalidation tests; `reviewed:check` correction → `user-corrected`, exact text |
-| D | Explicit approve + Speak | **PASS** | `reviewed:check`: pick → rendered; duplicate Speak refused; 6 tamper/stale refusals |
-| E | Exact text → TTS → BlackHole 16ch | **PASS (local)** | rendered at BlackHole 16ch, readers `[]`; press→first audio 887–1219 ms (macOS `say`, labelled system voice) |
-| F | Next utterance immediately after | **PASS** | newer header → `review_invalidated`, old pick refused; `live:stress` 3–8 sequential shown, burst bounded |
-| G | Pause/Stop/stale/errors/disconnect fail safe | **PASS (local)** | Stop during reviewed speech → interrupted 21 ms; pause mid-recognition dropped; recognizer killed → abstains, supervised restart 8 s; stale auth/duplicate/out-of-order refused; `speech:check` pause → interrupted, last sound 19 ms after pause |
-| H | Typed/corrected text when recognition is wrong | **PASS (local)** | `speech:check` 3/3 rendered; `ui:check` B typed via UI → sound at BlackHole; correction path in C |
-| I | Recognition never auto-speaks | **PASS** | every hypothesis `transmitted=false`; `autoTransmitAllowed=false`; preflight: automatic speaking DISABLED |
-| — | Remote Meet listener hears reviewed/corrected words | **NOT VERIFIED** | requires a human (below) |
+| A | App launches, connects | **PASS** | restart → recognizer ready 4.7 s; companion relaunched (`open`), connected; companion `--selftest` 7/7, one instance after |
+| B | Silent sentence → result | **PASS (recorded)** / **PHYSICAL PENDING** | `reviewed:check` real silent clip → shown + 5 candidates; `ui:check` A 2/2 shown in production web UI |
+| C | Pick / edit candidate | **PASS** | Swift 40/40 (review, invalidation, correction provenance); `reviewed:check` correction → `user-corrected`, exact |
+| D | Explicit approve + Speak | **PASS** | `reviewed:check` 13/13: pick rendered, duplicate refused, 6 tamper/stale refusals, newer header invalidates |
+| E | Exact text → My Voice → BlackHole 16ch | **PASS (local)** | reviewed pick press→first audio **152 ms** (was 887–1219 ms with `say`); voice "Samantha (en-US, macOS voice, on this Mac)" |
+| F | Next utterance | **PASS** | `review_invalidated` before result; old pick refused; `live:stress` OK |
+| G | Pause / Stop / errors fail safe | **PASS (local)** | Stop during reviewed speech 21 ms; typed pause cut 14 ms; My Voice Stop 6 ms; recognizer killed → abstains, restart 8 s; voice helper killed → visible fallback, back in 0.64 s |
+| H | Typed / Hold / phrase speech | **PASS (unit + local)** | `speech:check` OK; `ui:check` B typed → BlackHole 165 ms; Hold/phrases use authorized `speak_typed` only (Swift tests: blocked when paused/unavailable, draft preserved) |
+| I | Never auto-speaks | **PASS** | `transmitted=false` everywhere; gate untouched (diff vs tag) |
+| J | Choose voice, persists, exact text | **PASS (local)** | `myvoice:check --preview` all PASS: 180 voices / 39 languages; refusals; selection persisted + restored after restart; stale voice refused; queued messages keep approved voice |
+| K | Preview stays private | **PASS (local)** | preview played on "MacBook Pro Speakers", selection unchanged; leak guard refuses when output is/contains a virtual mic (unit + real device list) |
+| L | Native UI rendered | **PASS (offline render)** | Experience Lab captures 10/10 at expected sizes incl. My Voice with the REAL server registry; Reduce Motion: 18 snap transitions vs 260 animated, hover cancel OK |
+| — | Remote Meet listener hears both voices | **NOT VERIFIED** | requires a human (checklist below) |
 
-Static/unit gate on `a091ff3`: server tsc 0 + **140/140**; web tsc 0 + **80/80** + build; companion Swift **18/18**;
-TacitRoute Swift **4/4**; recognition unittest **40/40**; `security:check` all pass; Codex preflight helper tests 3/3.
-Runtime gate: `tacit.sh preflight` no failures (2 user actions); `node docs/demo-preflight-codex.mjs` **0 FAIL**, 4 human
-actions; companion `--selftest` 7/7; `live:check` OK; `live:stress --kill-recognizer` OK (after contract update);
-`reviewed:check` 13/13; `speech:check` OK; `ui:check` A+B PASS. `route:check` deliberately NOT run (rewrites
-calibration and plays a tone); existing calibration +16 dB is current.
+Static gate on `35ec16a`: server tsc 0 + **167/167**; companion Swift **40/40**; tacit-voice **5/5**; TacitRoute **4/4**;
+web tsc 0 + **80/80** + build; recognition **40/40**; companion release build ad-hoc signed, `codesign --verify --deep
+--strict` OK; `--offline-selftest` 10/10. Runtime gate: `tacit.sh preflight` 0 FAIL (2 user actions; new row "My Voice
+engine — speaking as Samantha"); `demo-preflight-codex.mjs` 0 FAIL, 4 human actions; `live:check` OK; `live:stress
+--kill-recognizer` OK; `reviewed:check` 13/13; `speech:check` OK; `security:check` 13/13; `ui:check` A+B; `myvoice:check
+--preview` all PASS. `route:check` deliberately NOT run (rewrites calibration).
 
-Lifecycle: `tacit.sh stop` leaves no tsx/sidecar/route process and no listener on 8790/8765/8766; the companion stays
-up and reconnects; exactly one companion instance after selftest.
+Latency (request → sound captured at the BlackHole input, warm, n=5 each, live runtime): Eddy p50 **68 ms**, Samantha
+p50 **94 ms**; old `say` engine on the same path p50 **945 ms**.
 
-## Remaining blockers / risks
+## Remaining risks
 
-- **P1 — physical:** Meet listener verification of the reviewed and corrected path (typed path was human-verified
-  earlier). Live camera endpointing reliability with a human (3 consecutive sentences) not re-tested this session.
-- **P1 — accuracy:** pretrained model only; prior live silent result 44 % WER, 2/5 exact (DEMO_READINESS D.7). Plan
-  for the correction fallback.
-- **P1 — procedure:** while Live is capturing, ANY mouth movement that ends a window (talking to judges, smiling)
-  becomes a newer utterance and revokes the current review. Pause Live also clears it. The operator must stay silent
-  between mouthing and pressing Speak; a teammate narrates.
-- **P2:** a newer accepted utterance also cuts reviewed audio that is still playing — wait for speech to finish
-  before mouthing the next sentence.
-- **P2:** Speak latency ~0.9–1.2 s (review pre-synthesis removed by the race fix; was ~5 ms).
-- **P2 — packaging:** companion is **ad-hoc signed** (`codesign --verify --strict` valid; no Developer ID, not
-  notarized) — runs on this Mac only. Launch via the node launcher (GUI launch hit a blocking credential-file read).
-  The runtime is a dev checkout (Node/tsx, Python venv, Swift builds, git-ignored weights) — not a standalone package.
-- **P3:** `/api/health` exposes no code revision; loaded revision is inferred from process start time (00:54 UTC
-  restart, after all commits except test scripts).
+- **P1 — physical:** Meet listener verification (reviewed, corrected, Hold, phrase, two voices). Live camera
+  endpointing with a human not re-tested this session.
+- **P1 — accuracy:** pretrained model only; prior live silent result 44 % WER, 2/5 exact. Use correction / typed / phrases.
+- **P1 — procedure:** while Live captures, ANY mouth movement that ends a window (talking, smiling) revokes the current
+  review. Operator stays silent between mouthing and Speak; a teammate narrates.
+- **P2:** a newer accepted utterance cuts reviewed audio still playing — wait for speech to finish before the next sentence.
+- **P2:** changing voice between seeing and pressing Speak refuses that message ("Your voice changed…") — press Speak again.
+- **P2 — packaging:** companion is **ad-hoc signed** (no Developer ID, not notarized) — this Mac only. If `open` ever
+  stalls on credentials, use `node macos/TacitCompanion/tools/open-companion.mjs`. Dev checkout, not a standalone package.
+- **P2 — UI evidence:** production notch screenshots come from the offline lab renderer (same view code; real registry
+  snapshot); the live notch on screen was not captured (no Screen Recording permission for the terminal).
+- **P3:** Apple Personal Voice cannot be used for call audio (Apple restriction; truthful disabled state).
 
 ## Commands
 
 ```sh
-# build everything (route helper, companion app, web)          — when idle
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/tacit.sh build
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer ./scripts/tacit.sh build   # route, tacit-voice, companion, web — when idle
 ./scripts/tacit.sh start | stop | restart | status | preflight
-node docs/demo-preflight-codex.mjs                 # passive; exit 2 (= human actions only) is the healthy result
-node macos/TacitCompanion/tools/open-companion.mjs # launch notch (only if not already running: pgrep -f MacOS/TacitCompanion)
-./scripts/tacit.sh open                            # camera workspace (token never printed)
-# local verification (idle runtime, nobody reading BlackHole; reviewed/speech checks render audio into it)
-cd server && npm run live:check && npm run reviewed:check -- ../recognition/data/webcam/20261114T191005Z-bright-test && npm run speech:check
+open macos/TacitCompanion/.build/TACIT.app       # or: node macos/TacitCompanion/tools/open-companion.mjs (check pgrep -f MacOS/TacitCompanion first)
+./scripts/tacit.sh open                          # camera workspace (token never printed)
+# local verification (idle runtime, nobody reading BlackHole; these render test audio into it)
+cd server && npm run live:check && npm run reviewed:check -- ../recognition/data/webcam/20261114T191005Z-bright-test \
+  && npm run speech:check && npm run myvoice:check -- --preview && npm run security:check
+macos/TacitCompanion/.build/TACIT.app/Contents/MacOS/TacitCompanion --selftest           # live, idle only
+macos/TacitCompanion/.build/TACIT.app/Contents/MacOS/TacitCompanion --offline-selftest   # no sockets/audio
 ```
 
-**Recover:** recognizer crash → server restarts it (~8 s); stuck runtime → `./scripts/tacit.sh restart` (companion
-reconnects by itself; Live and voice come back OFF, re-enable deliberately); companion gone → node launcher; audio
-going out wrongly → companion Stop / ⌃⇧⌘. / mute Meet.
+**Recover:** recognizer crash → restarted (~8 s); voice helper crash → visible fallback to the macOS default, restarted
+(<1 s); stuck runtime → `./scripts/tacit.sh restart` (companion reconnects; Live and voice come back OFF — re-enable
+deliberately; the chosen voice is restored from disk); audio going out wrongly → notch Stop / ⌃⇧⌘. / mute Meet.
 
-**Rollback (backend to pre-race-fix, notch kept):** `git switch --detach d51d51a && ./scripts/tacit.sh build &&
-./scripts/tacit.sh restart`, relaunch companion. Return: `git switch main` + build + restart. Rollback reintroduces the
-three reproduced races; only use if the new code fails in rehearsal.
+## Rollback (cheapest first)
 
-## Demo flow
+1. **Voice engine only, no code change:** add `TACIT_VOICE=off` to `server/.env`, `./scripts/tacit.sh restart` → speech
+   uses the old `say` default voice (preflight shows INFO "disabled by TACIT_VOICE=off"). Forget a choice:
+   delete `server/data/voice-prefs.json`.
+2. **Whole release:** `git switch --detach demo-known-good-2026-11-15 && ./scripts/tacit.sh build &&
+   ./scripts/tacit.sh restart`, then relaunch the companion (`pkill -f MacOS/TacitCompanion; open
+   macos/TacitCompanion/.build/TACIT.app`). That is `e710dfe`, the release verified at ~01:00 UTC (old notch, `say`).
+   Return: `git switch main` + build + restart + relaunch. Old app ignores the new phrase/voice preference files.
+3. Only when idle (no Live session, no call reading BlackHole).
 
-Use the five-minute script, Meet setup and fallback in [DEMO_RUNBOOK_CODEX.md](DEMO_RUNBOOK_CODEX.md) ("Prepare
-before judges", "Five-minute judge demo", "Transparent fallback"). Superseded parts of that file: its "Reproduced
-failures" (fixed above), the "Owner action" about stale recognizer/web build (restarted/rebuilt 00:54 UTC), and its
-terminal syntax (now full token `1@v3`, `e 1@v3`). Add: operator silent while reviewing; wait for speech to finish
-before the next sentence.
+## Physical checklist (on the exact demo setup, with a second device as the Meet listener)
 
-## Physical checks you must do (on the exact demo setup)
-
-- [ ] Meet mic = **BlackHole 16ch**, output = headphones/speakers; second device joined, its mic muted.
-- [ ] One live mouthed sentence reaches the notch, nothing is spoken until you press Speak.
-- [ ] Pick raw/alternative → Speak: listener reports the exact words, **once**.
-- [ ] Edit → your words → Speak: listener hears your correction.
-- [ ] Typed AAC → Speak, then Stop / ⌃⇧⌘. mid-sentence: listener confirms the cut and no later audio.
-- [ ] Mouth a new sentence while an old choice is selected: old choice disappears and cannot be spoken.
-- [ ] Hide the workspace window → capture pauses; return and resume deliberately.
+- [ ] Meet mic = **BlackHole 16ch**, output = headphones/speakers; listener device joined, its mic muted.
+- [ ] **Camera:** start Live in the workspace; mouth one sentence → it appears in the notch; nothing is spoken.
+- [ ] **Review:** pick raw or an alternative → Speak → listener reports the exact words, once.
+- [ ] **Correction:** Edit → type your words → Speak → listener hears your correction.
+- [ ] **Hold My Turn:** press it (or ⌃⇧⌘H) while typing elsewhere → listener hears the hold phrase; your draft is kept.
+- [ ] **Phrase:** My phrases → select one → Speak → listener hears it.
+- [ ] **Change voice:** My Voice → Listen privately to two voices (the listener must hear NOTHING) → Use voice 2 →
+      speak a phrase → listener hears voice 2; switch back to voice 1 → speak → listener hears voice 1, clearly, both times.
+- [ ] **Stop:** start a long typed message → Stop / ⌃⇧⌘. mid-sentence → listener confirms the cut and no later audio.
+- [ ] **Recovery:** mouth a new sentence while an old choice is selected → old choice disappears; pause/resume voice
+      deliberately; quit+reopen the notch → it reconnects and keeps your chosen voice.
 
 ## Recommendation
 
-**GO** for a reviewed-speech demo on this Mac — local software path verified end to end (recorded input → recognition
-→ explicit review → exact text → BlackHole 16ch, with every refusal/Stop path), conditional on the physical checklist
-above. **NO-GO for any claim** of remote audibility of reviewed speech, live recognition accuracy, automatic speech, or a
-distributable signed app until those are actually verified.
+**GO** for tomorrow's demo on this Mac — reviewed silent-to-speech, native notch (review, correction, Hold, phrases)
+and My Voice are integrated and verified end to end locally (recorded input → recognition → explicit review → exact
+text → chosen voice → BlackHole 16ch, every refusal/Stop path, preview isolation), **conditional on the physical
+checklist**. **NO-GO for claims** of remote audibility (until the listener confirms), live recognition accuracy,
+automatic speech, Apple Personal Voice in calls, or a distributable signed app.
