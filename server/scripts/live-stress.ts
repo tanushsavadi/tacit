@@ -1,7 +1,7 @@
 // Live Silent Speech stress + failure check against a RUNNING server, using one real recorded clip (CREMA-D, VOICED
 // actor; audio never read — not silent speech) sent as timestamped JPEG frames, exactly as the browser does.
 //   1. N sequential utterances → latency p50/p95/max, every result shown with the same raw text
-//   2. burst of 5 back-to-back → recogniser bound: extras abstain "busy", nothing queued unboundedly
+//   2. burst of 5 back-to-back → recogniser bound: extras abstain "busy", older ones superseded, nothing queued unboundedly
 //   3. pause while recognising → in-flight result dropped (abstained), never shown late
 //   4. duplicate utteranceId, out-of-order frame times, stale authorization → abstained with reasons
 //   5. (--kill-recognizer) recogniser process killed → utterance abstains with an error; supervised restart recovers
@@ -67,8 +67,13 @@ console.log(`      client round trip p50 ${pct(lat, 0.5)} / p95 ${pct(lat, 0.95)
 
 // 2. burst
 const burst = await Promise.all([0, 1, 2, 3, 4].map((i) => send(`burst-${i}`)));
+// Contract since the review-race fix: only the LATEST accepted header can be shown; older in-flight results are dropped
+// as superseded, extras beyond 2 in flight abstain as busy. A busy-dropped newest header still supersedes the others,
+// so 0 shown is valid (fail-safe: nothing reviewable, nothing spoken). The browser itself sends one utterance at a time.
 const shown = burst.filter((h) => h.decision === 'shown').length, busy = burst.filter((h) => /busy/i.test(h.reason ?? '')).length;
-check(shown >= 2 && shown + busy === 5, `burst of 5: ${shown} recognised, ${busy} abstained as busy (bound 2 in flight, nothing queued)`);
+const superseded = burst.filter((h) => /newer utterance/i.test(h.reason ?? '')).length;
+check(shown <= 1 && busy >= 1 && shown + busy + superseded === 5,
+  `burst of 5: ${shown} shown (≤ 1, latest only), ${busy} busy, ${superseded} superseded (bound 2 in flight, nothing queued)`);
 
 // 3. pause while recognising
 const pending = send('paused-mid');
