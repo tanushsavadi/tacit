@@ -10,6 +10,15 @@
 4. Mouth a sentence → **Interpreting your words** → your words appear → choose/edit → **Speak**. Typing (keyboard icon),
    phrases, Hold my turn and My Voice are in the notch dock. **Stop everything: ⌃⇧⌘.** Pause = camera off.
 
+**Two speaking modes** (switch at the top of the camera view):
+- **Review first** (default): your words appear → one tap on **Speak** sends exactly those words (Alternatives / Edit
+  are one tap away). Human in the loop.
+- **Real-time** ("human realism"): tap Real-time → confirm once → each recognized sentence is spoken into the call
+  ~1–1.5 s after you finish mouthing it, **unreviewed** (orange REAL-TIME badge + what was spoken). Recognition is
+  unvalidated and often wrong — for a demo, use short practised sentences. Pause / ⌃⇧⌘. stops it; Stop returns to Review.
+  Disable on this Mac with `TACIT_REALTIME=off` in `server/.env`.
+- Navigation: the dock's **Camera** button (or **‹ Camera**, or Esc) always returns to the camera view.
+
 No browser, terminal command, access code or token copy is needed. The browser workspace still exists as an optional
 fallback (`./scripts/tacit.sh demo --browser`, or notch ••• → Open browser workspace).
 

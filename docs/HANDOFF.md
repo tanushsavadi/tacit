@@ -6,7 +6,29 @@
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
 
-## NOTCH NAVIGATION FIX (2026-11-15 ~04:15 UTC) — merged `1becab2` (fix `fix/notch-navigation`), NOT yet running
+## SPEAKING MODES + DEPLOY (2026-11-15 ~04:30–04:55 UTC) — merged `7942fbd`, RUNNING
+User asked for a fast "human realism" mode and a human-in-the-loop mode. **Policy change approved by the user and
+recorded in AGENTS.md** (automatic speech exception + one-tap Speak).
+- `3af43dc` server: `live_control activate mode:'automatic' acknowledgeUnreviewed:true` → `LiveStatus.unreviewed:true`;
+  `speakRecognized` speaks raw words verbatim (casing only) once per utterance; plain `automatic` still refused;
+  kill switch `TACIT_REALTIME=off`; gate stays UNVALIDATED, `autoTransmitAllowed:false`. **Interface contract (additive):
+  `LiveStatus.unreviewed?`, `live_control.acknowledgeUnreviewed?`; `speech_delivery` source `recognized` now occurs.**
+  Sol/web: web ignores both (typecheck + 80/80 unchanged).
+- `48ce356` notch: Review first = one tap Speak (exact shown words via speak_reviewed); Real-time = mode switch +
+  confirmation card + REAL-TIME badge + spoken transcript; no review UI for already-spoken words.
+- Deployed while idle (no BlackHole reader, only the app connected): server restarted 04:44 UTC (pid 87313), app
+  relaunched (pid 87493) — also activates the navigation fix below.
+- Evidence: server 175/175 (+8 realtime); Swift 80/80 (+7 SpeakingModeTests); web 80/80; live:check, speech:check,
+  security:check PASS; reviewed:check 13/13 (with --allow-listeners: the only "reader" was TACIT's own tacit-route
+  loopback helper, a stale cached status after speech:check — standalone preflight showed no reader); companion
+  --selftest 7/7, --offline-selftest 10/10. **Real-time end to end** (`TacitCompanion --analyze-video --realtime`,
+  recorded clips → native pipeline → live server → recognizer → automatic speech → BlackHole, no listener):
+  "HOW ARE YOU DOING" and "PLEASE TURN ON THE LIGHTS" recognised and spoken, request→audio 345 ms / 762 ms (queued);
+  nonspeech clip → nothing. Lab renders: review (one Speak), realtime-confirm, realtime, ready with mode switch.
+- Launcher waits up to 30 s for the app (a re-signed app took ~12 s on first launch).
+- Not verified: live camera with a human in either mode; Meet listener.
+
+## NOTCH NAVIGATION FIX (2026-11-15 ~04:15 UTC) — merged `1becab2` (fix `fix/notch-navigation`), running since 04:44 UTC
 User: after opening phrases/My Voice/typing there was no way back to the camera view. Now: dock "Camera" home button
 (green dot while capturing), "‹ Camera" back button on every other surface, Escape steps back before collapsing,
 successful Speak from phrases/composer returns to the camera view (draft kept; Hold stays put), "New words to review ·
