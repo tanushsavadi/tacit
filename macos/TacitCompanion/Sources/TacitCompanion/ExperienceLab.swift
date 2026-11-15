@@ -19,7 +19,30 @@ enum CompanionAccessibility {
     @Published var requests: [[String: Any]] = []
     private var window: NSWindow?
     private var utterance = 0
-    let scenarios = ["collapsed", "ready", "review", "editing", "phrases", "assistance", "error", "paused", "disconnected"]
+    let scenarios = ["collapsed", "ready", "review", "editing", "phrases", "assistance", "voice", "error", "paused", "disconnected"]
+    /// Offline My Voice fixture (sample registry shaped like the server's voice_status). Never plays audio.
+    private var voiceRevision = 1
+    private var voiceSelected = "apple:com.apple.voice.compact.en-US.Samantha"
+    private func voiceStatus(lastChange: [String: Any]? = nil) -> [String: Any] {
+        let rate: [String: Any] = ["min":0.3, "max":0.7, "default":0.5, "step":0.05]
+        let pitch: [String: Any] = ["min":0.8, "max":1.25, "default":1.0, "step":0.05]
+        func apple(_ id: String, _ name: String, _ locale: String, novelty: Bool = false) -> [String: Any] {
+            ["id":"apple:" + id, "name":name, "locale":locale, "language":String(locale.prefix(2)), "provider":"apple-speech",
+             "quality":"default", "kind":"system", "novelty":novelty, "available":true, "local":true, "controls":["rate":rate, "pitch":pitch]]
+        }
+        let voices: [[String: Any]] = [
+            apple("com.apple.voice.compact.en-US.Samantha", "Samantha", "en-US"), apple("com.apple.eloquence.en-GB.Eddy", "Eddy", "en-GB"),
+            apple("com.apple.eloquence.en-US.Flo", "Flo", "en-US"), apple("com.apple.voice.super-compact.en-IE.Moira", "Moira", "en-IE"),
+            apple("com.apple.eloquence.en-US.Reed", "Reed", "en-US"), apple("com.apple.speech.synthesis.voice.Bells", "Bells", "en-US", novelty: true),
+            ["id":"system:default", "name":"macOS default voice", "locale":"und", "language":"und", "provider":"macos-say", "quality":NSNull(),
+             "kind":"system", "novelty":false, "available":true, "local":true, "controls":[:]]]
+        let name = (voices.first { $0["id"] as? String == voiceSelected }?["name"] as? String) ?? "?"
+        return ["revision":voiceRevision, "selected":["voiceId":voiceSelected, "source":voiceRevision > 1 ? "user" : "saved"],
+                "effective":["voiceId":voiceSelected, "label":"\(name) (offline fixture)"], "fallback":NSNull(), "persisted":true,
+                "voices":voices, "samples":["Hi, it's me. Thanks for waiting while I get my words out.", "Could you say that again, a little more slowly?"],
+                "engine":["state":"ready"], "applePersonalVoice":["authorization":"denied", "usableInCalls":false, "reason":"Apple restriction (fixture)"],
+                "custom":["provider":"elevenlabs", "configured":false, "available":false], "lastChange":lastChange ?? NSNull()]
+    }
 
     func record(_ request: [String: Any]) {
         requests.append(request)
@@ -27,6 +50,14 @@ enum CompanionAccessibility {
         // Fixture transport acknowledges only local controls. It never produces audio.
         if request["type"] as? String == "output_control", let action = request["action"] as? String {
             output(action == "pause" ? "paused" : action == "stop" ? "off" : "ready", generation: (client?.output?.generation ?? 0) + 1)
+        }
+        if request["type"] as? String == "voice_select", let id = request["voiceId"] as? String {
+            voiceSelected = id; voiceRevision += 1
+            emit("voice_status", "status", voiceStatus(lastChange: ["requestId":request["requestId"] ?? NSNull(), "ok":true, "at":0]))
+        }
+        if request["type"] as? String == "voice_preview" {
+            emit("voice_preview", "preview", ["previewId":request["previewId"] ?? "", "voiceId":request["voiceId"] ?? "", "state":"playing",
+                "output":"OFFLINE · no audio", "text":"", "timings":["requestedAt":0]])
         }
         if request["type"] as? String == "live_control", let action = request["action"] as? String {
             live(action == "pause" ? "paused" : action == "end" ? "off" : "active", generation: (client?.live?.generation ?? 0) + 1)
@@ -64,6 +95,7 @@ enum CompanionAccessibility {
         client.connect() // isolated transport clears fixture state; never connects to a socket
         client.notice = nil; client.reviewDraft = ReviewDraft()
         live("off"); output("ready")
+        emit("voice_status", "status", voiceStatus())
         island.communication.surface = .conversation
         island.expand()
         if !island.pinned { island.togglePin() }
@@ -85,6 +117,10 @@ enum CompanionAccessibility {
             }
         case "phrases": island.showCommunication(.phrases)
         case "assistance": island.showCommunication(.assistance)
+        case "voice":
+            island.showCommunication(.voice)
+            emit("voice_preview", "preview", ["previewId":"offline-preview", "voiceId":"apple:com.apple.eloquence.en-GB.Eddy", "state":"playing",
+                "output":"OFFLINE · no audio", "text":"", "timings":["requestedAt":0]])
         case "paused": live("paused", generation: 2); output("paused", generation: 2)
         case "disconnected": client.disconnectIsolatedTransport()
         case "error":

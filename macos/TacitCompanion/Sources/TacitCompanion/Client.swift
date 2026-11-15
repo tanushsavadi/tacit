@@ -25,6 +25,34 @@ final class TacitClient: ObservableObject {
     }
     struct Delivery { var requestId: String; var text: String; var state: String; var reason: String?; var at: Date; var firstAudioAt: Double?; var voice: String?; var source: String }
 
+    // My Voice (server `voice_status` / `voice_preview`). Everything shown comes from the server registry.
+    struct VoiceControl: Equatable { var min: Double; var max: Double; var defaultValue: Double; var step: Double
+        func contains(_ v: Double) -> Bool { v >= min - 1e-9 && v <= max + 1e-9 } }
+    struct VoiceOption: Equatable, Identifiable {
+        var id: String; var name: String; var locale: String; var language: String; var provider: String
+        var quality: String?; var kind: String; var novelty: Bool; var available: Bool; var unavailableReason: String?
+        var local: Bool; var rate: VoiceControl?; var pitch: VoiceControl?
+        /// What the main list offers: real, available, non-effect voices (Personal Voice is reported separately).
+        var offered: Bool { available && !novelty && kind != "apple-personal-voice" }
+    }
+    struct VoiceState: Equatable {
+        var revision: Int
+        var selectedId: String; var selectedRate: Double?; var selectedPitch: Double?; var source: String
+        var effectiveId: String; var effectiveLabel: String; var fallback: String?
+        var persisted: Bool; var persistError: String?
+        var voices: [VoiceOption]; var samples: [String]
+        var engineState: String; var engineReason: String?
+        var personalVoiceAuthorization: String; var personalVoiceReason: String
+        var lastChange: (requestId: String?, ok: Bool, reason: String?)?
+        static func == (a: VoiceState, b: VoiceState) -> Bool {
+            a.revision == b.revision && a.selectedId == b.selectedId && a.selectedRate == b.selectedRate && a.selectedPitch == b.selectedPitch
+                && a.effectiveId == b.effectiveId && a.fallback == b.fallback && a.voices == b.voices && a.engineState == b.engineState
+                && a.lastChange?.requestId == b.lastChange?.requestId && a.lastChange?.ok == b.lastChange?.ok
+        }
+        var effective: VoiceOption? { voices.first { $0.id == effectiveId } }
+    }
+    struct VoicePreview: Equatable { var previewId: String; var voiceId: String; var state: String; var reason: String?; var output: String? }
+
     @Published private(set) var conn: Conn = .connecting
     @Published private(set) var live: Live?
     @Published private(set) var output: Output?
@@ -32,6 +60,10 @@ final class TacitClient: ObservableObject {
     @Published private(set) var recognition: Recognition?
     @Published private(set) var lastHypothesis: Hypothesis?
     @Published private(set) var lastDelivery: Delivery?
+    @Published private(set) var myVoice: VoiceState?
+    @Published private(set) var voicePreview: VoicePreview?
+    @Published private(set) var voiceNotice: String?
+    private var pendingVoiceSelect: String?
     @Published var notice: String?
     @Published var typedDraft = ""
     @Published private(set) var preservedCorrection: String?
@@ -125,6 +157,7 @@ final class TacitClient: ObservableObject {
         seenHypotheses.removeAll(); hypothesisOrder.removeAll()
         pendingLiveGeneration = nil; pendingOutputGeneration = nil
         reviewExpiryWork?.cancel(); reviewExpired = false; pendingReviewedRequest = nil
+        myVoice = nil; voicePreview = nil; voiceNotice = nil; pendingVoiceSelect = nil
     }
 
     private func receive(_ t: URLSessionWebSocketTask, _ gen: Int) {
@@ -260,9 +293,88 @@ final class TacitClient: ObservableObject {
             if dl["state"] as? String == "refused", dl["requestId"] as? String == pendingReviewedRequest, (dl["review"] as? [String: Any])?["utteranceId"] as? String == reviewSubmittedID {
                 reviewSubmittedID = nil
             }
+        case "voice_status":
+            guard let st = m["status"] as? [String: Any], let parsed = Self.parseVoiceStatus(st) else { return }
+            myVoice = parsed
+            if let change = parsed.lastChange, let pending = pendingVoiceSelect, change.requestId == pending {
+                pendingVoiceSelect = nil
+                voiceNotice = change.ok ? (change.reason ?? nil) : (change.reason ?? "That voice could not be chosen.")
+            }
+        case "voice_preview":
+            guard let p = m["preview"] as? [String: Any], let id = p["previewId"] as? String else { return }
+            // Only the preview this client started (or a newer one from another client) replaces the shown state.
+            voicePreview = VoicePreview(previewId: id, voiceId: p["voiceId"] as? String ?? "", state: p["state"] as? String ?? "?",
+                                        reason: p["reason"] as? String, output: p["output"] as? String)
         default: break
         }
     }
+
+    static func parseVoiceStatus(_ st: [String: Any]) -> VoiceState? {
+        guard let revision = st["revision"] as? Int, let selected = st["selected"] as? [String: Any],
+              let effective = st["effective"] as? [String: Any], let selectedId = selected["voiceId"] as? String,
+              let effectiveId = effective["voiceId"] as? String else { return nil }
+        func control(_ o: Any?) -> VoiceControl? {
+            guard let c = o as? [String: Any], let lo = c["min"] as? Double, let hi = c["max"] as? Double,
+                  let d = c["default"] as? Double, let step = c["step"] as? Double, lo < hi, step > 0 else { return nil }
+            return VoiceControl(min: lo, max: hi, defaultValue: d, step: step)
+        }
+        let voices = (st["voices"] as? [[String: Any]] ?? []).compactMap { v -> VoiceOption? in
+            guard let id = v["id"] as? String, let name = v["name"] as? String else { return nil }
+            let controls = v["controls"] as? [String: Any]
+            return VoiceOption(id: id, name: name, locale: v["locale"] as? String ?? "und", language: v["language"] as? String ?? "und",
+                provider: v["provider"] as? String ?? "", quality: v["quality"] as? String, kind: v["kind"] as? String ?? "system",
+                novelty: v["novelty"] as? Bool ?? false, available: v["available"] as? Bool ?? false,
+                unavailableReason: v["unavailableReason"] as? String, local: v["local"] as? Bool ?? true,
+                rate: control(controls?["rate"]), pitch: control(controls?["pitch"]))
+        }
+        let engine = st["engine"] as? [String: Any]
+        let pv = st["applePersonalVoice"] as? [String: Any]
+        let lc = st["lastChange"] as? [String: Any]
+        return VoiceState(revision: revision, selectedId: selectedId, selectedRate: selected["rate"] as? Double,
+            selectedPitch: selected["pitch"] as? Double, source: selected["source"] as? String ?? "default",
+            effectiveId: effectiveId, effectiveLabel: effective["label"] as? String ?? effectiveId,
+            fallback: st["fallback"] as? String, persisted: st["persisted"] as? Bool ?? false, persistError: st["persistError"] as? String,
+            voices: voices, samples: st["samples"] as? [String] ?? [], engineState: engine?["state"] as? String ?? "unavailable",
+            engineReason: engine?["reason"] as? String, personalVoiceAuthorization: pv?["authorization"] as? String ?? "unknown",
+            personalVoiceReason: pv?["reason"] as? String ?? "",
+            lastChange: lc.map { (requestId: $0["requestId"] as? String, ok: $0["ok"] as? Bool ?? false, reason: $0["reason"] as? String) })
+    }
+
+    // MARK: - My Voice actions (explicit user actions; none of them speaks into the call)
+
+    /// Choose the voice approved messages are spoken with. Values must be inside the server-reported range.
+    @discardableResult func selectVoice(_ voiceId: String, rate: Double? = nil, pitch: Double? = nil) -> Bool {
+        guard conn == .connected, let state = myVoice, let v = state.voices.first(where: { $0.id == voiceId }), v.available else {
+            voiceNotice = "That voice is not available right now."; return false
+        }
+        if let rate, v.rate?.contains(rate) != true { voiceNotice = "Speed is outside what this voice supports."; return false }
+        if let pitch, v.pitch?.contains(pitch) != true { voiceNotice = "Pitch is outside what this voice supports."; return false }
+        let requestId = UUID().uuidString
+        var msg: [String: Any] = ["type": "voice_select", "requestId": requestId, "voiceId": voiceId]
+        if let rate { msg["rate"] = rate }
+        if let pitch { msg["pitch"] = pitch }
+        pendingVoiceSelect = requestId; voiceNotice = nil
+        send(msg)
+        return true
+    }
+    func resetVoice() {
+        guard conn == .connected else { return }
+        let requestId = UUID().uuidString
+        pendingVoiceSelect = requestId; voiceNotice = nil
+        send(["type": "voice_select", "requestId": requestId, "voiceId": NSNull()])
+    }
+    func refreshVoices() { if conn == .connected { send(["type": "voice_refresh"]) } }
+    /// Private preview on this Mac's own speakers (the server refuses if they are the call microphone).
+    @discardableResult func previewVoice(_ voiceId: String, rate: Double? = nil, pitch: Double? = nil, sample: Int = 0) -> Bool {
+        guard conn == .connected, let v = myVoice?.voices.first(where: { $0.id == voiceId }), v.available else { return false }
+        var msg: [String: Any] = ["type": "voice_preview", "previewId": UUID().uuidString, "voiceId": voiceId, "sample": sample]
+        if let rate, v.rate?.contains(rate) == true { msg["rate"] = rate }
+        if let pitch, v.pitch?.contains(pitch) == true { msg["pitch"] = pitch }
+        send(msg)
+        return true
+    }
+    func stopVoicePreview() { if conn == .connected { send(["type": "voice_preview_stop"]) } }
+    var previewActive: Bool { ["synthesizing", "playing"].contains(voicePreview?.state ?? "") }
 
     private func parseRoute(_ r: [String: Any]) -> Route {
         Route(state: r["state"] as? String ?? "?", device: r["deviceName"] as? String, readers: r["readers"] as? [String],
@@ -295,6 +407,7 @@ final class TacitClient: ObservableObject {
     }
 
     func pauseEverything() {
+        if previewActive { stopVoicePreview() }
         if live?.state == "active" { live("pause") }
         if output?.state == "ready" { output("pause") }
     }
@@ -324,7 +437,10 @@ final class TacitClient: ObservableObject {
         }
         notice = nil
         // outputGeneration: if output was paused/interrupted after this was written, the server refuses it.
-        send(["type": "speak_typed", "requestId": UUID().uuidString, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1])
+        var request: [String: Any] = ["type": "speak_typed", "requestId": UUID().uuidString, "outputAuthorizationId": auth, "text": t, "outputGeneration": output?.generation ?? -1]
+        // voiceRevision: spoken only in the voice the user saw; a voice change in between is refused, never substituted.
+        if let revision = myVoice?.revision { request["voiceRevision"] = revision }
+        send(request)
         return true
     }
 
@@ -366,11 +482,12 @@ final class TacitClient: ObservableObject {
         }
         notice = nil
         let requestID = UUID().uuidString
-        let request: [String: Any] = ["type":"speak_reviewed", "requestId":requestID,
+        var request: [String: Any] = ["type":"speak_reviewed", "requestId":requestID,
             "outputAuthorizationId":outputAuth, "outputGeneration":output.generation,
             "liveAuthorizationId":h.authorizationId, "liveGeneration":generation, "utteranceId":h.id,
             "candidate":reviewDraft.editing ? "edited" : candidate.kind, "index":candidate.index,
             "text":text, "textHash":reviewDraft.editing ? Self.textHash(text) : candidate.textHash]
+        if let revision = myVoice?.revision { request["voiceRevision"] = revision }
         pendingReviewedRequest = requestID; reviewSubmittedID = h.id; reviewDraft = ReviewDraft()
         send(request)
         return true
@@ -385,6 +502,7 @@ final class TacitClient: ObservableObject {
 
     func stopEverything() {
         if conn != .connected { notice = "Disconnected. Stop could not be confirmed; check the call and TACIT server."; return }
+        if previewActive { stopVoicePreview() }
         live("end")
         output("stop")
         notice = "Stop requested for Live and voice output."

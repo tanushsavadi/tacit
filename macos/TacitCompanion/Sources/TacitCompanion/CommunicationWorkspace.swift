@@ -30,6 +30,7 @@ struct CommunicationWorkspace: View {
                 case .phrases: PhrasePicker(client: client, session: session, customize: { island.showCommunication(.customize) })
                 case .customize: PhraseCustomization(session: session)
                 case .assistance: ResponseAssistance(client: client, session: session)
+                case .voice: MyVoicePicker(client: client)
                 case .recovery:
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Previous correction").font(.system(size: 13, weight: .semibold))
@@ -194,6 +195,7 @@ struct CommunicationWorkspace: View {
                 .keyboardShortcut("h", modifiers: [.command, .shift])
             Spacer(minLength: 0)
             dockButton("heart.text.clipboard", "My phrases", .phrases)
+            dockButton("waveform", "My Voice", .voice)
             dockButton("keyboard", "Type a message", .compose)
             dockButton("text.bubble", "Help Me Respond", .assistance)
         }
