@@ -1,10 +1,47 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-14 23:27 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "accuracy + pipeline".
+**Last updated:** 2026-11-15 00:25 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "adaptation arm 1".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
+
+## Adaptation arm 1 `silent1` — trained + validated (2026-11-15 00:08–00:25 UTC)
+**Audit (read-only, same scripts as adaptA/B):** adaptBretake 8/8 and adaptVal 20 silent + 3 nonspeech (swallow, listen,
+smile) all decode 1280x720, 180 frames, 0 gaps; ROI brightness 151–160; FaceMesh 100 %; IOD 150–157 px. Roll spikes
+only in clips opening with 3 black frames (retake 05, val 05/12/15). Val clip05 has an 11-frame lip spread inside
+"tonight" (articulation, frame strip checked). Nonspeech: swallow = closed lips; listen = one ~0.6 s mouth opening
+(breath-like, a harder negative); smile = clear smile 0–1.6 s. PASS, no retakes; originals untouched.
+**Data:** dry-run and run = 101 train clips (adaptA 50 + adaptB 43 + retake 8; the 8 named excludes), 101 unique =
+adapt_v1_a ∪ adapt_v1_b; val 20 unique = adapt_val_v1; train ∩ val = train ∩ heldout_v2 = val ∩ heldout_v2 = ∅; no
+recorded session contains a heldout_v2 sentence (heldout_v2 still unrecorded and unused).
+**Run:** `data/adapt/silent1`, git e69f041, scope frontend+embed+block0 (25.8 M / 250.4 M), default recipe, MPS,
+00:12:06–00:20:21Z, base sha e740cef3… re-verified, run.json present. Trainer val errors/114 by epoch 0–6:
+84, 63, 53, 50, **48**, 52, 57 (train loss 1.12 → 0.66 at ep 4 → 0.51–0.53) → selected epoch 4; overfitting after
+epoch 4 (loss falls, val errors rise).
+**Bench (gate included; `data/eval/silent1_bench.log`, `data/eval/bench/`):**
+```
+                         base                adapted (ep 4)       Δ
+val silent WER           84/114 = 0.737      48/114 = 0.421       −31.6 pt (clips better/worse 15/3, sign test p≈0.008)
+val silent exact         0/20                4/20
+val top-1/3/5/10         0/1/1/2             4/5/6/6              (top-5 recall 1/20 → 6/20)
+val nonspeech shown      2/3 (floor 2)       2/3 (floor 1)
+val abstained            0 (+0)              0 (+0)
+CREMA-D WER (96)         33/536 = 0.062      54/536 = 0.101       +3.9 pt  (exact 79 → 67/96)   ← FAILS ≤ +1 pt
+dev silent / voiced WER  0.444 / 0.377       0.404 / 0.215
+rest shown (floor)       4/36 (0)            4/36 (1)
+model ms p50/p95 (val)   283 / 388           303 / 401            (same run conditions; dev/CREMA-D base from 21:13 run)
+```
+**Decision checklist (E.5, pre-registered):** items 1–2 pass; Phase-C entry FAILS on CREMA-D (+3.9 pt > 1 pt) and,
+marginally, rest-after-floor 0 → 1. Status: VALIDATION (val chose the epoch; but epochs 2–6 all 46–50 % vs 73.7 %).
+The verdict: improved on the user's own silent speech, but at the cost of forgetting other speakers (CREMA-D),
+so NOT adopted and Phase C NOT run. Production recognizer, server, BlackHole route and notch untouched; no overlay
+loaded anywhere. The sidecar on :8790 stayed up (idle) during training/bench.
+**Next (user decision):** recommended: record ~150 more adaptation sentences (toward 250) and re-register arm 2 BEFORE
+training on them, e.g. same recipe + more data, optionally + rehearsal of public (CREMA-D-like) clips against
+forgetting; keep adaptVal as validation and heldout_v2 untouched for one final test. Separate task pending: Codex's
+three review races (`docs/DEMO_RUNBOOK_CODEX.md` "Reproduced failures"; repro `docs/demo-review-races-codex.mts`) —
+server-side fixes in `server/scripts/review.ts`, `server/src/live.ts`, `server/src/speech.ts`; Codex files untracked.
 
 ## adaptBretake audit + final training set (2026-11-15 00:03 UTC, read-only)
 `data/webcam/20261115T000100Z-adaptBretake`: 8/8 silent clips = exactly `adapt_v1_b_retake.txt` = the 8 excluded adaptB
