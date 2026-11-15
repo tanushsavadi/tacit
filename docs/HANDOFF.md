@@ -45,7 +45,11 @@ recognised words stays DISABLED.
   returns InvalidClientTokenId for this key (inactive or deleted — rotation NOT confirmed by anyone). **Urgent, human:**
   confirm in IAM the key is deleted, issue a new one if needed, review CloudTrail for the key since at least 04:57 UTC
   (ideally since it was put in the Codex config), remove the creds from `~/.codex/config.toml` (+ its backup copy).
-- **Rollback:** tag `demo-modes-2026-11-15` (see RELEASE_RUNBOOK → CURRENT RELEASE). Worktree `../tacit-integration` kept.
+- **Rollback:** tag `demo-modes-2026-11-15` (see RELEASE_RUNBOOK → CURRENT RELEASE).
+- **Worktrees removed at the user's request (05:59 UTC, disk):** tacit-demo, -integration, -my-voice, -native,
+  -p1-integration, -presence, -review-races — all clean and on main (review-races = `d3fa006`, checked by range-diff);
+  branches kept. Left for a decision: `../tacit-independent-qa` (uncommitted, 1.4 GB QA data) and Codex's
+  `~/.codex/worktrees/564f` (uncommitted, superseded since 02:45 UTC).
 - **Disk:** was 0.7 GB free at 05:35 UTC; now ~2.8 GB after removing this session's caches. Biggest reclaimable:
   ~/Library/Caches/ms-playwright (3.5 GB), Codex's `.build/living-notch-build` (360 MB, rebuildable).
 - **Next (human):** Meet listener test of Review → Speak, Help Me Respond → Speak and Stop; live camera with a person;
