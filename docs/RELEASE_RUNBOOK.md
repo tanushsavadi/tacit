@@ -1,4 +1,47 @@
-# TACIT — release gate and demo runbook (unified release, 2026-11-15 ~02:45 UTC)
+# TACIT — release gate and demo runbook
+
+## 30-second startup (demo-p1 + native Start, 2026-11-15 ~04:00 UTC)
+
+1. **Double-click `TACIT Demo.command`** in the repository folder (or run `./scripts/tacit.sh demo`). Safe to repeat:
+   a running server or app is left alone. It ends with a readiness list — every line should be ✓ except the Meet line.
+2. **Google Meet → Settings → Audio → Microphone = BlackHole 16ch** (speakers/headphones stay as output).
+3. **In the TACIT notch (top centre of the screen) press _Start communicating_.** First time only: macOS asks to allow the
+   camera for TACIT → Allow. A small camera preview appears and the notch says **Mouth a sentence to begin**.
+4. Mouth a sentence → **Interpreting your words** → your words appear → choose/edit → **Speak**. Typing (keyboard icon),
+   phrases, Hold my turn and My Voice are in the notch dock. **Stop everything: ⌃⇧⌘.** Pause = camera off.
+
+No browser, terminal command, access code or token copy is needed. The browser workspace still exists as an optional
+fallback (`./scripts/tacit.sh demo --browser`, or notch ••• → Open browser workspace).
+
+| Notch says | Do this |
+|---|---|
+| TACIT isn't running | press **Start TACIT** |
+| Allow camera access for TACIT | **Open Camera Settings** → enable TACIT (one time) |
+| Move into view of the camera / Only one face, please | sit centred, alone in frame |
+| That sentence is no longer available | mouth another sentence, or **Type it instead** (your draft is kept) |
+| Silent speech is reconnecting | type or use phrases; the recognizer restarts by itself (~8 s) |
+| Camera interrupted | **Restart camera** |
+| Paused | **Resume communicating** (nothing restarts by itself) |
+| Voice on · In Google Meet, choose BlackHole 16ch | Meet is not using TACIT's microphone yet — fix step 2 |
+| Voice on · a calling app is using BlackHole 16ch | the mic is selected; only the listener can confirm they hear you |
+
+While you have a candidate selected/edited, or while TACIT is speaking, new mouth movement is **ignored** (so a smile
+cannot revoke your review or cut your speech); mouth the next sentence afterwards.
+
+**Fresh gate on `7dd51dd` (live runtime from the cold launch, idle, 03:48–04:00 UTC):** server tsc 0 + **167/167**;
+web tsc 0 + **80/80** + build; companion Swift **69/69** (54 + 15 NativeStartTests); TacitRoute **4/4**; tacit-voice
+**5/5**; recognition unittest **40/40**; `security:check` 14 PASS; `live:check` OK; `reviewed:check` all PASS (stop
+during reviewed speech 21 ms); `speech:check` OK; `myvoice:check --preview` all PASS (first attempt refused itself
+because TACIT's own loopback helper was still reading BlackHole — rerun with no reader: PASS); companion `--selftest`
+7/7; `--offline-selftest` 10/10. Launcher cold 12 s / warm 2 s (no restart, one app). Server/shared/web/recognition
+byte-unchanged vs `demo-p1-2026-11-15`; gate UNVALIDATED; automatic speech disabled.
+
+Acceptance status (one-click demo): 1 cold launch PASS (12 s) · 2 warm launch PASS (no duplicate) · 3/4 no browser or
+access code needed (native camera; browser optional) · 5 camera prompt = macOS system prompt naming TACIT + notch
+"Allow camera access" — **human click pending** · 6/7 Start→Live and Pause/Resume: unit + recorded replay PASS, **live
+camera with a human pending** · 8 expired review → "Type it instead" PASS (unit + render) · 9 typing works with camera
+failed PASS (dock + guide) · 10 notch is the single status surface (browser optional) · 11 output route untouched,
+Meet line from real readers · 12 suites PASS above.
 
 Integration owner: Claude (Git owner). Evidence below was produced on this Mac against the running runtime (restarted
 02:26 UTC, idle, from the integrated code) unless marked otherwise. **PASS = the stated scope only.** Nothing here proves
@@ -81,6 +124,11 @@ deliberately; the chosen voice is restored from disk); audio going out wrongly �
 
 ## Rollback (cheapest first)
 
+0. **Native camera only:** the browser workspace still works with this build — notch ••• → *Open browser workspace
+   (optional)* → *Start Live preview* there (the notch then shows "Live is running in the browser workspace").
+   **Previous build with P1 but without native Start:** `git switch --detach demo-p1-2026-11-15 && ./scripts/tacit.sh build`
+   then relaunch the app (`pkill -f MacOS/TacitCompanion; open macos/TacitCompanion/.build/TACIT.app`); server unchanged.
+
 1. **Voice engine only, no code change:** add `TACIT_VOICE=off` to `server/.env`, `./scripts/tacit.sh restart` → speech
    uses the old `say` default voice (preflight shows INFO "disabled by TACIT_VOICE=off"). Forget a choice:
    delete `server/data/voice-prefs.json`.
@@ -93,7 +141,7 @@ deliberately; the chosen voice is restored from disk); audio going out wrongly �
 ## Physical checklist (on the exact demo setup, with a second device as the Meet listener)
 
 - [ ] Meet mic = **BlackHole 16ch**, output = headphones/speakers; listener device joined, its mic muted.
-- [ ] **Camera:** start Live in the workspace; mouth one sentence → it appears in the notch; nothing is spoken.
+- [ ] **Camera:** notch → Start communicating → Allow camera (first time) → mouth one sentence → it appears in the notch; nothing is spoken.
 - [ ] **Review:** pick raw or an alternative → Speak → listener reports the exact words, once.
 - [ ] **Correction:** Edit → type your words → Speak → listener hears your correction.
 - [ ] **Hold My Turn:** press it (or ⌃⇧⌘H) while typing elsewhere → listener hears the hold phrase; your draft is kept.

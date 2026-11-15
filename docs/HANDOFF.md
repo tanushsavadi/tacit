@@ -1,10 +1,58 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 02:46 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "unified release".
+**Last updated:** 2026-11-15 ~04:00 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "one-click demo".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## ONE-CLICK DEMO + NATIVE CAMERA + CODEX P1 — integrated and deployed (2026-11-15 03:25–04:00 UTC)
+User asked for: Codex P1 fixes first, then one obvious entry point, and "the live preview website shouldn't be
+something I have to rely on". Done in that order. Runbook: **`docs/RELEASE_RUNBOOK.md` → "30-second startup"**.
+- **P1 (Codex) — `fix/tacit-p1-reliability` → `e6bced1`, merged `1755090`, tag `demo-p1-2026-11-15`.** Patch applied
+  unchanged (sha256 cd67ff91…, all 9 file hashes = manifest). New native tests FAIL on 4920946 (7 requests for one
+  pending message; correction nil after reconnect) and pass after; `docs/qa/verify-p1.mjs` 14/14 in an isolated worktree.
+  Companion rebuilt + relaunched 03:34 UTC while idle; live `--selftest` 7/7.
+- **Root causes of the confusing startup (investigated):** (1) "Start in camera workspace" only opened a new browser
+  tab (one per click); the notch had no way to start capture. (2) The browser stores the token per tab
+  (sessionStorage) → any tab opened without `?token=` asks for an access code. (3) The browser workspace pauses and
+  releases the camera whenever its tab is hidden (`visibilitychange`) — e.g. Meet in the same window — and never
+  resumes by itself (by design). (4) "Those words have expired" = any later mouth movement (smile/talk) sends a new
+  header → `review_invalidated`, or the 120 s TTL. (5) "Voice ready" referred to output only.
+- **Native Start (`feat/native-start` → `bb52d66`, launcher `c66f343`, merged `7dd51dd`):** camera now runs INSIDE
+  TACIT.app (AVFoundation + Apple Vision lip landmarks + Swift port of the browser endpointing) and uploads the same
+  `visual_utterance` + JPEG frames over the app's authenticated socket — **no shared/server/web change**. "Start
+  communicating" = enable/resume voice output + camera permission (macOS prompt, `NSCameraUsageDescription`) + camera +
+  `live_control activate display-only camera`. Pause/Stop/disconnect/another client activating → camera released, never
+  auto-restarted. Windows are DROPPED while a candidate is selected/edited or speech is queued/synthesizing/routing.
+  `CommunicationGuide` (pure, tested) drives the notch copy + one recovery action per state; call line reports only the
+  virtual-mic readers ("In Google Meet, choose BlackHole 16ch" / "a calling app is using …"), never "heard".
+- **Calibration (recorded clips, not a human live test):** `TacitCompanion --analyze-video` — velocity 0.40, quiet
+  640 ms (browser 480 split 6/92 sentences; 640 splits 2/92), 0 missed; nonspeech swallow 0, smile 0, 'listen' 1.
+  Threshold chosen on adaptVal, checked on 72 clips from other sessions (adaptB, s1, diag1, bright-test).
+  End-to-end `--analyze-video --send` (real client upload → running server → recognizer, display-only): bright-test
+  "HOW ARE YOU DOING", "PLEASE TURN ON THE LIGHTS" exact, "I WOULD LIKE SOME WORK PLEASE"; nonspeech → no window.
+- **Launcher:** `./scripts/tacit.sh demo` / double-click `TACIT Demo.command`. Measured: cold (server + app stopped) →
+  ready in 12 s; warm re-runs 2 s, same server pid 68808, same single app pid 68965, 1 recognizer. No secrets printed.
+- **Release tag `demo-oneclick-2026-11-15`** (this docs commit). Rollback: `demo-p1-2026-11-15` (P1 only),
+  `demo-release-2026-11-15`, `demo-known-good-2026-11-15` — see RELEASE_RUNBOOK → Rollback.
+- **Next (human, ~5 min):** double-click `TACIT Demo.command` → Meet mic = BlackHole 16ch → notch Start communicating
+  → Allow camera → mouth a sentence → Speak with a Meet listener on a second device; then the physical checklist.
+- **Real GUI:** screencapture of the live notch after cold launch: "Ready to start", Start communicating, "Voice off ·
+  In Google Meet, choose BlackHole 16ch as the microphone". **Not done by an agent:** pressing Start (needs a human to
+  answer the macOS camera prompt — never automated), live camera recognition with a human, Meet listener.
+- **Sol/Codex coordination:** companion files edited by Claude with the user's direct request (Client.swift,
+  CommunicationWorkspace.swift, CompanionContent.swift, IslandController.swift, App.swift, build-app.sh; new
+  NativeLivePipeline/NativeCamera/StartCommunicating/VideoAnalysis.swift, Tests/NativeStartTests.swift). **Sol: start
+  any further native work from current `main`.** Web untouched. Worktrees left: `../tacit-p1-integration`,
+  `../tacit-demo` (both merged).
+- **Fresh gate on `7dd51dd` (live runtime from the cold launch, idle, 03:48–04:00 UTC):** server tsc 0 + **167/167**;
+  web tsc 0 + **80/80** + build; companion Swift **69/69** (54 + 15 NativeStartTests); TacitRoute **4/4**; tacit-voice
+  **5/5**; recognition unittest **40/40**; `security:check` 14 PASS; `live:check` OK; `reviewed:check` all PASS (stop
+  during reviewed speech 21 ms); `speech:check` OK; `myvoice:check --preview` all PASS (first attempt refused itself
+  because TACIT's own loopback helper was still reading BlackHole — rerun with no reader: PASS); companion `--selftest`
+  7/7; `--offline-selftest` 10/10. Launcher cold 12 s / warm 2 s (no restart, one app). Server/shared/web/recognition
+  byte-unchanged vs `demo-p1-2026-11-15`; gate UNVALIDATED; automatic speech disabled.
 
 ## UNIFIED RELEASE — My Voice + Sol native experience, integrated and deployed (2026-11-15 02:10–02:45 UTC)
 User approved both for integration. **Rollback tag `demo-known-good-2026-11-15` = `e710dfe`** (verified ~01:00 UTC).
