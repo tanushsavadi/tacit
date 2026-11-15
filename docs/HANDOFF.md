@@ -1,12 +1,12 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 ~11:15 UTC (clock-checked)
+**Last updated:** 2026-11-15 ~11:11 UTC (clock-checked)
 **Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Living Notch + Presence integration".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
 
-## GEMINI SPONSOR-TRACK AUDIT (2026-11-15 11:04–11:15 UTC, Claude) — no runtime change
+## GEMINI SPONSOR-TRACK AUDIT (2026-11-15 11:04–11:11 UTC, Claude) — no runtime change
 - Deployed build verified = main: server pid 38791 (05:37 UTC, no server/shared change since), companion pid 48577
   (binary 05:51, no newer source). Live `respond_status` = Google Gemini, models flash-lite → flash (code defaults).
 - Fresh: `respond:eval` real Gemini 20/20, p50 872 ms, p95 2610 ms, 0/58 removed, focus 4/4; live WS probe on :8790
