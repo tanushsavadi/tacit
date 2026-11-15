@@ -23,6 +23,7 @@ import { TwilioCall, twiml, validTwilioSignature } from './twilio.ts';
 import { authorizeUpgrade, loadSecrets, safeEqual, StreamTokens, type AuthConfig } from './auth.ts';
 import { TurnLog } from './turnlog.ts';
 import { LIVE_CAPABILITY, LiveSession, httpRecognizer } from './live.ts';
+import { guardSockets } from './wsguard.ts';
 import { listDevices, pickDevice, routeBinary, routeGain, RouteHelper, sweepStaleAudio, unconfiguredRoute } from './route.ts';
 import { SpeechOutput, UNVALIDATED_GATE } from './speech.ts';
 import { MyVoice, VoiceHelper, voiceBinary } from './voices.ts';
@@ -465,6 +466,7 @@ const server = createServer(async (req, res) => {
 const uiWss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 const callerWss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 const twilioWss = new WebSocketServer({ noServer: true, maxPayload: 256 * 1024 });
+guardSockets(uiWss, 'ui'); guardSockets(callerWss, 'caller'); guardSockets(twilioWss, 'twilio');
 
 server.on('upgrade', (req, socket, head) => {
   const path = new URL(req.url ?? '/', 'http://x').pathname;
