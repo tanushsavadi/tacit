@@ -6,6 +6,9 @@ ordinary call they are already in (Google Meet verified). Automatic speaking of 
 until a held-out reliability test passes. Recognised words reach the call only through **reviewed speech**: the user
 picks the right candidate (or corrects it) and presses Speak.
 
+**Current release gate (2026-11-15 ~01:00 UTC): [RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md)** — it supersedes the
+reviewed-speech "pending" notes below (the notch review UI is integrated, `d51d51a`/`b5991bc`).
+
 ## A. Status at a glance
 
 | Item | Status | Evidence |
@@ -270,6 +273,9 @@ repeats (two windows on recorded actor input), so a rearm bug is not indicated.
 decoder. Rule written before the run: adopt only if CREMA-D improves and own silent does not worsen. Result: CREMA-D
 5.2% → 5.4% (80 → 79 exact), own silent 44.4% → 51.5% (6 → 5 of 20), own voiced 37.7% → 43.8%. Not adopted.
 
+**Superseded 2026-11-15 (`d3fa006`):** review-candidate pre-synthesis was removed by the review-race fix; Speak now
+synthesizes after the press (press → first audio 887–1219 ms measured 00:55–00:59 UTC). Current status:
+[RELEASE_RUNBOOK.md](RELEASE_RUNBOOK.md). Historical note follows.
 Pre-synthesis (`e583589`): while voice output is on, shown candidates are synthesized locally in advance (voice policy
 applies; nothing sent before Speak). Measured ~21:10 UTC on an isolated
 instance (:8799, real `say` voice, real BlackHole 16ch route with no reader, fixed fake recogniser text, Speak 3 s

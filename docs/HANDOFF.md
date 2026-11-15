@@ -1,10 +1,33 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 00:43 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (backend, recognition, Git owner) — session "adaptation arm 1".
+**Last updated:** 2026-11-15 01:02 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "integration pivot".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
-**Start here:** this section, then `docs/DEMO_READINESS.md` (A = status, D.9–D.13 = this session, E.2 = Meet test).
+**Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## Integration pivot — release gate (2026-11-15 00:48–01:02 UTC)
+User decision: ML workstream FROZEN (no training, no heldout_v2, no new recordings; pretrained base stays default; no
+overlay deployed). Priority = complete, reliable macOS app for the demo.
+- Committed Sol's yielded notch (`d51d51a`); cherry-picked Codex's review-race fix from `fix/review-races` (`d3fa006`;
+  HANDOFF conflict resolved to main's text); restored synthesis-only sentence casing for ALL-CAPS model candidates
+  (`fc7027c`); native follow-up — choices bound to their rendered utterance + `review_invalidated` handling (`b5991bc`);
+  `live:stress` burst assertion updated to the new contract (`4927244`); `reviewed:check` gained live correction +
+  invalidation checks and rerunnable request IDs (`a091ff3`).
+- **Interface contract (additive, now on main):** `ServerMessage` `review_invalidated {authorizationId, generation,
+  utteranceId}` — a valid newer header revokes every earlier review choice; superseded results are abstained and sent only
+  to the submitting socket. Terminal `npm run review`: full token `1@v3` / `e 1@v3`. Sol: the notch already consumes it.
+- Runtime restarted 00:54 UTC via `tacit.sh restart` (idle since 21:06, only the companion connected); then stop/start
+  once more for the lifecycle test. Recognizer = pretrained LRS3_V_WER19.1 sha e740cef3…, no overlay. Companion rebuilt
+  (ad-hoc signed) and relaunched with the node launcher; it reconnects by itself across server restarts.
+- Checks (all fresh): server 140/140, web 80/80 + build, companion Swift 18/18, TacitRoute 4/4, recognition 40/40,
+  security:check, preflight (0 FAIL), Codex preflight (0 FAIL, 4 human actions), companion selftest 7/7, live:check,
+  live:stress --kill-recognizer, reviewed:check 13/13, speech:check, ui:check A+B. route:check NOT run (rewrites calibration).
+- Not verified: remote Meet audibility of reviewed/corrected speech; human live-camera trial. Recommendation: GO for a
+  reviewed-speech demo conditional on the physical checklist in RELEASE_RUNBOOK.
+- Untracked, intentionally: `docs/demo-review-races-codex.mts` (historical diagnostic; crashes on the new terminal
+  syntax by design). Codex worktree `../tacit-review-races` (branch `fix/review-races`) left in place; its fix is on main.
+- Next: user's physical rehearsal (RELEASE_RUNBOOK checklist); no further code changes unless rehearsal finds a defect.
 
 ## Generalisation experiment — RESULTS (2026-11-15 00:29–00:42 UTC; log `recognition/data/eval/gen_exp.log`)
 All candidates benched back to back on the same MPS session (val latency comparable). Base + silent1 hashes unchanged.
