@@ -86,7 +86,7 @@ Models (git-ignored): `server/models/ggml-base.en.bin` (whisper.cpp), `third_par
 - Persistent logging is opt-in (default off). Recordings of faces, voices or motion stay in git-ignored `*/data/`.
 
 ## Git (authorized by the user on 2026-11-14; supersedes all earlier no-commit rules)
-Repository: `github.com/tanushsavadi/tacit` (**private**), branch `main`.
+Repository: `github.com/tanushsavadi/tacit` (**public** since 2026-11-15), branch `main`.
 
 **Single Git writer.** All agents share one working tree, so exactly one agent performs Git writes (stage, commit,
 push, branch, checkout, reset, stash). **Current owner: Claude.** Other agents (Sol/Codex, Gemini) edit only their
