@@ -23,8 +23,13 @@ recognised words stays DISABLED.
   (0600). To run again: re-download the Auto-AVSR weights and whisper model, `npm ci`, recreate the venv, `./scripts/tacit.sh build`.
 - **Secrets:** trufflehog over all Git history: no real keys (2 unverified false positives in MediaPipe `.wasm`). The
   AWS key note below still needs a human: `~/.codex/config.toml` still sets AWS credentials for Codex shells.
-- Left in place (user content, not in Git): `~/Documents/TACIT-Pitch`, `TACIT-Film-Production`, `TACIT-Gemini-Research`,
-  `TACIT-Flow-Development` (its source is now on `experiment/tacit-flow`).
+- **Showcase added (user request, recruiter-facing):** `showcase/` = pitch (deck PDF/PPTX, scripts, Q&A, deck
+  generator), film (Remotion source, captions, production notes; MP4s on YouTube only), Devpost gallery + notes;
+  `docs/research/gemini/` = Gemini exploration + Referent Bridge P0. Deliberately left out: raw face recordings and
+  gallery source frames, voiceover/score WAVs, rendered MP4s, Inter font files. trufflehog on the new commits: 0 findings.
+- Local folders: `TACIT-Flow-Development` deleted (source on `experiment/tacit-flow`). Kept: `~/Documents/TACIT-Pitch`,
+  `TACIT-Gemini-Research` (fully in `showcase/` / `docs/research/gemini/` apart from fonts), `TACIT-Film-Production`
+  (raw media and renders exist only there; its 1.1 GB node_modules/build cache was removed).
 
 ## FINAL DEMO STATE (2026-11-15 ~18:05 UTC, Claude) — ORIGINAL MODEL ACTIVE
 - User decision: do NOT use the personal overlay in the demo. `./scripts/tacit.sh profile base` run while idle; running
