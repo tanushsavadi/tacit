@@ -29,11 +29,12 @@ struct IslandView: View {
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     private var reduceMotion: Bool { systemReduceMotion || CompanionAccessibility.reducedMotionPreview }
+    @ObservedObject private var flow: FlowClient
     private var state: LivingNotchPresentation { island.presentation }
     private var silhouette: IslandSilhouette { .init(attached: island.geometry.hasNotch) }
 
     init(client: TacitClient, island: IslandController) {
-        self.client = client; self.island = island; self.live = island.live
+        self.client = client; self.island = island; self.live = island.live; self.flow = client.flow
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -69,7 +70,7 @@ struct IslandView: View {
                     if state.kind != .ready {
                         Circle().fill(state.color).frame(width: 4, height: 4).accessibilityHidden(true)
                     }
-                    Text(state.compactTitle)
+                    Text(flow.listening && !state.busy ? "Meet · listening" : state.compactTitle)
                         .font(.system(size: 11.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.9)
                         .foregroundStyle(state.realtime ? .orange : .white.opacity(0.83))
                         .contentTransition(.opacity)
@@ -81,10 +82,10 @@ struct IslandView: View {
                     }
                 }.contentShape(Rectangle())
             }.buttonStyle(CommunicationButtonStyle())
-                .accessibilityLabel("TACIT. \(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
+                .accessibilityLabel("TACIT. \(flow.listening ? "Listening to selected Meet tab. " : "")\(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
                 .accessibilityIdentifier("living-notch-status")
                 .help("Open TACIT · ⌃⇧⌘T. Right-click for notch appearance.")
-            if state.busy {
+            if state.busy || flow.listening {
                 Button { client.stopEverything() } label: {
                     Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).frame(width: 26, height: 28)
                         .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
@@ -119,17 +120,17 @@ struct IslandView: View {
                 Group {
                     if tight { Circle().fill(state.kind == .ready ? .white.opacity(0.55) : state.color).frame(width: 5, height: 5) }
                     else {
-                        Text(client.isIsolated ? "TEST" : "tacit").font(.system(size: 13, weight: .semibold, design: .rounded)).tracking(-0.4)
+                        Text(client.isIsolated ? "TEST" : flow.listening ? "tacit · ◉" : "tacit").font(.system(size: 13, weight: .semibold, design: .rounded)).tracking(-0.4)
                             .foregroundStyle(.white.opacity(island.hovered || island.expanded || island.peeking ? 0.95 : 0.82))
                     }
                 }.frame(maxHeight: .infinity).padding(.trailing, 6).contentShape(Rectangle())
             }.buttonStyle(CommunicationButtonStyle())
-                .accessibilityLabel("TACIT. \(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
+                .accessibilityLabel("TACIT. \(flow.listening ? "Listening to selected Meet tab. " : "")\(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
                 .accessibilityIdentifier("living-notch-status")
                 .help("TACIT · \(state.title). Click to open · ⌃⇧⌘T. Right-click for notch appearance.")
             Spacer(minLength: island.geometry.cutoutWidth + 6)
             HStack(spacing: 6) {
-                if state.busy {
+                if state.busy || flow.listening {
                     Button { client.stopEverything() } label: {
                         Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).frame(width: 24, height: 20)
                             .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
@@ -170,6 +171,12 @@ struct IslandView: View {
                     IslandAction("Stop", symbol: "stop.fill") { client.stopEverything() }
                 }
             }.accessibilityElement(children: .contain).accessibilityLabel("Speech delivery")
+        } else if let context = flow.peek {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("FLOW · selected Meet tab", systemImage: "ear.badge.waveform").font(.system(size: 11)).foregroundStyle(.mint)
+                Text(context).font(.system(size: 18)).lineLimit(3)
+                IslandAction("Open my turn", symbol: "bookmark") { island.showCommunication(.flow) }
+            }
         } else {
             guidancePeek
         }
@@ -184,6 +191,11 @@ struct IslandView: View {
             }.accessibilityLabel("Exact recognized words to review: \(words)")
             Text(client.reviewDraft.editing ? "Your correction · only Speak sends it" : "Review first · only Speak sends these words")
                 .font(.system(size: 11)).foregroundStyle(.white.opacity(0.76))
+            if flow.relevant != nil {
+                Button { island.showCommunication(.flow) } label: {
+                    Label("Context may have changed · inspect", systemImage: "text.bubble").font(.system(size: 11))
+                }.accessibilityLabel("Possible context change for your selected question. Inspect without changing recognized words.")
+            }
             HStack(spacing: 10) {
                 IslandAction("Edit", symbol: "pencil") {
                     guard client.lastHypothesis?.id == h.id else { return }

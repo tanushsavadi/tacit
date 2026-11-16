@@ -17,7 +17,7 @@ struct PersonalPhrase: Codable, Equatable, Identifiable {
 
 /// Only deliberately saved wording persists. Drafts and supplied context stay in RAM.
 @MainActor final class CommunicationSession: ObservableObject {
-    enum Surface: String { case conversation, compose, phrases, customize, assistance, recovery, voice }
+    enum Surface: String { case conversation, compose, phrases, customize, assistance, recovery, voice, flow }
     @Published var surface: Surface = .conversation
     @Published private(set) var phrases: [PersonalPhrase]
     @Published private(set) var holdPhrase: String

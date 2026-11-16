@@ -42,7 +42,7 @@ final class IslandController: ObservableObject {
     var presentation: LivingNotchPresentation { .current(client, live: live) }
     var peeking: Bool { LivingNotchVisibility.peek(expanded: expanded, hovered: hovered,
         review: client.canReviewCurrent, busy: presentation.busy, problem: false, transient: reveal) }
-    var targetSize: CGSize { expanded ? geometry.expandedSize : peeking ? geometry.peekSize : geometry.compactSize(discreet: discreet) }
+    var targetSize: CGSize { expanded ? (communication.surface == .flow ? geometry.flowSize : geometry.expandedSize) : peeking ? geometry.peekSize : geometry.compactSize(discreet: discreet) }
     let communication: CommunicationSession
     /// Native camera + Live for "Start communicating".
     let live: LiveCoordinator
@@ -117,7 +117,7 @@ final class IslandController: ObservableObject {
         p.title = "TACIT conversation island"
         p.onPress = { [weak self] in
             guard let self else { return }
-            if [.compose, .customize, .assistance].contains(self.communication.surface) || self.client.reviewDraft.editing {
+            if [.compose, .customize, .assistance, .flow].contains(self.communication.surface) || self.client.reviewDraft.editing {
                 self.takeKeyboard()
             }
         } // Only an explicit click in an editor takes the keyboard; hover never does.
@@ -187,7 +187,7 @@ final class IslandController: ObservableObject {
     func beginReview() { reviewing = true; communication.surface = .conversation; expand() }
     func showCommunication(_ surface: CommunicationSession.Surface) {
         communication.surface = surface; reviewing = false; expand()
-        if surface == .compose || surface == .customize || surface == .assistance { takeKeyboard() }
+        if surface == .compose || surface == .customize || surface == .assistance || surface == .flow { takeKeyboard() }
     }
     func focusEditor() { pinned = true; takeKeyboard() }
     func expand() { closeWork?.cancel(); expanded = true; updateFrame() }

@@ -99,8 +99,9 @@ final class TacitClient: ObservableObject {
     private var pendingAuthored: [String: AuthoredApproval] = [:]
     @Published private(set) var reviewExpired = false
 
+    let flow = FlowClient()
     let repoRoot: String?
-    let port = Int(ProcessInfo.processInfo.environment["PORT"] ?? "") ?? 8790
+    let port = Int(ProcessInfo.processInfo.environment["PORT"] ?? "") ?? (Bundle.main.object(forInfoDictionaryKey: "TACITServerPort") as? Int ?? 8790)
     private var task: URLSessionWebSocketTask?
     private var session = URLSession(configuration: .ephemeral)
     private var backoff: Double = 0.5
@@ -173,6 +174,7 @@ final class TacitClient: ObservableObject {
             guard let self, gen == self.connectGeneration else { return }
             guard let tok, var comps = URLComponents(string: "ws://127.0.0.1:\(self.port)/ws") else { self.conn = .noToken; return }
             self.cachedToken = tok
+            if ProcessInfo.processInfo.environment["TACIT_FLOW"] == "1" || Bundle.main.object(forInfoDictionaryKey: "TACITFlowCandidate") as? Bool == true { self.flow.connect(token: tok) }
             comps.queryItems = [URLQueryItem(name: "token", value: tok)]
             guard let url = comps.url else { self.conn = .noToken; return }
             let t = self.session.webSocketTask(with: url)
@@ -186,6 +188,7 @@ final class TacitClient: ObservableObject {
     }
 
     private func resetServerState() {
+        flow.disconnect()
         live = nil; output = nil; route = nil; recognition = nil
         lastHypothesis = nil; lastDelivery = nil; reviewDraft = ReviewDraft(); reviewSubmittedID = nil
         seenHypotheses.removeAll(); hypothesisOrder.removeAll()
@@ -539,6 +542,7 @@ final class TacitClient: ObservableObject {
     }
 
     func pauseEverything() {
+        flow.pause()
         if previewActive { stopVoicePreview() }
         if live?.state == "active" { live("pause") }
         if output?.state == "ready" { output("pause") }
@@ -653,6 +657,7 @@ final class TacitClient: ObservableObject {
     }
 
     func stopEverything() {
+        flow.stop()
         if conn != .connected { notice = "Disconnected. Stop could not be confirmed; check the call and TACIT server."; return }
         if previewActive { stopVoicePreview() }
         cancelSuggestion()

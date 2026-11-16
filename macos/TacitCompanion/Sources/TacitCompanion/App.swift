@@ -8,7 +8,7 @@ final class CompanionRuntime: ObservableObject {
     let island: IslandController
     private init() {
         let lab = ExperienceLab.isEnabled
-        let testing = CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--offline-selftest") || CommandLine.arguments.contains("--presence-check") || CommandLine.arguments.contains("--render-presence") || lab
+        let testing = CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--offline-selftest") || CommandLine.arguments.contains("--presence-check") || CommandLine.arguments.contains("--render-presence") || CommandLine.arguments.contains("--render-flow") || CommandLine.arguments.contains("--flow-check") || lab
         client = TacitClient(registerHotKey: !testing, connectOnInit: false,
             isolatedTransport: lab ? .init(send: { ExperienceLab.shared.record($0) }) : nil)
         let communication = CommunicationSession(defaults: lab ? nil : .standard)
@@ -22,6 +22,8 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !CommandLine.arguments.contains("--selftest"), !CommandLine.arguments.contains("--offline-selftest"), !CommandLine.arguments.contains("--presence-check") else { return }
         if let i = CommandLine.arguments.firstIndex(of: "--render-presence"), CommandLine.arguments.count > i + 1 { PresenceRender.run(CommandLine.arguments[i + 1]); return }
+        if CommandLine.arguments.contains("--flow-check") { FlowCheck.run(); return }
+        if let i = CommandLine.arguments.firstIndex(of: "--render-flow"), CommandLine.arguments.count > i + 1 { FlowRender.run(CommandLine.arguments[i + 1]); return }
         let lab = ExperienceLab.isEnabled
         if CommandLine.arguments.contains("--inspect-ui") || lab { NSApp.setActivationPolicy(.regular) }
         CompanionRuntime.shared.island.start()

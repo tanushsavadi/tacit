@@ -43,6 +43,7 @@ struct IslandGeometry: Equatable {
     var crownHeight: CGFloat { hasNotch ? cutoutHeight : 38 }
     var peekSize: CGSize { CGSize(width: min(360, max(1, screenFrame.width - 32)), height: min(190, max(1, screenFrame.height - topInset - 24))) }
     var expandedSize: CGSize { CGSize(width: min(460, max(1, screenFrame.width - 32)), height: min(350, max(1, screenFrame.height - topInset - 24))) }
+    var flowSize: CGSize { CGSize(width: expandedSize.width, height: min(540, max(1, screenFrame.height - topInset - 24))) }
     var topInset: CGFloat { hasNotch ? 0 : menuBarHeight + 6 }
     func frame(size: CGSize) -> CGRect {
         CGRect(x: screenFrame.midX - size.width / 2, y: screenFrame.maxY - topInset - size.height,

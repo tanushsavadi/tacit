@@ -72,8 +72,8 @@ enum PresenceTone: String, CaseIterable, Identifiable {
 
 /// Where the shown context came from. There is deliberately no "live" case: no meeting capture is verified.
 enum PresenceContextSource: String {
-    case userProvided = "user-provided", sample
-    var label: String { self == .sample ? "SAMPLE" : "YOU ADDED" }
+    case userProvided = "user-provided", sample, meetingSelected = "meeting-selected"
+    var label: String { self == .sample ? "SAMPLE" : self == .meetingSelected ? "YOU SELECTED · MEET TRANSCRIPT" : "YOU ADDED" }
 }
 
 /// Help Me Respond, as a flow: what was said → what you want to do → (your point) → wording you edit → Speak.
@@ -92,7 +92,7 @@ enum PresenceContextSource: String {
     @Published var context = "" {
         didSet {
             if context.count > Self.maxContext { context = String(context.prefix(Self.maxContext)) }
-            if contextSource == .sample && context != Self.sampleQuestion { contextSource = .userProvided }
+            if contextSource == .sample && context != Self.sampleQuestion || contextSource == .meetingSelected { contextSource = .userProvided }
         }
     }
     @Published private(set) var contextSource: PresenceContextSource = .userProvided
@@ -138,6 +138,10 @@ enum PresenceContextSource: String {
     var canSpeakDraft: Bool { PersonalPhrase.valid(draft) }
 
     func useSample() { context = Self.sampleQuestion; contextSource = .sample }
+    func useSelectedMeetingContext(_ text: String) {
+        guard context.isEmpty, point.isEmpty, draft.isEmpty else { return }
+        context = text; contextSource = .meetingSelected
+    }
 
     /// Choosing an intention is the user's decision. Opinion intents ask for the user's point before any request.
     func choose(_ intent: PresenceIntent, client: TacitClient) {

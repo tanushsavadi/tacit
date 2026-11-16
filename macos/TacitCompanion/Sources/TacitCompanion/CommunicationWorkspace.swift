@@ -46,6 +46,7 @@ struct CommunicationWorkspace: View {
                 case .customize: PhraseCustomization(session: session)
                 case .assistance: PresenceView(client: client, session: session)
                 case .voice: MyVoicePicker(client: client)
+                case .flow: FlowView(flow: client.flow, client: client, session: session)
                 case .recovery:
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Previous correction").font(.system(size: 13, weight: .semibold))
@@ -93,6 +94,7 @@ struct CommunicationWorkspace: View {
                 icon("pause.fill", "Pause camera, Live and voice") { live.pause() }
             }
             Menu {
+                Button("Flow · conversation participation") { island.showCommunication(.flow) }.keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Open browser workspace (optional)") { client.openWorkspace() }
                 Button("Settings & output") { island.showUtility(.diagnostics) }
                 Button(island.pinned ? "Unpin island" : "Keep island open") { island.togglePin() }
