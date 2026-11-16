@@ -1,10 +1,30 @@
 # HANDOFF — TACIT
 
-**Last updated:** 2026-11-15 ~18:05 UTC (clock-checked)
-**Last working agent/model:** Claude Code, Opus 5.5 (integration/release owner, Git owner) — session "Living Notch + Presence integration".
+**Last updated:** 2026-11-16 ~18:45 UTC (clock-checked)
+**Last working agent/model:** Claude Code, Opus 5.5 (Git owner) — session "Post-hackathon cleanup".
 **Product:** Mode 2 only — silent speech → the user's voice inside an ordinary call (AGENTS.md top). Automatic speaking of
 recognised words stays DISABLED.
 **Start here:** `docs/RELEASE_RUNBOOK.md` (release gate, PASS/FAIL matrix, commands, rollback, physical checks), then this file.
+
+## POST-HACKATHON CLEANUP (2026-11-16, Claude) — repo organised, local machine cleaned
+- **main** (`93f9114`, CI green): committed Codex's stable hover fix (`f3e05e9`, notch retracts on hover-away and
+  restores the same workspace on return), Sol's last checkpoint notes + review-race repro (`bb59dcc`), merged
+  `feat/brand-orb` (`b927168`, brand kit, app icon, Living Mark), dropped Silent Voice references (`ca8e76b`, Lipflow
+  still credited), README links Devpost + Figma deck + branches (`6fa10e4`). Checks before push: server typecheck +
+  204/204, web typecheck + 80/80 + build, companion 116/116, recognition 50/50.
+- **Branches now:** `main`; `experiment/tacit-flow` (Flow candidate rebuilt from Codex's patches on `508ade4` + demo
+  package source in `flow-demo/`; server 246/246, native 122/122; still NO-GO); `archive/codex-native-experience-checkpoint`
+  (the ~/.codex worktree's uncommitted 01:47 UTC checkpoint, superseded by `8cc130a`). 12 merged branches deleted
+  locally and on GitHub; local `fix/review-races` deleted (content on main). Tags kept.
+- **Worktrees removed:** `../tacit-brand`, `~/.codex/worktrees/564f`. Only the main checkout remains.
+- **Local machine:** TACIT runtime stopped (no processes, ports or launch agents). Deleted node_modules, `.venv`, all
+  Swift `.build`, `web/dist`, `third_party/` (weights), `server/models`, `server/data`, `recognition/data`
+  (recordings), eval clips, `airpods/data`, `web/evidence|artifacts`, 107 test preference plists. `server/.env` kept
+  (0600). To run again: re-download the Auto-AVSR weights and whisper model, `npm ci`, recreate the venv, `./scripts/tacit.sh build`.
+- **Secrets:** trufflehog over all Git history: no real keys (2 unverified false positives in MediaPipe `.wasm`). The
+  AWS key note below still needs a human: `~/.codex/config.toml` still sets AWS credentials for Codex shells.
+- Left in place (user content, not in Git): `~/Documents/TACIT-Pitch`, `TACIT-Film-Production`, `TACIT-Gemini-Research`,
+  `TACIT-Flow-Development` (its source is now on `experiment/tacit-flow`).
 
 ## FINAL DEMO STATE (2026-11-15 ~18:05 UTC, Claude) — ORIGINAL MODEL ACTIVE
 - User decision: do NOT use the personal overlay in the demo. `./scripts/tacit.sh profile base` run while idle; running
