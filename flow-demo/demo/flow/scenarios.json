@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "A",
+      "title": "The changing question",
+      "events": [
+        {
+          "scenarioId": "A",
+          "eventId": "A-event-1",
+          "turnId": "A-turn-1",
+          "revision": 1,
+          "source": "Demo conversation",
+          "text": "Could we meet Thursday at four? Does that work for you?",
+          "sequence": 1,
+          "relativeTimeMs": 0,
+          "simulated": true
+        },
+        {
+          "scenarioId": "A",
+          "eventId": "A-event-2",
+          "turnId": "A-turn-2",
+          "revision": 1,
+          "source": "Demo conversation",
+          "text": "Actually, sorry, could we make that five instead?",
+          "sequence": 2,
+          "relativeTimeMs": 30000,
+          "simulated": true
+        }
+      ]
+    },
+    {
+      "id": "B",
+      "title": "Don\u2019t lose my turn",
+      "events": [
+        {
+          "scenarioId": "B",
+          "eventId": "B-event-1",
+          "turnId": "B-turn-1",
+          "revision": 1,
+          "source": "Demo conversation",
+          "text": "What do you think about launching the project next week?",
+          "sequence": 1,
+          "relativeTimeMs": 0,
+          "simulated": true
+        },
+        {
+          "scenarioId": "B",
+          "eventId": "B-event-2",
+          "turnId": "B-turn-2",
+          "revision": 1,
+          "source": "Demo conversation",
+          "text": "Before that, can we discuss the budget?",
+          "sequence": 2,
+          "relativeTimeMs": 30000,
+          "simulated": true
+        }
+      ]
+    },
+    {
+      "id": "C",
+      "title": "Correct or clarify",
+      "events": [
+        {
+          "scenarioId": "C",
+          "eventId": "C-event-1",
+          "turnId": "C-turn-1",
+          "revision": 1,
+          "source": "Demo conversation",
+          "text": "When could you send the fictional project report?",
+          "sequence": 1,
+          "relativeTimeMs": 0,
+          "simulated": true
+        }
+      ]
+    }
+  ]
+}
