@@ -11,6 +11,8 @@ Built at **HackUMass XIV** (November 2026). It is an experimental research proto
 - **Demo video (2:48):** https://youtu.be/GeV55H-ozqw
 - **Devpost:** https://devpost.com/software/tacit-7fygt5
 - **Pitch deck (Figma Slides):** https://www.figma.com/slides/jf8CzZjdqJfhMHhcb9lCrT
+- **The weekend at a glance:** [`showcase/`](showcase/README.md) — what was built in ~34 hours, 450 automated tests,
+  research results, the pitch, the demo film source and the Devpost assets.
 - **Platform:** native macOS app in the notch / menu bar (SwiftUI), local Node.js server, local Python lip-reading
   service.
 
@@ -102,6 +104,7 @@ Camera ─► Apple Vision lip tracking (Swift) ─► Auto-AVSR visual-only VSR
 | `shared/protocol.ts` | Message types shared by server and clients |
 | `web/` | Optional browser workspace (React/Vite) |
 | `docs/` | Release runbook, research notes, handoff; brand kit in [`docs/brand/`](docs/brand/README.md) |
+| `showcase/` | Pitch deck and scripts, demo film source, Devpost gallery |
 | `airpods/`, `watch/` | Research probes for wearable sensing (not used by the app; findings in `docs/research/`) |
 
 `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` are instructions for the AI coding agents that helped build the project.
