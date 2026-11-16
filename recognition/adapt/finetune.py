@@ -5,8 +5,8 @@
 --train/--val take a session directory or a bare recording name (resolved to the single data/webcam/<UTC>-<name> with
 clips; ambiguous or missing names are refused).
 
-Recipe = Lipflow's speaker adaptation (github.com/amywork777/lipflow lipflow/train_vsr.py @ e37453b, the trainer behind
-Silent Voice's lipread/adapt.py), re-implemented for TACIT's engine; fixed before any adaptation data exists:
+Recipe = Lipflow's speaker adaptation (github.com/amywork777/lipflow lipflow/train_vsr.py @ e37453b),
+re-implemented for TACIT's engine; fixed before any adaptation data exists:
   * Starts from LRS3_V_WER19.1 (read-only; SHA-256 checked before and after). Default scope "frontend+embed+block0":
     visual front end + embedding + Conformer block 0 (25.78 M params); the other Conformer blocks, CTC head and decoder
     stay frozen. All BatchNorm running statistics frozen (eval mode); dropout active (model.train()), as Lipflow.

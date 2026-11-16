@@ -559,7 +559,7 @@ Codex's `docs/demo-preflight-codex.mjs`, `docs/demo-review-races-codex.mts` (unt
 on real adaptation data; production unchanged (no overlay loading in `tacit_vsr`); base weights unchanged
 (SHA-256 e740cef3…); notch/BlackHole/server untouched; :8790 still needs the idle restart from the accuracy session.
 **Done (pushed):** `705e5ff` prompt partitions A 50 / B 51 / validation 20 (new) + recorder `--resume` + 1.5 s camera
-lead-in; `c51b3e1` `recognition/adapt/` — Lipflow/Silent Voice recipe (front end + embed + Conformer block 0, BN frozen,
+lead-in; `c51b3e1` `recognition/adapt/` — Lipflow recipe (front end + embed + Conformer block 0, BN frozen,
 0.1 CTC + 0.9 attention, crop/flip/gain/time-mask, AdamW 1e-4, 6 epochs), validation-epoch selection + early stop,
 hygiene refusals, overlays pinned to the base hash, `eval.bench --overlay`. Tests 36/36. Measured 0.87 s/step on MPS.
 **Diag1 review (D.16):** no methodological issue; silent-articulation shift and a speaker/domain gap both supported;

@@ -30,7 +30,7 @@ def sha256_file(path: Path, fresh: bool = False) -> str:
 
 
 SCOPES = {
-    # Lipflow / Silent Voice speaker adaptation (lipflow/train_vsr.py DEFAULT_SCOPE "frontend+encoder1"): the visual front
+    # Lipflow speaker adaptation (lipflow/train_vsr.py DEFAULT_SCOPE "frontend+encoder1"): the visual front
     # end (3D conv + ResNet), the embedding and Conformer block 0 — 162 tensors, 25.78 M parameters in this checkpoint.
     "frontend+embed+block0": lambda n: ("encoder.frontend.", "encoder.embed.", "encoder.encoders.0."),
     # Conservative arm (2026-11-15): only the visual front end (3D conv + ResNet-18, BatchNorm statistics still frozen) —

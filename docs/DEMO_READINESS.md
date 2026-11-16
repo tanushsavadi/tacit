@@ -365,7 +365,7 @@ scores its own wrong output above the reference (no search errors), so wider bea
 (4) Endpointing is not tested here (whole fixed clips); it remains a live-path question (D.11). The encoder still maps
 each silent take nearer to the same sentence voiced than to other sentences (5/5, ratio 0.33–0.69): the information is
 there but shifted — the case speaker adaptation is meant for.
-**Silent Voice / Lipflow (read from source):** Silent Voice `lipread/adapt.py` wraps Lipflow `lipflow/train_vsr.py`
+**Lipflow (read from source):** Lipflow's speaker-adaptation trainer `lipflow/train_vsr.py`
 (@ e37453b): trains the visual front end + embedding + Conformer block 0 (their scope, chosen on held-out speaker runs:
 36.3% → front end 32.2% → front end + block 0 29.6%), freezes the other blocks, CTC head, decoder and LM, freezes all
 BatchNorm statistics, loss (0.1 CTC + 0.9 label-smoothed attention)/tokens, augmentation crop/flip/gain/time-mask,
