@@ -10,6 +10,7 @@ struct CommunicationWorkspace: View {
     private var reduceMotion: Bool { systemReduceMotion || CompanionAccessibility.reducedMotionPreview }
     @Environment(\.colorSchemeContrast) private var contrast
     @FocusState private var composerFocused: Bool
+    @Environment(\.brandedByCrown) private var brandedByCrown
 
     private var state: CommunicationState {
         .resolve(.init(connected: client.conn == .connected,
@@ -70,8 +71,8 @@ struct CommunicationWorkspace: View {
     private var header: some View {
         HStack(spacing: 8) {
             if session.isHome {
-                Text("tacit").font(.system(size: 15, weight: .semibold, design: .rounded)).tracking(-0.5)
-                    .accessibilityAddTraits(.isHeader)
+                // Inside the notch the crown already shows the wordmark; only the menu-bar window repeats it.
+                if !brandedByCrown { TacitWordmark(height: 12).accessibilityHidden(false).accessibilityLabel("TACIT").accessibilityAddTraits(.isHeader) }
             } else {
                 Button { session.goHome() } label: {
                     Label("Camera", systemImage: "chevron.left").font(.system(size: 12, weight: .semibold))

@@ -27,10 +27,26 @@ struct IslandView: View {
     @ObservedObject var island: IslandController
     @ObservedObject var live: LiveCoordinator
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.colorSchemeContrast) private var systemContrast
+    private var highContrast: Bool { systemContrast == .increased || CompanionAccessibility.highContrastPreview }
     private var reduceMotion: Bool { systemReduceMotion || CompanionAccessibility.reducedMotionPreview }
     private var state: LivingNotchPresentation { island.presentation }
     private var silhouette: IslandSilhouette { .init(attached: island.geometry.hasNotch) }
+    private var markMode: LivingMark.Mode {
+        let camera = client.isIsolated ? ExperienceLab.shared.cameraFixture ?? live.camera.state : live.camera.state
+        return LivingMark.mode(state.kind, connecting: client.conn == .connecting, capturing: camera == .capturing)
+    }
+    /// The living brand mark: a click target for opening TACIT, never a control that sends or authorizes anything.
+    private func mark(_ size: CGFloat) -> some View {
+        LivingMarkView(mode: markMode, realtime: state.realtime, size: size)
+            .padding(2).contentShape(Rectangle())
+            .onTapGesture { island.expanded ? island.collapse() : island.expand() }
+            .help("TACIT · \(state.title)")
+    }
+    @ViewBuilder private var brandLabel: some View {
+        if client.isIsolated && !CompanionAccessibility.wordmarkPreview { Text("TEST").font(.system(size: 12, weight: .semibold, design: .rounded)).tracking(-0.2) }
+        else { TacitWordmark(color: .white.opacity(island.hovered || island.expanded || island.peeking ? 0.97 : 0.86), height: 10.5) }
+    }
 
     init(client: TacitClient, island: IslandController) {
         self.client = client; self.island = island; self.live = island.live
@@ -39,7 +55,7 @@ struct IslandView: View {
         VStack(spacing: 0) {
             crown
             if island.expanded {
-                ConversationView(client: client, island: island)
+                ConversationView(client: client, island: island).environment(\.brandedByCrown, true)
                     .padding(.horizontal, 28).padding(.top, 4).padding(.bottom, 22)
                     .transition(CommunicationMotion.contentTransition(reduceMotion: reduceMotion))
             } else if island.peeking {
@@ -50,11 +66,16 @@ struct IslandView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(silhouette.fill(.black))
-        .overlay(silhouette.stroke(.white.opacity(contrast == .increased ? 0.65 : island.geometry.hasNotch ? 0 : (island.hovered || island.expanded ? 0.13 : 0.055)), lineWidth: 1).allowsHitTesting(false))
+        .overlay(silhouette.stroke(.white.opacity(highContrast ? 0.65 : island.geometry.hasNotch ? 0 : (island.hovered || island.expanded ? 0.13 : 0.055)), lineWidth: 1).allowsHitTesting(false))
         .clipShape(silhouette)
         .contentShape(silhouette)
         .foregroundStyle(.white).preferredColorScheme(.dark)
         .onHover { island.hover($0) }
+        .onChange(of: markMode) { old, new in
+            if let words = LivingMark.announcement(from: old, to: new, title: state.title) {
+                AccessibilityNotification.Announcement(words).post()
+            }
+        }
         // AppKit's spring owns geometry. Content only dissolves, so there is no competing layout spring.
         .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
     }
@@ -63,27 +84,24 @@ struct IslandView: View {
         HStack(spacing: 8) {
             Button { island.expanded ? island.collapse() : island.expand() } label: {
                 HStack(spacing: 8) {
-                    Text(client.isIsolated ? "TEST" : "tacit").font(.system(size: 12, weight: .semibold, design: .rounded)).tracking(-0.4)
-                        .foregroundStyle(.white.opacity(island.hovered ? 0.95 : 0.78))
+                    brandLabel
                     Capsule().fill(.white.opacity(0.18)).frame(width: 1, height: 10).accessibilityHidden(true)
-                    if state.kind != .ready {
-                        Circle().fill(state.color).frame(width: 4, height: 4).accessibilityHidden(true)
-                    }
                     Text(state.compactTitle)
                         .font(.system(size: 11.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.9)
                         .foregroundStyle(state.realtime ? .orange : .white.opacity(0.83))
                         .contentTransition(.opacity)
                         .animation(CommunicationMotion.feedback(reduceMotion: reduceMotion), value: state.compactTitle)
                     Spacer(minLength: 0)
-                    if !state.busy && client.live?.state != "active" {
+                    if island.hovered && !state.busy && client.live?.state != "active" {
                         Image(systemName: island.expanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 8, weight: .semibold)).foregroundStyle(.white.opacity(island.hovered ? 0.8 : 0.4))
+                            .font(.system(size: 8, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
                     }
                 }.contentShape(Rectangle())
             }.buttonStyle(CommunicationButtonStyle())
                 .accessibilityLabel("TACIT. \(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
                 .accessibilityIdentifier("living-notch-status")
                 .help("Open TACIT · ⌃⇧⌘T. Right-click for notch appearance.")
+            mark(island.discreet && !island.expanded && !island.peeking ? NotchLayout.discreetMarkSize : NotchLayout.markSize)
             if state.busy {
                 Button { client.stopEverything() } label: {
                     Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).frame(width: 26, height: 28)
@@ -97,7 +115,7 @@ struct IslandView: View {
                     .accessibilityLabel("Pause camera, Live and voice")
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.leading, 18).padding(.trailing, 12)
         .frame(height: island.discreet && !island.expanded && !island.peeking ? 28 : 38)
     }
 
@@ -110,47 +128,41 @@ struct IslandView: View {
         }
     }
 
-    /// Notched display: this row shares the band with the hardware cutout. Branding sits in the left wing; the right
-    /// wing carries only a state glyph plus the direct Pause/Stop controls. Words and details live in Peek/workspace.
+    /// Notched display: this row shares the band with the hardware cutout. The wordmark sits in the left wing; the right
+    /// wing carries the living mark (whose shape and colour carry the state) plus the direct Pause/Stop controls.
+    /// Words and details live in Peek/workspace. Layout budget per wing: `NotchLayout`.
     private var notchCrown: some View {
         let tight = island.discreet && !island.expanded && !island.peeking
         return HStack(spacing: 0) {
             Button { island.expanded ? island.collapse() : island.expand() } label: {
                 Group {
                     if tight { Circle().fill(state.kind == .ready ? .white.opacity(0.55) : state.color).frame(width: 5, height: 5) }
-                    else {
-                        Text(client.isIsolated ? "TEST" : "tacit").font(.system(size: 13, weight: .semibold, design: .rounded)).tracking(-0.4)
-                            .foregroundStyle(.white.opacity(island.hovered || island.expanded || island.peeking ? 0.95 : 0.82))
-                    }
+                    else { brandLabel }
                 }.frame(maxHeight: .infinity).padding(.trailing, 6).contentShape(Rectangle())
             }.buttonStyle(CommunicationButtonStyle())
                 .accessibilityLabel("TACIT. \(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
                 .accessibilityIdentifier("living-notch-status")
                 .help("TACIT · \(state.title). Click to open · ⌃⇧⌘T. Right-click for notch appearance.")
             Spacer(minLength: island.geometry.cutoutWidth + 6)
-            HStack(spacing: 6) {
+            HStack(spacing: NotchLayout.spacing) {
+                mark(tight ? NotchLayout.discreetMarkSize : NotchLayout.markSize)
                 if state.busy {
                     Button { client.stopEverything() } label: {
-                        Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).frame(width: 24, height: 20)
+                        Image(systemName: "stop.fill").font(.system(size: 9, weight: .bold)).frame(width: NotchLayout.control, height: 20)
                             .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 7))
                     }.buttonStyle(CommunicationButtonStyle()).accessibilityLabel("Stop everything immediately")
                         .accessibilityIdentifier("living-notch-stop").help("Stop camera, Live and voice · ⌃⇧⌘.")
                 } else {
-                    if state.kind != .ready && !tight {
-                        Image(systemName: state.symbol).font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(state.color).accessibilityHidden(true)
-                            .contentTransition(.opacity)
-                    }
                     if client.live?.state == "active" && !tight {
                         Button { live.pause() } label: {
-                            Image(systemName: "pause.fill").font(.system(size: 9, weight: .semibold)).frame(width: 22, height: 20)
+                            Image(systemName: "pause.fill").font(.system(size: 9, weight: .semibold)).frame(width: NotchLayout.control, height: 20)
                         }.buttonStyle(CommunicationButtonStyle()).foregroundStyle(.white.opacity(0.75))
                             .accessibilityLabel("Pause camera, Live and voice")
                     }
                 }
             }
         }
-        .padding(.leading, tight ? 12 : 18).padding(.trailing, tight ? 8 : 12)
+        .padding(.leading, tight ? 12 : NotchLayout.leading).padding(.trailing, tight ? 6 : NotchLayout.trailing)
         .frame(height: island.geometry.crownHeight)
     }
 
@@ -161,8 +173,8 @@ struct IslandView: View {
             reviewPeek(h)
         } else if let d = client.lastDelivery, state.busy || (island.reveal && ["rendered", "interrupted"].contains(d.state)) {
             VStack(alignment: .leading, spacing: 10) {
-                Text(d.state == "rendered" ? "Speech complete · call microphone" : d.state == "interrupted" ? "Speech stopped" : state.title)
-                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(state.color)
+                DeliveryTrackView(steps: DeliveryTrack.steps(state: d.state, firstAudio: d.firstAudioAt != nil),
+                                  signal: client.realtimeActive ? TacitBrand.amber.color : TacitBrand.mint.color)
                 ScrollView { Text(d.text).font(.system(size: 18, weight: .medium)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                 Text(client.realtimeActive ? "Experimental · spoken without review" : "Your exact words · local output status")
                     .font(.system(size: 11)).foregroundStyle(client.realtimeActive ? .orange : .white.opacity(0.72))
@@ -245,4 +257,15 @@ struct IslandView: View {
         case .type: island.showCommunication(.compose)
         }
     }
+}
+
+/// Space budget of the compact notch wings (points). Tested against `IslandGeometry.notchWing`.
+enum NotchLayout {
+    static let leading: CGFloat = 18, trailing: CGFloat = 10, spacing: CGFloat = 5
+    static let markSize: CGFloat = 17, discreetMarkSize: CGFloat = 13
+    static var markSlot: CGFloat { markSize + 4 } // + 2 pt tap padding each side
+    static let control: CGFloat = 24       // Pause / Stop
+    static let wordmarkWidth: CGFloat = 10.5 * TacitBrand.wordBox.width / TacitBrand.wordBox.height
+    static var rightWing: CGFloat { trailing + markSlot + spacing + control }
+    static var leftWing: CGFloat { leading + wordmarkWidth + 6 }
 }

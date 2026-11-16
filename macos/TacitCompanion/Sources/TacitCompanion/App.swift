@@ -47,6 +47,7 @@ struct TacitCompanionApp: App {
     @NSApplicationDelegateAdaptor(CompanionDelegate.self) private var delegate
     private let runtime = CompanionRuntime.shared
     init() {
+        if let i = CommandLine.arguments.firstIndex(of: "--export-brand"), CommandLine.arguments.count > i + 1 { BrandExport.run(CommandLine.arguments[i + 1]) }
         if let i = CommandLine.arguments.firstIndex(of: "--analyze-video") { VideoAnalysis.run(Array(CommandLine.arguments[(i + 1)...])) }
         if CommandLine.arguments.contains("--offline-selftest") { OfflineSelfTest.run() }
         if CommandLine.arguments.contains("--selftest") { SelfTest.run(); return }

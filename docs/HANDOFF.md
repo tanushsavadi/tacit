@@ -157,6 +157,37 @@ written BEFORE any training). Demo stack untouched (server 38791, sidecar 42794 
 - Deadline per hackumass.com schedule: final submission 9:00 AM EST Sun Nov 15 (Devpost pages 403 to the agent; user
   recalls 10 AM final edits — unconfirmed).
 
+## BRAND + LIVING MARK (2026-11-15 06:35–07:45 UTC) — branch `feat/brand-orb`, worktree `../tacit-brand`, merged into main 2026-11-16 (post-hackathon cleanup)
+User asked for a TACIT identity, the logo on the RIGHT of the compact notch, and a signature animated mark. Codex had
+yielded the notch files (WORKSTREAM_SOL checkpoint 05:26 UTC); a Codex CLI session was still open in the main tree, so
+all work happened in a separate worktree from `c383ae0`. The running demo (app pid 48577, server) was not touched.
+- **Identity:** "Living Signal" = two arcs (lips) + a voice dot; custom monoline `tacit` wordmark (open `c`, mint `i` dot).
+  One geometry source `Brand/TacitBrand.swift` draws the app mark AND exports every SVG/PNG (`--export-brand DIR`).
+  Kit + guide + concept A/B/C evaluation: `docs/brand/README.md`. App icon now bundled (`build-app.sh` → `TACIT.icns`).
+- **Notch:** position/geometry unchanged (`cbb1612`): wordmark in the left wing, **Living Mark 17 pt + Pause/Stop in
+  the right wing**; pill = wordmark · status · mark · Pause/Stop; discreet 13 pt mark. Workspace inside the notch no
+  longer repeats "tacit".
+- **Living Mark** (`Brand/LivingMark.swift`): modes only from existing state (camera `.capturing` → lips part; recognition
+  in flight → rotate; current review → halo + one pulse; first audio → voice arcs; paused/attention amber). Speaking is
+  a state loop (no amplitude data exists). Reduce Motion = stills; every mode has a colour-independent shape (tested).
+  Sparse VoiceOver announcements. **Voice Transfer** track in the speaking Peek (`Brand/DeliveryTrack.swift`):
+  Voice → Call mic/Playing → Done from `speech_delivery` only; never "heard".
+- **Perf (measured):** still states 0.0 % CPU; processing 6.6 %, speaking 8.5 % (short-lived). A camera-on breathing loop
+  cost ~5 % at any rate/schedule and was removed. Resize pacing 8.34/16.8 ms (baseline 8.34/15.96).
+- **Checks:** Swift 113/113 (+10 BrandTests) · `--offline-selftest` 10/10 · lab dimensions 25/25 in notch, pill,
+  Reduce Motion and high-contrast variants · release `build-app.sh` + codesign verify PASS (worktree bundle only).
+  Lab additions (offline only): scenarios compact-capturing/-processing/-paused, hover-peek, peek-preparing; flags
+  `--lab-pill --lab-high-contrast --lab-wordmark --lab-scenario NAME --record-lab DIR`. Gotcha: the lab's stdout is
+  block-buffered when redirected, so wait on output files (dimensions.json / frames.json), not log lines.
+- **Not verified:** physical hover, VoiceOver navigation by a person, live camera with a person, real Meet listener,
+  multi-display hotplug. Evidence is offline fixtures (`docs/brand/evidence/`, `motion/tacit-notch-states-offline.mp4`).
+- **Integrate (when idle, no BlackHole readers):** merge `feat/brand-orb` → main, `./scripts/tacit.sh build`, relaunch the
+  app (re-signed build → user must click Allow on the Documents prompt). **Rollback:** tag `demo-modes-2026-11-15` or
+  revert the merge; the brand files are additive (`Brand/`), plus small edits in IslandView/ExperienceLab/
+  IslandController/LivingNotchPresentation/CommunicationWorkspace/App/build-app.sh.
+- **AWS (unchanged, still urgent, human):** rotation of the exposed IAM key is NOT confirmed (see below). No secrets in
+  this branch, its assets or captures (all lab runs used `env -i`).
+
 ## LIVING NOTCH + PRESENCE — integrated, DEPLOYED (2026-11-15 05:29–05:56 UTC) — main `cbb1612`
 - **Codex checkpoint (05:26 UTC, yielded in WORKSTREAM_SOL)** reviewed and committed on `feat/living-notch`: `302bc0c`
   feature, `8e04de7` workstream docs (SHA-256 manifest taken before staging). Untracked `docs/demo-review-races-codex.mts`

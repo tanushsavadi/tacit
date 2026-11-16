@@ -71,7 +71,7 @@ struct LivingNotchPresentation: Equatable {
     @MainActor static func current(_ client: TacitClient, live: LiveCoordinator) -> Self {
         resolve(.init(connected: client.conn == .connected, connecting: client.conn == .connecting,
             camera: client.isIsolated ? ExperienceLab.shared.cameraFixture ?? live.camera.state : live.camera.state, starting: live.starting, live: client.live?.state,
-            realtime: client.realtimeActive, processing: client.processingUtteranceID != nil,
+            realtime: client.realtimeActive, processing: client.processingUtteranceID != nil || (client.isIsolated && ExperienceLab.shared.processingFixture),
             review: client.canReviewCurrent, delivery: client.lastDelivery?.state,
             firstAudio: client.lastDelivery?.firstAudioAt != nil, output: client.output?.state,
             routeUnavailable: client.route?.state == "unavailable", recognizerUnavailable: client.recognition?.reachable == false))

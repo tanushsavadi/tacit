@@ -6,6 +6,16 @@ enum CompanionAccessibility {
         (CommandLine.arguments.contains("--experience-lab") || Bundle.main.bundleIdentifier == "edu.hackumass.tacit-experience-lab")
             && CommandLine.arguments.contains("--lab-reduce-motion")
     }
+    /// Offline lab only: render as if macOS "Increase contrast" were on (SwiftUI's contrast environment is read-only).
+    static var highContrastPreview: Bool {
+        (CommandLine.arguments.contains("--experience-lab") || Bundle.main.bundleIdentifier == "edu.hackumass.tacit-experience-lab")
+            && CommandLine.arguments.contains("--lab-high-contrast")
+    }
+    /// Offline lab only: draw the real wordmark instead of the TEST label (brand evidence; captures stay labelled offline).
+    static var wordmarkPreview: Bool {
+        (CommandLine.arguments.contains("--experience-lab") || Bundle.main.bundleIdentifier == "edu.hackumass.tacit-experience-lab")
+            && CommandLine.arguments.contains("--lab-wordmark")
+    }
 }
 
 /// Explicit offline UI fixtures. No server, credential, camera, audio, capture adapter or hotkeys.
@@ -20,7 +30,9 @@ enum CompanionAccessibility {
     private var window: NSWindow?
     private var utterance = 0
     var cameraFixture: NativeCamera.State?
-    let scenarios = ["compact-live", "peek-review", "peek-speaking", "peek-complete", "peek-realtime", "camera-denied", "discreet", "collapsed", "ready", "review", "editing", "phrases", "assistance", "voice", "error", "paused", "disconnected", "realtime-confirm", "realtime"]
+    /// Offline fixture: a recognition request "in flight" (no frames are sent anywhere).
+    @Published var processingFixture = false
+    let scenarios = ["compact-live", "peek-review", "peek-speaking", "peek-complete", "peek-realtime", "camera-denied", "discreet", "collapsed", "ready", "review", "editing", "phrases", "assistance", "voice", "error", "paused", "disconnected", "realtime-confirm", "realtime", "compact-capturing", "compact-processing", "compact-paused", "hover-peek", "peek-preparing", "pill-compact-live"]
     /// Offline My Voice fixture (sample registry shaped like the server's voice_status). Never plays audio.
     private var voiceRevision = 1
     private var voiceSelected = "apple:com.apple.voice.compact.en-US.Samantha"
@@ -86,11 +98,16 @@ enum CompanionAccessibility {
         panel.contentView = NSHostingView(rootView: LabControls(lab: self))
         if !CommandLine.arguments.contains("--lab-island-only") { panel.orderFrontRegardless(); window = panel }
         show("ready")
+        if let i = CommandLine.arguments.firstIndex(of: "--lab-scenario"), CommandLine.arguments.count > i + 1 { show(CommandLine.arguments[i + 1]) }
         if CommandLine.arguments.contains("--play-lab") {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 await playMotion()
             }
+        }
+        if let flag = CommandLine.arguments.firstIndex(of: "--record-lab"), CommandLine.arguments.count > flag + 1 {
+            let directory = CommandLine.arguments[flag + 1]
+            Task { @MainActor in await recordTransitions(directory: directory) }
         }
         if let flag = CommandLine.arguments.firstIndex(of: "--capture-lab"), CommandLine.arguments.count > flag + 1 {
             let directory = CommandLine.arguments[flag + 1]
@@ -113,7 +130,7 @@ enum CompanionAccessibility {
     func show(_ scenario: String) {
         guard let client, let island else { return }
         client.connect() // isolated transport clears fixture state; never connects to a socket
-        client.notice = nil; client.reviewDraft = ReviewDraft(); cameraFixture = nil; island.setDiscreet(false)
+        client.notice = nil; client.reviewDraft = ReviewDraft(); cameraFixture = nil; processingFixture = false; island.setDiscreet(false)
         live("off"); output("ready")
         emit("voice_status", "status", voiceStatus())
         island.communication.surface = .conversation
@@ -123,7 +140,11 @@ enum CompanionAccessibility {
         switch scenario {
         case "collapsed": island.collapse()
         case "discreet": island.setDiscreet(true); island.collapse()
-        case "compact-live": cameraFixture = .tracking; live("active"); island.collapse()
+        case "compact-live", "pill-compact-live": cameraFixture = .tracking; live("active"); island.collapse()
+        case "compact-capturing": cameraFixture = .capturing; live("active"); island.collapse()
+        case "compact-processing": cameraFixture = .tracking; processingFixture = true; live("active"); island.collapse()
+        case "compact-paused": live("paused", generation: 2); island.collapse()
+        case "hover-peek": cameraFixture = .tracking; live("active"); island.collapse(); island.hover(true)
         case "camera-denied": cameraFixture = .denied; island.collapse(); island.hover(true)
         case "review", "editing", "peek-review":
             live("active")
@@ -148,10 +169,12 @@ enum CompanionAccessibility {
                 "output":"OFFLINE · no audio", "text":"", "timings":["requestedAt":0]])
         case "paused": live("paused", generation: 2); output("paused", generation: 2)
         case "realtime-confirm": island.live.requestMode(realtime: true)
-        case "peek-speaking", "peek-complete":
+        case "peek-speaking", "peek-complete", "peek-preparing":
+            var timings: [String: Any] = ["requestedAt":0]
+            if scenario != "peek-preparing" { timings["firstAudioAt"] = 1 }
             emit("speech_delivery", "delivery", ["requestId":"offline-speech", "source":"typed",
-                "state":scenario == "peek-speaking" ? "routing" : "rendered", "text":"I have something to add.",
-                "outputAuthorizationId":"offline-voice", "generation":1, "timings":["requestedAt":0, "firstAudioAt":1]])
+                "state":scenario == "peek-speaking" ? "routing" : scenario == "peek-preparing" ? "synthesizing" : "rendered", "text":"I have something to add.",
+                "outputAuthorizationId":"offline-voice", "generation":1, "timings":timings])
             island.collapse()
         case "realtime", "peek-realtime":
             // Offline fixture: the server-reported real-time state and two recorded-style deliveries. No audio.
@@ -183,6 +206,46 @@ enum CompanionAccessibility {
         }
         show("collapsed")
         print("OFFLINE interaction sequence complete; fixtures only, no camera/audio.")
+    }
+
+    /// Offline fixture recording of this app's own island view through the state sequence, one bitmap per tick on a
+    /// fixed 460×360 pt canvas (top-centred, like the notch). Real capture timestamps are written to frames.json.
+    func recordTransitions(directory: String) async {
+        guard let island else { return }
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let scenes: [(String, Double)] = [("collapsed", 1.2), ("compact-live", 1.6), ("compact-capturing", 1.6), ("compact-processing", 1.6),
+            ("peek-review", 1.8), ("peek-preparing", 1.0), ("peek-speaking", 2.2), ("peek-complete", 1.2), ("compact-paused", 1.4), ("collapsed", 1.0)]
+        var frames: [[String: Any]] = []
+        var captured: [(NSBitmapImageRep, String, Double)] = []
+        let start = ProcessInfo.processInfo.systemUptime
+        for (scene, duration) in scenes {
+            show(scene)
+            let until = ProcessInfo.processInfo.systemUptime + duration
+            while ProcessInfo.processInfo.systemUptime < until {
+                let t = ProcessInfo.processInfo.systemUptime
+                if let bitmap = island.renderedIslandBitmap() { captured.append((bitmap, scene, t - start)) }
+                try? await Task.sleep(nanoseconds: 30_000_000)
+            }
+        }
+        // Encode after capture so PNG work does not slow the sequence being recorded.
+        for (index, (bitmap, scene, t)) in captured.enumerated() {
+            let scale = bitmap.size.width > 0 ? CGFloat(bitmap.pixelsWide) / bitmap.size.width : 2
+            let canvas = NSImage(size: CGSize(width: 460 * scale, height: 360 * scale))
+            canvas.lockFocus()
+            NSColor(white: 0.33, alpha: 1).setFill(); CGRect(origin: .zero, size: canvas.size).fill()
+            let w = CGFloat(bitmap.pixelsWide), h = CGFloat(bitmap.pixelsHigh)
+            bitmap.draw(in: CGRect(x: (canvas.size.width - w) / 2, y: canvas.size.height - h, width: w, height: h))
+            canvas.unlockFocus()
+            if let tiff = canvas.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) {
+                try? png.write(to: URL(fileURLWithPath: String(format: "%@/%04d.png", directory, index)))
+                frames.append(["index":index, "scene":scene, "t":t])
+            }
+        }
+        let index = captured.count
+        if let data = try? JSONSerialization.data(withJSONObject: ["source":"offline fixtures · this app's island view only · no camera/audio", "frames":frames], options: [.prettyPrinted]) {
+            try? data.write(to: URL(fileURLWithPath: directory + "/frames.json"))
+        }
+        print("OFFLINE RECORDING: \(index) frames.")
     }
 
     func measureMotion(directory: String) async {

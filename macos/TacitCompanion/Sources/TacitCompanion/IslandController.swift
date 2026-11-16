@@ -70,7 +70,7 @@ final class IslandController: ObservableObject {
         self.live = LiveCoordinator(client: client)
         self.communication = communication ?? CommunicationSession()
         let screen = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens[0]
-        geometry = IslandGeometry(screen: screen)
+        geometry = Self.geometry(screen)
         discreet = client.isIsolated ? false : UserDefaults.standard.bool(forKey: "TACITIslandDiscreet")
         enabled = UserDefaults.standard.object(forKey: "TACITIslandEnabled") as? Bool ?? true
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification,
@@ -152,10 +152,16 @@ final class IslandController: ObservableObject {
         collapse(); placeOnDisplay()
     }
 
+    /// `--lab-pill` (offline lab only) previews the non-notch pill on a notched Mac.
+    private static func geometry(_ screen: NSScreen) -> IslandGeometry {
+        guard ExperienceLab.isEnabled, CommandLine.arguments.contains("--lab-pill") else { return IslandGeometry(screen: screen) }
+        return IslandGeometry(frame: screen.frame, safeTop: 0, leftArea: nil, rightArea: nil, menuBarHeight: screen.frame.maxY - screen.visibleFrame.maxY)
+    }
+
     private func placeOnDisplay() {
         let selected = NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == displayID }
         guard let screen = selected ?? NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens.first else { return }
-        geometry = IslandGeometry(screen: screen); displayName = screen.localizedName
+        geometry = Self.geometry(screen); displayName = screen.localizedName
         updateFrame(animated: false)
     }
 
@@ -252,6 +258,13 @@ final class IslandController: ObservableObject {
 
     var renderedSize: CGSize? { panel?.frame.size }
     var displayMaximumFPS: Int { panel?.screen?.maximumFramesPerSecond ?? 60 }
+
+    /// Bitmap of this app's own island view only (offline lab recording); never desktop pixels.
+    func renderedIslandBitmap() -> NSBitmapImageRep? {
+        guard let view = panel?.contentView, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        return bitmap
+    }
 
     /// Snapshot only this app's rendered view; never captures desktop pixels or another application.
     func saveRenderedIsland(to path: String) throws {

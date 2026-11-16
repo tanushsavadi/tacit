@@ -1,0 +1,24 @@
+{
+  "cutoutHeight" : 32,
+  "cutoutWidth" : 185,
+  "displayAdvertisedHz" : 120,
+  "hoverDwellCancellation" : true,
+  "limitation" : "Main-thread resize\/update notification cadence, not display presentation, GPU frame time or FPS. Includes rapid reversals and a settle interval.",
+  "measuredAt" : "2026-11-15T07:34:05Z",
+  "menuBarClearance" : 0,
+  "resize" : {
+    "count" : 247,
+    "intervalMsMax" : 836.07004166697152,
+    "intervalMsP50" : 8.3363750018179417,
+    "intervalMsP95" : 16.796083320514299
+  },
+  "screenHeight" : 982,
+  "screenWidth" : 1512,
+  "source" : "offline actual NSWindow notifications",
+  "windowUpdate" : {
+    "count" : 21,
+    "intervalMsMax" : 932.3385416646488,
+    "intervalMsP50" : 110.9532916743774,
+    "intervalMsP95" : 932.3385416646488
+  }
+}
