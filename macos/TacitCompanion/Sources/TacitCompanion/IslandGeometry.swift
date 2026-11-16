@@ -25,7 +25,7 @@ struct IslandGeometry: Equatable {
     var compactSize: CGSize {
         CGSize(width: hasNotch ? cutoutWidth + 76 : 116, height: hasNotch ? cutoutHeight + 3 : 26)
     }
-    var expandedSize: CGSize { CGSize(width: min(420, screenFrame.width - 32), height: min(258, screenFrame.height - 70)) }
+    var expandedSize: CGSize { CGSize(width: min(460, screenFrame.width - 32), height: min(350, screenFrame.height - 70)) }
     var topInset: CGFloat { hasNotch ? 0 : 6 }
     func frame(size: CGSize) -> CGRect {
         CGRect(x: screenFrame.midX - size.width / 2, y: screenFrame.maxY - topInset - size.height,

@@ -98,8 +98,8 @@ final class CompanionTests: XCTestCase {
     @MainActor func testCompactLayoutIsBoundedAndNeverDashboardSized() async {
         let g = IslandGeometry(frame:CGRect(x:0,y:0,width:1512,height:982),safeTop:37,
             leftArea:CGRect(x:0,y:945,width:656,height:37),rightArea:CGRect(x:856,y:945,width:656,height:37))
-        XCTAssertEqual(g.expandedSize.width,420); XCTAssertEqual(g.expandedSize.height,258)
-        XCTAssertLessThan(g.expandedSize.height,280)
+        XCTAssertEqual(g.expandedSize.width,460); XCTAssertEqual(g.expandedSize.height,350)
+        XCTAssertLessThan(g.expandedSize.height,360)
     }
     @MainActor func testReviewedCandidateProvenanceExpiryAndGeneration() async {
         let c = TacitClient(registerHotKey:false,connectOnInit:false); live(c)

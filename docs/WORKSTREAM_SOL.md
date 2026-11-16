@@ -1,3 +1,20 @@
+# STABLE — YIELDED FOR CLAUDE · isolated native experience
+
+Final checkpoint: 2026-11-15 01:47:49 UTC. Sol yields all companion files listed in
+[NATIVE_EXPERIENCE_HANDOFF_SOL.md](NATIVE_EXPERIENCE_HANDOFF_SOL.md); research/concept selection is in
+[NATIVE_EXPERIENCE_RESEARCH_SOL.md](NATIVE_EXPERIENCE_RESEARCH_SOL.md).
+
+Worktree: `/Users/tanushsavadi/.codex/worktrees/564f/HackUMass 26'`. Detached HEAD at
+`e710dfe27e7438a1426ffc92a7d9345f4542c27f`; no branch/Git writes by Sol. Main worktree untouched.
+36/36 Swift tests, 10/10 release offline selftests, release/signing, and 9/9 actual panel dimensions passed.
+Astra motion files yielded; no active editors. Hold, saved phrases, inline correction/composition and local
+response starters are implemented. AI generation/live meeting capture remain unavailable. Physical calls/AAC-user
+accessibility validation remain. Durable artifacts/source inventory in companion `.build/experience-evidence/` (ignored).
+Claude: read the new handoff, inspect explicit source files, preserve latest main safety changes, and run safe offline
+verification before integration. Do not run the original live selftest during active calls. No commit/merge/push by Sol.
+
+---
+
 # STABLE — yielded for Claude
 
 **Native notch + reviewed-speech checkpoint · 2026-11-14 21:09 UTC. Sol has stopped editing all files listed below and explicitly yields them to Claude for review, atomic staging/commit and push. Claude remains the sole Git writer.** No Git writes by Sol. All earlier frontend checkpoints below are historical; this section is authoritative for the companion.
