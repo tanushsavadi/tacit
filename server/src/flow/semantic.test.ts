@@ -1,0 +1,30 @@
+import { describe,it,expect,vi } from 'vitest';
+import { FlowState, type Citation } from './state.ts';
+import { SemanticEngine,validate,groundModel,type Model } from './semantic.ts';
+const setup=()=>{const s=new FlowState();s.start(true,true);s.attachSource('Selected Google Meet tab');s.transcript('t1',1,'Could we meet Thursday at four?',true);s.transcript('t2',1,'Actually Thursday at five.',true);return s;};
+const c=(s:FlowState,id:string):Citation=>{const t=s.turns.find(t=>t.id===id)!;return {turnId:id,revision:t.revision,start:0,end:t.text.length,quote:t.text};};
+const valid=(s:FlowState)=>({questions:[c(s,'t1')],relationships:[{relation:'correction',before:c(s,'t1'),after:c(s,'t2'),detailBefore:'four',detailAfter:'five'}],abstain:false});
+const result=(text:string)=>({text,inputTokens:100,outputTokens:40,model:'fixture-only'});
+describe('source-grounded display only model boundary',()=>{
+  it('accepts exact spans and literal changed detail',()=>{const s=setup();expect(validate(JSON.stringify(valid(s)),s).relationships).toHaveLength(1);});
+  for(const kind of ['fake quote','wrong revision','wrong ID','wrong offset','invented detail','tool field','speech field','wrong ordering'])it(`rejects ${kind}`,()=>{
+    const s=setup(),a=valid(s),r=a.relationships[0]!;
+    if(kind==='fake quote')r.after.quote='Invented';if(kind==='wrong revision')r.after.revision=99;
+    if(kind==='wrong ID')r.after.turnId='unknown';if(kind==='wrong offset')r.after.start=1;
+    if(kind==='invented detail')r.detailAfter='six';if(kind==='tool field')Object.assign(a,{tool:'speak'});
+    if(kind==='speech field')Object.assign(a,{speech:'Yes, I agree'});if(kind==='wrong ordering')r.after=r.before;
+    expect(()=>validate(JSON.stringify(a),s)).toThrow();
+  });
+  it('model cannot change a draft or authorize speech',async()=>{const s=setup(),d=s.select(c(s,'t1'));s.edit(d.id,1,'Four is my preference.');const e=new SemanticEngine(async()=>result(JSON.stringify(valid(s))));await e.run(s,()=>{});expect(d.text).toBe('Four is my preference.');expect(s.changes).toHaveLength(1);expect(e.metrics.inputTokens).toBe(100);});
+  it('ignores completion after Stop even if provider ignores abort',async()=>{const s=setup();let finish!:(r:ReturnType<typeof result>)=>void;const e=new SemanticEngine(()=>new Promise(r=>finish=r));const p=e.run(s,()=>{});s.stop();e.cancel();finish(result(JSON.stringify(valid(setup()))));await p;expect(s.anchors).toHaveLength(0);expect(s.state).toBe('off');});
+  it('drops valid-looking results after transcript revisions',async()=>{const s=setup();const old=JSON.stringify(valid(s));const e=new SemanticEngine(async()=>{s.transcript('t2',2,'Actually Tuesday.',true);return result(old);});await e.run(s,()=>{});expect(s.changes).toHaveLength(0);});
+  it('does not require a stable draft to expose a context change',async()=>{const s=setup(),d=s.select(c(s,'t1'));const e=new SemanticEngine(async()=>{s.edit(d.id,1,'I still want four.');return result(JSON.stringify(valid(s)));});await e.run(s,()=>{});expect(s.changes).toHaveLength(1);expect(d.text).toBe('I still want four.');});
+  it('abstains without fabricated cards',async()=>{const s=setup();const e=new SemanticEngine(async()=>result(JSON.stringify({...valid(s),abstain:true})));await e.run(s,()=>{});expect(s.changes).toHaveLength(0);expect(s.semantic).toContain('uncertain');});
+  it('never calls cloud without current text consent',async()=>{const s=setup();s.textConsent=false;const fn=vi.fn<Model>();await new SemanticEngine(fn).run(s,()=>{});expect(fn).not.toHaveBeenCalled();});
+  it('429 opens backoff; provider content never becomes UI error',async()=>{const s=setup();const fn=vi.fn(async()=>{throw {status:429,message:'private transcript with secret'};});const e=new SemanticEngine(fn);await e.run(s,()=>{});await e.run(s,()=>{});expect(fn).toHaveBeenCalledTimes(1);expect(s.semantic).not.toContain('secret');});
+  it('bounds calls and deduplicates repeated events',async()=>{const s=setup();const e=new SemanticEngine(async()=>result(JSON.stringify(valid(s))));for(let i=0;i<12;i++)await e.run(s,()=>{});expect(e.metrics.requests).toBe(8);expect(s.changes).toHaveLength(1);expect(s.anchors).toHaveLength(1);});
+  it('timeout returns control even when provider ignores cancellation',async()=>{vi.useFakeTimers();try{const s=setup(),e=new SemanticEngine(()=>new Promise(()=>{}));const p=e.run(s,()=>{});await vi.advanceTimersByTimeAsync(5001);await p;expect(s.semantic).toContain('timed out');}finally{vi.useRealTimers();}});
+  it('malformed JSON fails closed without losing manual words',async()=>{const s=setup(),d=s.select(c(s,'t1'));s.edit(d.id,1,'No');const e=new SemanticEngine(async()=>result('not JSON'));await e.run(s,()=>{});expect(d.text).toBe('No');expect(s.changes).toHaveLength(0);});
+  it('does not surface an unchanged detail as a correction',()=>{const s=setup(),a=valid(s);a.relationships[0]!.detailAfter='Thursday';a.relationships[0]!.detailBefore='Thursday';expect(validate(JSON.stringify(a),s).relationships).toHaveLength(0);});
+  it('derives offsets only for exact unique quotations on the cited current revision',()=>{const s=setup();const ref={turnId:'t1',revision:1,quote:'Thursday at four'};const raw=JSON.stringify({questions:[ref],relationships:[],abstain:false});expect(JSON.parse(groundModel(raw,s.turns)).questions[0].start).toBe(s.turns[0]!.text.indexOf(ref.quote));expect(()=>groundModel(raw,[{...s.turns[0]!,revision:2}])).toThrow();expect(()=>groundModel(raw,[{...s.turns[0]!,text:ref.quote+' '+ref.quote}])).toThrow();});
+});

@@ -30,6 +30,9 @@ import { checkPreviewSafety, VoicePreview } from './preview.ts';
 import { geminiLlm, Respond } from './respond.ts';
 import type { VoiceRouteStatus } from '../../shared/protocol.ts';
 import { spawn } from 'node:child_process';
+import { FlowService } from './flow/service.ts';
+import { localWhisper } from './flow/transcription.ts';
+import { geminiModel } from './flow/semantic.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -58,7 +61,6 @@ const auth: AuthConfig = {
   disabled: authDisabled,
 };
 const streamTokens = new StreamTokens();
-
 // ───────────────────────────── wiring ─────────────────────────────
 
 const geminiModels = (process.env.GEMINI_MODELS ?? process.env.GEMINI_MODEL)?.split(',').map((m) => m.trim()).filter(Boolean) ?? DEFAULT_GEMINI_MODELS;
@@ -66,6 +68,20 @@ const gemini = process.env.GEMINI_API_KEY ? geminiGenerator(process.env.GEMINI_A
 // Presence (Help Me Respond): same existing Gemini key; suggestions are text only and never reach speech output.
 const respond = new Respond(process.env.GEMINI_API_KEY && process.env.TACIT_RESPOND !== 'off' ? geminiLlm(process.env.GEMINI_API_KEY, geminiModels) : null,
   { provider: 'Google Gemini', models: geminiModels });
+// Additive isolated candidate only. No listening or context collection starts at server launch.
+const flow = process.env.TACIT_FLOW === '1' ? new FlowService({
+  token: auth.secrets.userToken,
+  decode: localWhisper(process.env.TACIT_FLOW_STT_URL ?? 'http://127.0.0.1:18766'),
+  model: process.env.GEMINI_API_KEY ? geminiModel(process.env.GEMINI_API_KEY, process.env.TACIT_FLOW_MODEL) : null,
+  policyVerified: process.env.TACIT_FLOW_PROVIDER_POLICY === 'paid-verified',
+  port: Number(process.env.TACIT_FLOW_PORT ?? 18892),
+  onInvalidate: () => respond.cancelAll('Flow context ended.'),
+}) : null;
+if (flow) await flow.listen();
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { void flow?.close(); });
+
+
+
 const created = createTts();
 const tts = created.tts;
 if (created.reason) console.log(`[tts] system voice: ${created.reason}`);
@@ -346,7 +362,8 @@ async function handleClient(msg: ClientMessage): Promise<unknown> {
       if (!['enable', 'pause', 'resume', 'stop'].includes(msg.action)) return;
       console.log(`[speech] voice output ${msg.action} by the user`);
       if (msg.action === 'stop' || msg.action === 'pause') preview.stop(`Voice output ${msg.action === 'stop' ? 'stopped' : 'paused'}.`);
-      if (msg.action === 'stop') respond.cancelAll('Stop requested.');
+      if (msg.action === 'stop') { respond.cancelAll('Stop requested.'); flow?.stop(); }
+      if (msg.action === 'pause') flow?.pause();
       return speech.control(msg.action);
     case 'speak_typed':
       return speech.speakTyped(msg);
@@ -521,13 +538,17 @@ uiWss.on('connection', (ws) => {
         if (msg.action === 'activate' && live.current.authorizationId !== before && live.current.state === 'active') liveOwner = ws;
         if (msg.action === 'end') liveOwner = null;
         // Pausing/stopping Live also silences anything TACIT has not finished saying.
+        if (msg.action === 'pause' || msg.action === 'interrupt') flow?.pause();
+        if (msg.action === 'end') flow?.stop();
         if (msg.action === 'pause' || msg.action === 'interrupt' || msg.action === 'end') speech.interrupt(`Live ${msg.action === 'end' ? 'ended' : msg.action === 'pause' ? 'paused' : 'interrupted'}.`);
         return;
       }
       if (msg.type === 'visual_utterance') return live.utterance(msg, ws);
       // Presence: the reply (which may quote the user's context) goes only to the socket that asked.
       if (msg.type === 'respond_suggest') {
-        return void respond.suggest(msg as unknown as Record<string, unknown>, (suggestion) => {
+        const input = msg.contextSource === 'meeting-selected' && !flow?.allowsContext(msg.context)
+          ? { ...msg, contextSource: 'revoked-flow' } : msg;
+        return void respond.suggest(input as unknown as Record<string, unknown>, (suggestion) => {
           if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'respond_suggestion', suggestion } satisfies ServerMessage));
         }, ws);
       }

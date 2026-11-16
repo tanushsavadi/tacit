@@ -19,7 +19,7 @@ const MAX_WORDS = 35;
 const MAX_PER_MINUTE = 20;
 
 export const INTENTS: readonly RespondIntent[] = ['clarify', 'share_view', 'disagree', 'buy_time', 'phrase_this'];
-const SOURCES: readonly RespondContextSource[] = ['user-provided', 'sample'];
+const SOURCES: readonly RespondContextSource[] = ['user-provided', 'sample', 'meeting-selected'];
 const TONES: readonly RespondTone[] = ['brief', 'warm', 'direct'];
 /** Intents that state something on the user's behalf: only ever from the user's own words. */
 export const NEEDS_POINT: ReadonlySet<RespondIntent> = new Set(['share_view', 'disagree', 'phrase_this']);

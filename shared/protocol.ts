@@ -487,7 +487,7 @@ export interface Snapshot {
  */
 export type RespondIntent = 'clarify' | 'share_view' | 'disagree' | 'buy_time' | 'phrase_this';
 /** Where the context came from. Never 'live' until a capture adapter is verified end to end. */
-export type RespondContextSource = 'user-provided' | 'sample';
+export type RespondContextSource = 'user-provided' | 'sample' | 'meeting-selected';
 /** Optional, user-chosen wording style kept on the user's Mac. Not a personal fact. */
 export type RespondTone = 'brief' | 'warm' | 'direct';
 export interface RespondStatus {
