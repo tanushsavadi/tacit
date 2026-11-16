@@ -52,6 +52,7 @@ final class IslandController: ObservableObject {
     private var utilityPanel: IslandPanel?
     enum Utility { case typed, diagnostics, transcript, review }
     private var subscriptions = Set<AnyCancellable>()
+    private var hoverMemory = NotchHoverState()
     private var hoverWork: DispatchWorkItem?
     private var closeWork: DispatchWorkItem?
     private var revealWork: DispatchWorkItem?
@@ -160,13 +161,30 @@ final class IslandController: ObservableObject {
 
     func hover(_ inside: Bool) {
         hoverWork?.cancel(); closeWork?.cancel()
-        if inside && !expanded {
-            // Intentional short dwell reveals a small Peek. Full controls require a click/shortcut.
-            let work = DispatchWorkItem { [weak self] in self?.hovered = true; self?.updateFrame() }
-            hoverWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.16, execute: work)
-        } else if !inside && !pinned && panel?.isKeyWindow != true {
-            let work = DispatchWorkItem { [weak self] in self?.collapse() }
-            closeWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.38, execute: work)
+        if inside {
+            guard !expanded else { hovered = true; return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                self.hovered = true
+                if self.hoverMemory.restoreWorkspace {
+                    self.expanded = true
+                    self.reviewing = self.hoverMemory.restoreReview
+                }
+                self.updateFrame()
+            }
+            hoverWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.14, execute: work)
+        } else if !pinned {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, !self.pinned else { return }
+                // A menu/picker is an intentional continuation of this interaction.
+                guard NSApp?.windows.contains(where: { $0 !== self.panel && $0.isVisible && $0.level.rawValue >= NSWindow.Level.popUpMenu.rawValue }) != true else { return }
+                self.hoverMemory.retract(expanded: self.expanded, reviewing: self.reviewing)
+                self.expanded = false; self.hovered = false; self.reviewing = false
+                if self.panel?.isKeyWindow == true { self.panel?.resignKey() }
+                self.panel?.keyboardEnabled = false
+                self.updateFrame()
+            }
+            closeWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.30, execute: work)
         }
     }
 
@@ -189,12 +207,13 @@ final class IslandController: ObservableObject {
         communication.surface = surface; reviewing = false; expand()
         if surface == .compose || surface == .customize || surface == .assistance { takeKeyboard() }
     }
-    func focusEditor() { pinned = true; takeKeyboard() }
+    func focusEditor() { takeKeyboard() }
     func expand() { closeWork?.cancel(); expanded = true; updateFrame() }
     func showForKeyboard() { if !enabled { setEnabled(true) }; expand(); takeKeyboard() }
     func togglePin() { pinned.toggle(); if pinned { expand() } }
     private func takeKeyboard() { expand(); panel?.keyboardEnabled = true; panel?.makeKey() }
     func collapse() {
+        hoverMemory.explicitCollapse()
         hoverWork?.cancel(); closeWork?.cancel(); pinned = false; expanded = false; reviewing = false; hovered = false
         if let panel, panel.isKeyWindow {
             panel.keyboardEnabled = false; panel.orderOut(nil)
