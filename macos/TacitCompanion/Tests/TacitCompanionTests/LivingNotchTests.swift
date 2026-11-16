@@ -94,7 +94,7 @@ final class LivingNotchTests: XCTestCase {
         c.typedDraft = "My unfinished message"
         c.reviewDraft.editing = true; c.reviewDraft.text = "My correction"
         island.focusEditor()
-        XCTAssertTrue(island.pinned, "An explicitly opened correction editor stays put until dismissed")
+        XCTAssertFalse(island.pinned, "Editor focus must allow hover retraction; pinning is an explicit choice")
         island.collapse(); island.hover(true); island.hover(false)
         try? await Task.sleep(nanoseconds: 420_000_000)
         XCTAssertFalse(island.expanded)

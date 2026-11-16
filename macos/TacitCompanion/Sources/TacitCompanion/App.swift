@@ -8,12 +8,12 @@ final class CompanionRuntime: ObservableObject {
     let island: IslandController
     private init() {
         let lab = ExperienceLab.isEnabled
-        let testing = CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--offline-selftest") || CommandLine.arguments.contains("--presence-check") || CommandLine.arguments.contains("--render-presence") || CommandLine.arguments.contains("--render-flow") || CommandLine.arguments.contains("--flow-check") || lab
-        client = TacitClient(registerHotKey: !testing, connectOnInit: false,
+        let testing = CommandLine.arguments.contains("--selftest") || CommandLine.arguments.contains("--offline-selftest") || CommandLine.arguments.contains("--presence-check") || CommandLine.arguments.contains("--render-presence") || CommandLine.arguments.contains("--render-flow") || CommandLine.arguments.contains("--flow-check") || CommandLine.arguments.contains("--demo-rehearsal") || lab
+        client = TacitClient(registerHotKey: !testing && !FlowClient.isDemo, connectOnInit: false,
             isolatedTransport: lab ? .init(send: { ExperienceLab.shared.record($0) }) : nil)
         let communication = CommunicationSession(defaults: lab ? nil : .standard)
         communication.attach(client) // Help Me Respond follows its own suggestion requests on this client
-        island = IslandController(client: client, communication: communication, registerHotKey: !testing)
+        island = IslandController(client: client, communication: communication, registerHotKey: !testing && !FlowClient.isDemo)
     }
 }
 
@@ -30,6 +30,15 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate {
         if lab {
             ExperienceLab.shared.start(client: CompanionRuntime.shared.client, island: CompanionRuntime.shared.island)
         } else { CompanionRuntime.shared.client.connect() }
+        if let i = CommandLine.arguments.firstIndex(of: "--demo-rehearsal"), CommandLine.arguments.count > i + 1 {
+            DemoRehearsal.run(CommandLine.arguments[i + 1], runtime: CompanionRuntime.shared); return
+        }
+        if FlowClient.isDemo {
+            NSApp.setActivationPolicy(.regular)
+            CompanionRuntime.shared.island.showCommunication(.flow)
+            CompanionRuntime.shared.island.focusEditor()
+            DemoPresenter.shared.show(runtime: CompanionRuntime.shared)
+        }
         if CommandLine.arguments.contains("--inspect-ui") {
             CompanionRuntime.shared.island.showForKeyboard()
             CompanionRuntime.shared.island.togglePin()

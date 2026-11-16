@@ -188,7 +188,7 @@ final class TacitClient: ObservableObject {
     }
 
     private func resetServerState() {
-        flow.disconnect()
+        flow.disconnect(preserveWords: true)
         live = nil; output = nil; route = nil; recognition = nil
         lastHypothesis = nil; lastDelivery = nil; reviewDraft = ReviewDraft(); reviewSubmittedID = nil
         seenHypotheses.removeAll(); hypothesisOrder.removeAll()

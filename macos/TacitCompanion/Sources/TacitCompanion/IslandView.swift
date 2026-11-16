@@ -70,7 +70,7 @@ struct IslandView: View {
                     if state.kind != .ready {
                         Circle().fill(state.color).frame(width: 4, height: 4).accessibilityHidden(true)
                     }
-                    Text(flow.listening && !state.busy ? "Meet · listening" : state.compactTitle)
+                    Text(flow.listening && !state.busy ? (flow.demo != nil ? "Demo · simulated" : "Meet · listening") : state.compactTitle)
                         .font(.system(size: 11.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.9)
                         .foregroundStyle(state.realtime ? .orange : .white.opacity(0.83))
                         .contentTransition(.opacity)
@@ -82,7 +82,7 @@ struct IslandView: View {
                     }
                 }.contentShape(Rectangle())
             }.buttonStyle(CommunicationButtonStyle())
-                .accessibilityLabel("TACIT. \(flow.listening ? "Listening to selected Meet tab. " : "")\(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
+                .accessibilityLabel("TACIT. \(flow.listening ? (flow.demo != nil ? "Demo conversation. Simulated input. " : "Listening to selected Meet tab. ") : "")\(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
                 .accessibilityIdentifier("living-notch-status")
                 .help("Open TACIT · ⌃⇧⌘T. Right-click for notch appearance.")
             if state.busy || flow.listening {
@@ -125,7 +125,7 @@ struct IslandView: View {
                     }
                 }.frame(maxHeight: .infinity).padding(.trailing, 6).contentShape(Rectangle())
             }.buttonStyle(CommunicationButtonStyle())
-                .accessibilityLabel("TACIT. \(flow.listening ? "Listening to selected Meet tab. " : "")\(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
+                .accessibilityLabel("TACIT. \(flow.listening ? (flow.demo != nil ? "Demo conversation. Simulated input. " : "Listening to selected Meet tab. ") : "")\(state.title). \(state.detail). \(island.expanded ? "Collapse" : "Open") communication workspace")
                 .accessibilityIdentifier("living-notch-status")
                 .help("TACIT · \(state.title). Click to open · ⌃⇧⌘T. Right-click for notch appearance.")
             Spacer(minLength: island.geometry.cutoutWidth + 6)
@@ -173,7 +173,7 @@ struct IslandView: View {
             }.accessibilityElement(children: .contain).accessibilityLabel("Speech delivery")
         } else if let context = flow.peek {
             VStack(alignment: .leading, spacing: 10) {
-                Label("FLOW · selected Meet tab", systemImage: "ear.badge.waveform").font(.system(size: 11)).foregroundStyle(.mint)
+                Label(flow.demo != nil ? "FLOW · SIMULATED INPUT" : "FLOW · selected Meet tab", systemImage: "ear.badge.waveform").font(.system(size: 11)).foregroundStyle(.mint)
                 Text(context).font(.system(size: 18)).lineLimit(3)
                 IslandAction("Open my turn", symbol: "bookmark") { island.showCommunication(.flow) }
             }

@@ -8,27 +8,39 @@ struct FlowView: View {
     @State private var participants = false
     @State private var textConsent = false
     @State private var inspect = false
+    @State private var correction = ""
+    @State private var correcting = false
+    @State private var reviewedCorrection = ""
     @FocusState private var editing: Bool
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
+                if flow.demo == nil { HStack {
                     Label("Flow · conversation participation", systemImage: "point.3.connected.trianglepath.dotted").font(.system(size: 14, weight: .semibold))
                     Spacer()
                     if flow.snapshot?.state != "off", flow.snapshot != nil {
-                        Button("Stop listening") { flow.pause() }.accessibilityIdentifier("flow-stop-listening")
+                        Button(flow.demo != nil ? "Pause events" : "Stop listening") { flow.pause() }.accessibilityIdentifier("flow-stop-listening")
+                    }
+                }
+                }
+                if flow.demo != nil { demoHeader }
+                if let recovered = flow.orphanedText, !recovered.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Your draft was kept after disconnect").font(.system(size: 12, weight: .semibold)).foregroundStyle(.mint)
+                        Text(recovered).textSelection(.enabled)
+                        Button("Recover in Type a message") { if client.typedDraft.isEmpty { client.typedDraft = recovered; session.surface = .compose } }.disabled(!client.typedDraft.isEmpty)
                     }
                 }
                 if !flow.available { Text(flow.notice); Text("Start the isolated Flow candidate server, then reconnect TACIT. Ordinary communication stays available.") }
                 else if flow.snapshot?.state == "off" || flow.snapshot?.state == "paused" {
-                    consent
+                    if flow.demo != nil { Text("Keep your place. Keep your words.").font(.system(size: 23, weight: .medium)); Text("Start a conversation from the separate Demo Control Center. Nothing speaks until you authorize it.") } else { consent }
                     if flow.snapshot?.drafts.isEmpty == false { drafts }
                 } else {
-                    Text(flow.notice).font(.system(size: 11)).foregroundStyle(.mint)
+                    if flow.demo == nil { Text(flow.notice).font(.system(size: 11)).foregroundStyle(.mint) }
                     if flow.snapshot?.state == "armed" { pairing }
                     else { workspace }
                 }
-                Text("Nothing here speaks automatically. Transcription and Gemini interpretations may be wrong.")
+                Text(flow.demo != nil ? "Your words speak only when you press Speak." : "Nothing here speaks automatically. Transcription and Gemini interpretations may be wrong.")
                     .font(.system(size: 11)).foregroundStyle(.white.opacity(0.74))
             }.padding(.trailing, 6)
         }.safeAreaInset(edge: .bottom, spacing: 0) {
@@ -74,28 +86,28 @@ struct FlowView: View {
         VStack(alignment: .leading, spacing: 10) {
             if let active = flow.active {
                 if let source = active.anchor {
-                    caption("YOU'RE RESPONDING TO · saved source")
+                    caption("YOU'RE RESPONDING TO")
                     Text("“\(source.quote)”").textSelection(.enabled)
-                    Text("\(source.turnId.prefix(8)) · revision \(source.revision) · automatically transcribed")
-                        .font(.system(size: 10)).foregroundStyle(.white.opacity(0.7))
+                    if flow.demo == nil { Text("\(source.turnId.prefix(8)) · revision \(source.revision) · automatically transcribed").font(.system(size: 10)).foregroundStyle(.white.opacity(0.7)) }
                 }
                 if let change = flow.relevant { update(change) }
+                if active.saved { Label("Your answer is saved", systemImage: "bookmark.fill").font(.system(size: 12, weight: .semibold)).foregroundStyle(.mint) }
                 caption("YOUR UNCHANGED WORDS")
                 TextField("Your answer", text: Binding(get: { flow.text }, set: { flow.edit($0) }), axis: .vertical)
-                    .lineLimit(2...5).textFieldStyle(.plain).font(.system(size: 18)).focused($editing)
+                    .lineLimit(1...3).textFieldStyle(.plain).font(.system(size: 18)).focused($editing)
                     .padding(10).background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
                     .accessibilityIdentifier("flow-draft").accessibilityLabel("Your answer. Written by you. Up to 500 characters.")
                 Text("Written by you · \(flow.text.utf16.count)/500 · \(client.myVoice?.effectiveLabel ?? client.output?.voice ?? "selected voice")")
                     .font(.system(size: 10)).foregroundStyle(.white.opacity(0.7))
                 recovery
-                if let context = flow.assistanceContext {
+                if flow.demo == nil, let context = flow.assistanceContext {
                     Button("Help Me Respond using this selected context") {
                         session.presence.useSelectedMeetingContext(context); session.surface = .assistance
                     }.disabled(!session.presence.context.isEmpty || !session.presence.point.isEmpty || !session.presence.draft.isEmpty)
                         .frame(minHeight: 36).accessibilityHint("You still choose your move and supply your own point. Your saved answer is kept.")
                 }
-            } else if let anchor = flow.snapshot?.anchors.last {
-                caption("HEARD IN MEET · question or proposal")
+            } else if let anchor = flow.question {
+                caption(flow.demo != nil ? "DEMO CONVERSATION · question or proposal" : "HEARD IN MEET · question or proposal")
                 Text("“\(anchor.source.quote)”").font(.system(size: 19)).textSelection(.enabled)
                 Text("Not necessarily addressed to you.").font(.system(size: 11))
                 HStack {
@@ -103,8 +115,13 @@ struct FlowView: View {
                     Button("Dismiss context") { flow.clear() }.frame(minHeight: 36)
                 }
             } else {
-                Text("Listening for context. You can choose a finalized source below; no question is assumed to be yours.")
+                Text(flow.demo != nil ? "Ready for the next demo event. Choose Respond when a question arrives." : "Listening for context. You can choose a finalized source below; no question is assumed to be yours.")
             }
+            if let next = flow.question, let active = flow.active, next.source.turnId != active.anchor?.turnId {
+                Text("A new question arrived. Your response stays with its original question.").font(.system(size: 12)).foregroundStyle(.mint)
+                HStack { Button("Keep writing") { editing = true }; Button("Save & view new question") { flow.save(); flow.select(next) } }
+            }
+            correctionTools
             drafts
             DisclosureGroup("Inspect context / choose an earlier source", isExpanded: $inspect) {
                 ForEach(flow.snapshot?.turns.reversed() ?? []) { turn in
@@ -121,9 +138,8 @@ struct FlowView: View {
     }
     private func update(_ change: FlowChange) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            caption(change.relation == "ambiguous" ? "CONTEXT LINK UNCERTAIN · Gemini" : "POSSIBLE CONTEXT CHANGE · Gemini")
-            Text("Original: \(change.detailBefore)").fontWeight(.medium)
-            Text("Later: \(change.detailAfter)").fontWeight(.medium)
+            caption(change.relation == "ambiguous" ? "CONTEXT LINK UNCERTAIN" : flow.demo?.provenance == "Gemini live analysis" ? "POSSIBLE PROPOSAL UPDATE" : "PROPOSED DETAIL UPDATED")
+            Text("\(change.detailBefore.capitalized) → \(change.detailAfter.capitalized)").font(.system(size: 18, weight: .semibold))
             DisclosureGroup("Review source evidence") {
                 Text("Before: “\(change.before.quote)”\nLater: “\(change.after.quote)”").textSelection(.enabled)
                 Text("\(change.before.turnId.prefix(8)) r\(change.before.revision) → \(change.after.turnId.prefix(8)) r\(change.after.revision)").font(.system(size: 10))
@@ -164,6 +180,28 @@ struct FlowView: View {
             Text("Your saved answer is kept. Each request stays editable and needs Speak.").font(.system(size: 10))
         }
     }
+    private var demoHeader: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack { Label("Demo conversation", systemImage: "waveform.path").font(.system(size: 13, weight: .semibold)); Spacer(); Text("SIMULATED").font(.system(size: 9, weight: .bold)).padding(5).background(.mint.opacity(0.14), in: Capsule()) }
+            Text((flow.demo?.audioMode == "local" ? "LOCAL AUDIO · " : "Review First · ") + (flow.demo?.provenance ?? "Ready")).font(.system(size: 11)).foregroundStyle(.mint)
+        }.padding(8).background(.mint.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    }
+    @ViewBuilder private var correctionTools: some View {
+        if let prior = flow.demo?.lastOutgoing {
+            DisclosureGroup("Correct last message", isExpanded: $correcting) {
+                Text("Approved outgoing message: “\(prior.text)”").font(.system(size: 12))
+                TextField("Your correction, e.g. Tuesday instead.", text: $correction).textFieldStyle(.roundedBorder)
+                    .onChange(of: correction) { _, _ in reviewedCorrection = "" }
+                Button("Review correction") { reviewedCorrection = DemoCorrection.make(previous: prior.text, correction: correction) }
+                    .disabled(!PersonalPhrase.valid(correction))
+                if !reviewedCorrection.isEmpty {
+                    TextField("Exact correction to speak", text: $reviewedCorrection, axis: .vertical).textFieldStyle(.roundedBorder)
+                    Text("Deterministic template · editable · confirm this expresses your meaning").font(.system(size: 10))
+                    Button("Speak correction") { _ = client.speakTyped(reviewedCorrection) }.disabled(!client.canSpeakAuthored || !PersonalPhrase.valid(reviewedCorrection))
+                }
+            }
+        }
+    }
     private func caption(_ title: String) -> some View { Text(title).font(.system(size: 10, weight: .bold)).tracking(0.5).foregroundStyle(.mint) }
 }
 
@@ -180,7 +218,7 @@ private struct FlowActionStyle: ButtonStyle {
 struct FlowIndicator: View {
     @ObservedObject var flow: FlowClient
     var body: some View {
-        if flow.listening { Label("Meet", systemImage: "ear.badge.waveform").font(.system(size: 9, weight: .semibold)).foregroundStyle(.mint)
-            .accessibilityLabel("Flow is listening to the selected Meet tab. Local transcription.") }
+        if flow.listening { Label(flow.demo != nil ? "Demo" : "Meet", systemImage: "ear.badge.waveform").font(.system(size: 9, weight: .semibold)).foregroundStyle(.mint)
+            .accessibilityLabel(flow.demo != nil ? "Demo conversation. Simulated input." : "Flow is listening to the selected Meet tab. Local transcription.") }
     }
 }

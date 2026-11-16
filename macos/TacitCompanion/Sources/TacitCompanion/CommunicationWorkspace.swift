@@ -94,6 +94,7 @@ struct CommunicationWorkspace: View {
                 icon("pause.fill", "Pause camera, Live and voice") { live.pause() }
             }
             Menu {
+                if FlowClient.isDemo { Button("Demo Control Center") { DemoPresenter.shared.show(runtime: CompanionRuntime.shared) } }
                 Button("Flow · conversation participation") { island.showCommunication(.flow) }.keyboardShortcut("f", modifiers: [.command, .shift])
                 Button("Open browser workspace (optional)") { client.openWorkspace() }
                 Button("Settings & output") { island.showUtility(.diagnostics) }
@@ -106,6 +107,7 @@ struct CommunicationWorkspace: View {
         }.frame(height: 28)
     }
     private var statusTitle: String {
+        if FlowClient.isDemo && session.surface == .flow { return "Flow Demo · Review First" }
         switch state {
         case .off, .ready, .error: return voiceProblem && client.conn == .connected ? "Check voice output" : guide.title
         case .reviewAvailable: return "Review your words, then press Speak"

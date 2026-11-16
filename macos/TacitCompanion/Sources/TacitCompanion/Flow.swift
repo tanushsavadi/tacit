@@ -6,6 +6,13 @@ struct FlowTurn: Codable, Identifiable { var id: String; var revision: Int; var 
 struct FlowAnchor: Codable, Identifiable { var id: String; var source: FlowCitation; var selected: Bool }
 struct FlowChange: Codable, Identifiable { var id: String; var relation: String; var before: FlowCitation; var after: FlowCitation; var detailBefore: String; var detailAfter: String }
 struct FlowDraft: Codable, Identifiable { var id: String; var text: String; var version: Int; var anchor: FlowCitation?; var startedAtRevision: Int; var saved: Bool; var authorship: String; var acknowledged: [String] }
+struct FlowDemoStatus: Codable {
+    struct Scenario: Codable { var id: String; var title: String }
+    struct Operation: Codable { var at: String; var model: String; var status: String; var elapsedMs: Double; var validation: String }
+    struct Failure: Codable { var at: String; var code: String }
+    struct Outgoing: Codable { var text: String; var requestId: String; var state: String }
+    var audioMode: String?; var scenarioId: String; var title: String; var step: Int; var total: Int; var running: Bool; var paused: Bool; var enabled: Bool; var playback: String; var analysis: String; var providerAvailable: Bool; var provenance: String; var inputSource: String; var scenarios: [Scenario]; var operations: [Operation]; var errors: [Failure]; var lastOutgoing: Outgoing?
+}
 struct FlowSnapshot: Codable {
     var epoch: Int; var revision: Int; var state: String; var source: String?; var textConsent: Bool
     var turns: [FlowTurn]; var anchors: [FlowAnchor]; var changes: [FlowChange]; var drafts: [FlowDraft]; var status: String; var semantic: String
@@ -14,11 +21,14 @@ struct FlowSnapshot: Codable {
 /// Private native-owner socket. Capture never starts on connect/relaunch. Draft words are owned by the local editor.
 @MainActor final class FlowClient: ObservableObject {
     @Published private(set) var snapshot: FlowSnapshot?
+    @Published private(set) var demo: FlowDemoStatus?
+    static var isDemo: Bool { Bundle.main.object(forInfoDictionaryKey: "TACITFlowDemo") as? Bool == true }
     @Published private(set) var connected = false
     @Published private(set) var notice = "Flow candidate is not connected. Ordinary TACIT remains available."
     @Published private(set) var pairingCode: String?
     @Published private(set) var policyVerified = false
     @Published var activeID: String?
+    @Published private(set) var orphanedText: String?
     @Published private(set) var words: [String: String] = [:]
     private var socket: URLSessionWebSocketTask?
     private let session = URLSession(configuration: .ephemeral)
@@ -35,10 +45,15 @@ struct FlowSnapshot: Codable {
         guard let d = active, let anchor = d.anchor else { return nil }
         return snapshot?.changes.last { ["correction", "condition", "ambiguous"].contains($0.relation) && $0.before == anchor && !d.acknowledged.contains($0.id) }
     }
+    var question: FlowAnchor? {
+        guard let snapshot else { return nil }
+        let latest = snapshot.anchors.compactMap { a in snapshot.turns.first { $0.id == a.source.turnId }?.order }.max()
+        return snapshot.anchors.filter { a in snapshot.turns.first { $0.id == a.source.turnId }?.order == latest }.max { $0.source.quote.count < $1.source.quote.count }
+    }
     var peek: String? {
         if let c = relevant { return c.relation == "ambiguous" ? "Context link uncertain" : "Possible change: \(c.detailAfter)" }
         if let d = active, d.saved { return "Your answer is saved" }
-        return snapshot?.anchors.last?.source.quote
+        return question?.source.quote
     }
     var assistanceContext: String? {
         guard snapshot?.textConsent == true, listening, let anchor = active?.anchor,
@@ -46,15 +61,17 @@ struct FlowSnapshot: Codable {
         return anchor.quote + (relevant.map { "\nLater: " + $0.after.quote } ?? "")
     }
     func connect(token: String) {
-        disconnect(); connection += 1; let generation = connection
-        let port = Int(ProcessInfo.processInfo.environment["TACIT_FLOW_PORT"] ?? "") ?? 18892
+        disconnect(preserveWords: true); connection += 1; let generation = connection
+        let port = Int(ProcessInfo.processInfo.environment["TACIT_FLOW_PORT"] ?? "") ?? (Bundle.main.object(forInfoDictionaryKey: "TACITFlowPort") as? Int ?? 18892)
         guard let url = URL(string: "ws://127.0.0.1:\(port)/flow") else { return }
         var request = URLRequest(url: url); request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         let ws = session.webSocketTask(with: request); socket = ws; ws.resume(); receive(ws, generation)
     }
-    func disconnect() {
+    func disconnect(preserveWords: Bool = false) {
+        if preserveWords, !text.isEmpty { orphanedText = text }
+        if !preserveWords { orphanedText = nil }
         connection += 1; flushWork?.cancel(); socket?.cancel(with: .goingAway, reason: nil); socket = nil
-        connected = false; snapshot = nil; pairingCode = nil; words = [:]; activeID = nil; awaiting.removeAll(); minimumEpoch = 0; recoveryText = nil
+        connected = false; snapshot = nil; demo = nil; pairingCode = nil; words = [:]; activeID = nil; awaiting.removeAll(); minimumEpoch = 0; recoveryText = nil
     }
     private func receive(_ ws: URLSessionWebSocketTask, _ gen: Int) {
         ws.receive { [weak self] result in Task { @MainActor in
@@ -62,6 +79,7 @@ struct FlowSnapshot: Codable {
             switch result {
             case .failure:
                 // Keep authored text locally on an unexpected transport loss; clear on deliberate Stop.
+                if !self.text.isEmpty { self.orphanedText = self.text }
                 self.connected = false; self.snapshot = nil; self.pairingCode = nil
                 self.notice = "Flow disconnected. Capture stopped. Copy your draft before reconnecting."
             case .success(let message):
@@ -79,6 +97,7 @@ struct FlowSnapshot: Codable {
             if next.epoch < minimumEpoch { return }
             if let old = snapshot, next.epoch < old.epoch || (next.epoch == old.epoch && next.revision < old.revision) { return }
             let oldIDs = Set(snapshot?.drafts.map(\.id) ?? [])
+            if let value = object["demo"], let json = try? JSONSerialization.data(withJSONObject: value) { demo = try? JSONDecoder().decode(FlowDemoStatus.self, from: json) }
             snapshot = next; policyVerified = object["providerPolicyVerified"] as? Bool ?? false; notice = next.status
             if next.state == "off" { words = [:]; activeID = nil; pairingCode = nil }
             for draft in next.drafts {
@@ -100,13 +119,25 @@ struct FlowSnapshot: Codable {
         guard connected, let data = try? JSONSerialization.data(withJSONObject: command), let text = String(data: data, encoding: .utf8) else { return }
         socket?.send(.string(text)) { _ in }
     }
+    func demoAction(_ action: String, scenario: String? = nil) {
+        flush()
+        var command: [String: Any] = ["type": "demo", "action": action]
+        if let scenario { command["scenarioId"] = scenario }
+        if action == "next" { command["expectedStep"] = demo?.step ?? 0 }
+        send(command)
+    }
+    func demoMode(playback: String? = nil, analysis: String? = nil) {
+        var command: [String: Any] = ["type": "demo_mode"]
+        if let playback { command["playback"] = playback }; if let analysis { command["analysis"] = analysis }
+        send(command)
+    }
     func start(participants: Bool, textConsent: Bool) {
         guard participants, !textConsent || policyVerified else { notice = "Confirm participant agreement. Gemini also needs verified provider terms."; return }
         send(["type": "start", "participantsAgreed": true, "textConsent": textConsent])
     }
     func stop() {
         minimumEpoch = (snapshot?.epoch ?? minimumEpoch) + 1
-        flushWork?.cancel(); words = [:]; activeID = nil; pairingCode = nil; recoveryText = nil; awaiting.removeAll()
+        flushWork?.cancel(); words = [:]; orphanedText = nil; activeID = nil; pairingCode = nil; recoveryText = nil; awaiting.removeAll()
         send(["type": "stop"]); snapshot = nil
     }
     func pause() { flush(); send(["type": "pause"]); pairingCode = nil }
