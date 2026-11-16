@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/brand/app-icon/tacit-app-icon-1024.png" alt="TACIT app icon" width="128"></p>
+
 # TACIT — Your voice. Beyond speech.
 
 TACIT is a macOS app for people who cannot speak aloud. You mouth your words silently at the camera. TACIT reads
@@ -7,6 +9,8 @@ microphone of an ordinary call (Google Meet, Zoom and so on, through a virtual a
 Built at **HackUMass XIV** (November 2026). It is an experimental research prototype, not a medical device.
 
 - **Demo video (2:48):** https://youtu.be/GeV55H-ozqw
+- **Devpost:** https://devpost.com/software/tacit-7fygt5
+- **Pitch deck (Figma Slides):** https://www.figma.com/slides/jf8CzZjdqJfhMHhcb9lCrT
 - **Platform:** native macOS app in the notch / menu bar (SwiftUI), local Node.js server, local Python lip-reading
   service.
 
@@ -97,7 +101,8 @@ Camera ─► Apple Vision lip tracking (Swift) ─► Auto-AVSR visual-only VSR
 | `recognition/` | Python Auto-AVSR visual speech recognition service and evaluation tools |
 | `shared/protocol.ts` | Message types shared by server and clients |
 | `web/` | Optional browser workspace (React/Vite) |
-| `docs/` | Release runbook, research notes, handoff |
+| `docs/` | Release runbook, research notes, handoff; brand kit in [`docs/brand/`](docs/brand/README.md) |
+| `airpods/`, `watch/` | Research probes for wearable sensing (not used by the app; findings in `docs/research/`) |
 
 `AGENTS.md`, `CLAUDE.md` and `GEMINI.md` are instructions for the AI coding agents that helped build the project.
 
@@ -113,6 +118,14 @@ cd server && npm run respond:eval                         # Help Me Respond agai
 ```
 Without a Gemini key, Help Me Respond says that no AI is connected, sends nothing anywhere, and offers a starter you
 finish yourself.
+
+## Branches
+- `main` — the app as demonstrated, plus the brand kit and post-demo fixes.
+- `experiment/tacit-flow` — **TACIT Flow**, an experimental meeting-aware assistant (consented tab capture, local
+  speech-to-text, grounded Gemini drafts) and its isolated demo package. Not promoted: its own test report records
+  the open gaps (`docs/flow/` on that branch).
+- `archive/codex-native-experience-checkpoint` — an earlier native-experience checkpoint kept for reference; its work
+  is already on `main`.
 
 ## Credits and licences
 See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md). The Auto-AVSR weights are for research and non-commercial use
