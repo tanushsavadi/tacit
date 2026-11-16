@@ -1,0 +1,10 @@
+{
+  "verifiedAt": "2026-11-15T12:06:54.298547+00:00",
+  "sourceSnapshotMatchesProduction": true,
+  "relativeDocLinksValid": true,
+  "noRuntimeAudioOrProcessImports": true,
+  "networkRequestsRecorded": 2,
+  "tests": 101,
+  "typecheck": "pass",
+  "note": "Static scope checks plus actual command results; not an audit of all third-party dependency internals."
+}

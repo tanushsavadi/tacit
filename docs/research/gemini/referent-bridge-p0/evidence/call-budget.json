@@ -1,0 +1,13 @@
+{
+  "maximum": 2,
+  "attempts": [
+    {
+      "label": "bridge",
+      "reservedAt": "2026-11-15T11:57:56.863Z"
+    },
+    {
+      "label": "hmr",
+      "reservedAt": "2026-11-15T11:57:59.085Z"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-11-15T11:49:08.951747+00:00",
+  "source": "server/src/respond.ts",
+  "sha256": "52b7d5a56399d0e1b3ebd965ae97d5c0797eb96fb04b086b811dc4a7f484e75d",
+  "extraction": "MAX_CONTEXT through parseRequest; type aliases supplied locally; behavior unmodified",
+  "sdk": "3.3.0",
+  "repoStatus": "preexisting changes preserved",
+  "protectedProcesses": [
+    38791,
+    42794,
+    48577
+  ]
+}

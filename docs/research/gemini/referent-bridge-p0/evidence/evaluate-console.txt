@@ -1,0 +1,32 @@
+{
+  "cases": 30,
+  "mockOnly": {
+    "bridgeOracleCorrect": 30,
+    "warning": "Gold mock responses are supplied by the test author. This is NOT Gemini accuracy."
+  },
+  "deterministicChips": {
+    "correct": 22,
+    "total": 30,
+    "priorityCorrect": 6,
+    "abstentions": 8
+  },
+  "mechanicalEffort": {
+    "hmrActionsPerTask": 6,
+    "chipsActionsPerTask": 7,
+    "bridgeActionsPerTask": 8,
+    "warning": "Modeled minimum actions only; no human trial, no time/effort measurement. HMR given zero edits."
+  },
+  "real": {
+    "bridgeAvailable": true,
+    "hmrAvailable": true,
+    "caseIds": [
+      "later",
+      "correction",
+      "ambiguous",
+      "condition",
+      "disagree",
+      "injection"
+    ]
+  },
+  "evidence": "Full per-case scores, actual responses, action inventories and traces are in evidence/evaluation.json and evidence/real-*.json."
+}

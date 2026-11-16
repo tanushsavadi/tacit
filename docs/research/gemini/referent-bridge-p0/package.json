@@ -1,0 +1,15 @@
+{
+  "name": "tacit-referent-bridge-p0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "demo": "node --experimental-strip-types src/cli.ts demo",
+    "interactive": "node --experimental-strip-types src/cli.ts interactive",
+    "evaluate": "node --experimental-strip-types src/evaluate.ts",
+    "probe": "node --experimental-strip-types src/probe.ts"
+  },
+  "dependencies": { "@google/genai": "3.3.0", "zod": "4.6.7" },
+  "devDependencies": { "typescript": "^5.9.0", "@types/node": "^22.0.0" }
+}
