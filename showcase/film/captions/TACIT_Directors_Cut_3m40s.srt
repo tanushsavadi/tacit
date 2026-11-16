@@ -1,0 +1,275 @@
+1
+00:00:06,800 --> 00:00:09,250
+Imagine knowing exactly what you want to say…
+
+2
+00:00:09,250 --> 00:00:11,260
+and having no way to say it out loud.
+
+3
+00:00:12,600 --> 00:00:16,130
+After a total laryngectomy, the voice box is gone.
+
+4
+00:00:16,130 --> 00:00:20,500
+Many people can still shape words with their lips, but there's
+
+5
+00:00:20,500 --> 00:00:21,990
+no sound behind them.
+
+6
+00:00:21,990 --> 00:00:23,820
+The words are still there.
+
+7
+00:00:23,820 --> 00:00:24,950
+The voice isn't.
+
+8
+00:00:28,600 --> 00:00:33,390
+Every year, people lose their voices to surgery, injury, and illness.
+
+9
+00:00:33,390 --> 00:00:37,830
+Some use an electrolarynx, a voice prosthesis, writing, or sign.
+
+10
+00:00:37,830 --> 00:00:40,190
+TACIT doesn't replace any of them.
+
+11
+00:00:40,190 --> 00:00:41,650
+It's one more option.
+
+12
+00:00:42,200 --> 00:00:44,160
+So we asked a simple question.
+
+13
+00:00:44,160 --> 00:00:48,150
+What if the words you can still mouth silently became another
+
+14
+00:00:48,150 --> 00:00:49,000
+way to speak?
+
+15
+00:00:49,000 --> 00:00:49,850
+That's TACIT.
+
+16
+00:00:49,850 --> 00:00:52,600
+It lives quietly in the notch of your Mac.
+
+17
+00:00:58,800 --> 00:01:02,500
+We built TACIT at HackUMass, starting from a research visual
+
+18
+00:01:02,500 --> 00:01:06,210
+speech model, and one question: can it read silent lips well
+
+19
+00:01:06,210 --> 00:01:08,550
+enough to help in a real conversation?
+
+20
+00:01:09,200 --> 00:01:10,130
+Start it once.
+
+21
+00:01:10,130 --> 00:01:14,370
+TACIT reads your lips through the camera, never your microphone,
+
+22
+00:01:14,370 --> 00:01:18,540
+and a visual speech recognition model running on your Mac turns
+
+23
+00:01:18,540 --> 00:01:20,530
+silent articulation into text.
+
+24
+00:01:21,200 --> 00:01:22,240
+No sound at all.
+
+25
+00:01:22,240 --> 00:01:22,890
+Just lips.
+
+26
+00:01:22,890 --> 00:01:24,450
+And the words come back.
+
+27
+00:01:29,400 --> 00:01:31,570
+The honest answer is: sometimes.
+
+28
+00:01:31,570 --> 00:01:35,760
+On our own recordings, some sentences came back word for word.
+
+29
+00:01:35,760 --> 00:01:37,460
+Others didn't come close.
+
+30
+00:01:37,460 --> 00:01:40,030
+That's exactly why review comes first.
+
+31
+00:01:40,400 --> 00:01:45,420
+Recognition isn't perfect, so nothing is spoken until you decide.
+
+32
+00:01:45,420 --> 00:01:48,130
+Here, "doing" came back as "going".
+
+33
+00:01:48,130 --> 00:01:48,980
+You see it.
+
+34
+00:01:48,980 --> 00:01:49,830
+You fix it.
+
+35
+00:01:56,000 --> 00:01:58,000
+[TACIT voice] “How are you doing?”
+
+36
+00:01:58,200 --> 00:02:02,620
+When the words are right, one tap on Speak sends exactly those
+
+37
+00:02:02,620 --> 00:02:06,830
+words, in the voice you chose, into your call's microphone.
+
+38
+00:02:06,830 --> 00:02:09,110
+And Stop is always one tap away.
+
+39
+00:02:09,500 --> 00:02:12,280
+But a conversation is more than sentences.
+
+40
+00:02:12,280 --> 00:02:13,080
+It's timing.
+
+41
+00:02:13,080 --> 00:02:17,120
+Hold my turn keeps your place, so nobody talks over you while
+
+42
+00:02:17,120 --> 00:02:17,910
+you compose.
+
+43
+00:02:18,200 --> 00:02:20,690
+[TACIT voice] “One moment, I'm responding.”
+
+44
+00:02:20,800 --> 00:02:25,360
+Saved phrases let you react in a second, in words that sound like you.
+
+45
+00:02:25,360 --> 00:02:29,260
+And for practised phrases, an optional real-time mode speaks
+
+46
+00:02:29,260 --> 00:02:32,780
+without review, only after you accept a clear warning.
+
+47
+00:02:33,400 --> 00:02:38,050
+My Voice lets you choose how you sound, and preview it privately first.
+
+48
+00:02:38,050 --> 00:02:42,570
+Help Me Respond turns context you paste in into wording you can edit.
+
+49
+00:02:42,570 --> 00:02:46,430
+It never listens to your meeting, and it never rewrites the
+
+50
+00:02:46,430 --> 00:02:47,940
+words TACIT recognized.
+
+51
+00:02:48,800 --> 00:02:51,270
+TACIT is built to fail safely.
+
+52
+00:02:51,270 --> 00:02:53,500
+Pause drops anything stale.
+
+53
+00:02:53,500 --> 00:02:57,620
+If the recognizer crashes, it restarts on its own.
+
+54
+00:02:57,620 --> 00:02:59,850
+Nothing old is ever spoken.
+
+55
+00:03:00,800 --> 00:03:04,700
+Under the hood: the camera, on-device lip tracking, visual
+
+56
+00:03:04,700 --> 00:03:08,930
+speech recognition, your review, voice synthesis, and a virtual
+
+57
+00:03:08,930 --> 00:03:11,620
+microphone that any calling app can use.
+
+58
+00:03:12,500 --> 00:03:13,190
+We're early.
+
+59
+00:03:13,190 --> 00:03:16,880
+Accuracy varies, and TACIT hasn't been tested with people who've
+
+60
+00:03:16,880 --> 00:03:17,870
+lost their voice.
+
+61
+00:03:17,870 --> 00:03:21,440
+But we think everyone deserves more ways to be heard, on their
+
+62
+00:03:21,440 --> 00:03:22,020
+own terms.
+
+63
+00:03:22,400 --> 00:03:27,050
+Communication is autonomy: choosing your words, your timing, and
+
+64
+00:03:27,050 --> 00:03:28,060
+how you sound.
+
+65
+00:03:28,060 --> 00:03:29,880
+That's what TACIT is for.
+
+66
+00:03:31,400 --> 00:03:31,910
+TACIT.
+
+67
+00:03:31,910 --> 00:03:32,850
+Your words.
+
+68
+00:03:32,850 --> 00:03:33,790
+Your voice.
+
+69
+00:03:33,790 --> 00:03:34,980
+Beyond speech.
